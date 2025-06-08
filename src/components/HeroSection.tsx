@@ -70,7 +70,7 @@ const HeroSection = () => {
       
       <div className="absolute inset-0">
         <img
-          src="/lovable-uploads/ed21e2d8-9675-483e-b600-ede9ef97280f.png"
+          src="/lovable-uploads/gym.JPG"
 
           alt="Modern gym interior at Crunch Fitness Club with various exercise equipment and open space, symbolizing strength training."
           className="w-full h-full object-cover"

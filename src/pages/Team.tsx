@@ -19,7 +19,7 @@ const Team = () => {
       specialization: "Holistic Fitness, Business Strategy",
       experience: "10+ Years",
       bio: "The visionary behind Crunch Fitness, Nilima leads with a passion for transforming lives through sustainable fitness and a community-driven approach.",
-      image: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80", // Placeholder, ideally a clear photo of Nilima
+      image: "/lovable-uploads/nilima mam.jpeg", // Placeholder, ideally a clear photo of Nilima
       social: { instagram: "#", twitter: "#", linkedin: "#" },
       isOwner: true,
       objectPosition: "center" // Default for owner, adjust as needed
@@ -41,7 +41,7 @@ const Team = () => {
       specialization: "Program Development, Strategic Planning",
       experience: "3+ Years",
       bio: "With vast experience in the fitness industry, Vikas provides expert consultation, shaping innovative training programs and growth strategies for the gym.",
-      image: "https://images.unsplash.com/photo-1557827827-fd6475d9e50f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80", // Placeholder
+      image: "/lovable-uploads/vikas1.JPG", // Placeholder
       social: { instagram: "#", twitter: "#", linkedin: "#" },
       isOwner: false,
       objectPosition: "top" // Example: If Vikas is closer to the top of his photo
@@ -69,12 +69,12 @@ const Team = () => {
       objectPosition: "center 20%" // Example: if Rushikesh is slightly off-center to the left
     },
     {
-      name: "Balaji Gaikwad", // Trainer (distinguished with initial if two Gauravs)
+      name: "Gaurav Gaikwad", // Trainer (distinguished with initial if two Gauravs)
       role: "Certified Personal Trainer",
       specialization: "Fat Loss, Muscle Gain, Endurance",
       experience: "5+ Years",
       bio: "Dedicated to guiding clients through effective training journeys, Gaurav focuses on sustainable progress and holistic well-being.",
-      image: "/lovable-uploads/maddy.PNG", // Placeholder
+      image: "/lovable-uploads/maddy12.PNG", // Placeholder
       social: { instagram: "#", twitter: "#", linkedin: "#" },
       isOwner: false,
       objectPosition: "top" // Example: Adjust as needed

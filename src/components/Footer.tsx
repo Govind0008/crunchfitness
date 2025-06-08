@@ -17,14 +17,14 @@ const Footer = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {/* Brand Section */}
             <div className="lg:col-span-2">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-r from-green-400 to-green-600 rounded-lg flex items-center justify-center neon-glow">
-                  <span className="text-black font-bold text-2xl font-orbitron">C</span>
-                </div>
-                <span className="text-white font-orbitron font-bold text-2xl">
-                  CRUNCH <span className="neon-text">FITNESS</span>
-                </span>
-              </div>
+            <div className="flex items-center space-x-3 mb-6">
+              <img
+                src="/lovable-uploads/crunch.png"
+                alt="Crunch Fitness Logo"
+                className="h-28"
+              />
+            </div>
+
               <p className="text-gray-400 font-rajdhani text-lg mb-6 max-w-md">
                 Redefine your strength and unlock your potential at the most advanced fitness facility in the city.
               </p>
@@ -48,8 +48,7 @@ const Footer = () => {
                 <div className="flex items-start space-x-3">
                   <MapPin className="w-5 h-5 text-green-400 mt-1 flex-shrink-0" />
                   <span className="text-gray-400 font-rajdhani">
-                    123 Fitness Street<br />
-                    New York, NY 10001
+                    2nd floor, Palash Plus
                   </span>
                 </div>
                 <div className="flex items-center space-x-3">
