@@ -1,0 +1,296 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- FONT IMPORTS --- */
+/* Titillium Web for headings and impactful text */
+/* Open Sans for body text and general readability */
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=Open+Sans:wght@300;400;600;700&display=swap');
+/* --- END FONT IMPORTS --- */
+
+@layer base {
+  :root {
+    --background: 0 0% 0%; /* Deep black background */
+    --foreground: 0 0% 95%; /* Near-white text for contrast */
+    --card: 0 0% 5%; /* Very dark gray for card backgrounds, slight tint */
+    --card-foreground: 0 0% 98%; /* White text on dark cards */
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 146 70% 45%; /* A vibrant, strong green */
+    --primary-foreground: 0 0% 10%; /* Dark text for primary buttons */
+    --secondary: 0 0% 15%; /* A slightly lighter dark gray for secondary elements */
+    --secondary-foreground: 0 0% 90%; /* Light text for secondary elements */
+    --muted: 0 0% 10%; /* Darker mute for backgrounds */
+    --muted-foreground: 0 0% 60%; /* Softer gray for muted text */
+    --accent: 146 70% 45%; /* Same as primary for accent elements */
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%; /* A clear red for destructive actions */
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%; /* Slightly visible border color */
+    --input: 0 0% 15%; /* Darker input background */
+    --ring: 146 70% 45%; /* Ring focus color, matching primary */
+    --radius: 0.75rem; /* Slightly larger border radius for modern feel */
+
+    /* IMPORTANT: Define this custom property for HSL shadows for neon glow */
+    --neon-green-hsl: 146 70% 45%; /* HSL components for --primary green */
+  }
+
+  /* Dark theme scrollbar for general page content */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0d0d0d; /* Slightly lighter than body background */
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsla(var(--neon-green-hsl), 0.5); /* Semi-transparent neon green */
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsla(var(--neon-green-hsl), 0.7);
+  }
+  /* For Firefox */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: hsla(var(--neon-green-hsl), 0.5) #0d0d0d;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    /* Set Open Sans as the default body font for general text */
+    @apply bg-background text-foreground;
+    font-family: 'Open Sans', sans-serif; /* Default body font */
+    overflow-x: hidden; /* Ensure no horizontal scroll for the main body */
+  }
+
+  /* Override for specific headings and key brand elements */
+  /* Use Orbitron for a strong, tech-inspired feel */
+  h1, h2, h3, h4, h5, h6,
+  .font-orbitron { /* Retain .font-orbitron class for specific use */
+    font-family: 'Titillium Web', sans-serif;
+  }
+
+  /* Ensure input fields and buttons also follow the body font for readability */
+  input, button, textarea, select {
+      font-family: 'Open Sans', sans-serif;
+  }
+}
+
+@layer components {
+  /* Adjusted Neon Text for more vibrancy */
+  .neon-text {
+    color: var(--neon-green);
+    text-shadow:
+      0 0 7px hsla(var(--neon-green-hsl), 0.8), /* Inner glow */
+      0 0 15px hsla(var(--neon-green-hsl), 0.6), /* Medium glow */
+      0 0 30px hsla(var(--neon-green-hsl), 0.4), /* Outer glow */
+      0 0 50px hsla(var(--neon-green-hsl), 0.2); /* Farthest spread */
+  }
+
+  /* Adjusted Neon Glow for more vibrancy and animation on hover */
+  .neon-glow {
+    box-shadow:
+      0 0 10px hsla(var(--neon-green-hsl), 0.7),
+      0 0 20px hsla(var(--neon-green-hsl), 0.5),
+      0 0 30px hsla(var(--neon-green-hsl), 0.3),
+      inset 0 0 10px hsla(var(--neon-green-hsl), 0.2);
+    transition: box-shadow 0.3s ease-in-out;
+  }
+  .neon-glow:hover {
+    box-shadow:
+      0 0 15px hsla(var(--neon-green-hsl), 0.8),
+      0 0 30px hsla(var(--neon-green-hsl), 0.6),
+      0 0 50px hsla(var(--neon-green-hsl), 0.4),
+      inset 0 0 15px hsla(var(--neon-green-hsl), 0.3);
+  }
+
+
+  /* Updated Glassmorphism for better depth and integration */
+  .glass-morphism {
+    background: rgba(var(--neon-green-hsl), 0.03); /* Lighter background for transparency */
+    backdrop-filter: blur(15px); /* Increased blur for stronger effect */
+    border: 1px solid rgba(var(--neon-green-hsl), 0.1); /* Softer border */
+    border-radius: var(--radius); /* Use variable for consistency */
+    box-shadow: 0 8px 32px 0 rgba(var(--neon-green-hsl), 0.1); /* Subtle shadow for depth */
+  }
+
+  /* Electric Gradient with a more dynamic feel */
+  .electric-gradient {
+    background: linear-gradient(90deg, #0d0d0d 0%, #2e8b57 50%, #0d0d0d 100%); /* Green center, fading to dark */
+    background-size: 200% 100%; /* For animation */
+    animation: gradient-shift 8s ease infinite alternate;
+  }
+
+  @keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 100% 50%; }
+  }
+
+
+  .pulse-green {
+    animation: pulse-green 2s infinite;
+  }
+
+  .float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .rotate-3d {
+    transform-style: preserve-3d;
+    transition: transform 0.5s ease;
+  }
+
+  .rotate-3d:hover {
+    transform: rotateY(180deg);
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  /* --- ANIMATIONS --- */
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.4; }
+  }
+
+  .animate-pulse-slow {
+    animation: pulse-slow 6s infinite ease-in-out;
+  }
+
+  @keyframes text-reveal-slide-up {
+    0% { transform: translateY(100%); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  .animate-text-reveal-1 {
+    animation: text-reveal-slide-up 0.8s ease-out forwards;
+    animation-delay: 0.5s;
+  }
+
+  .animate-text-reveal-2 {
+    animation: text-reveal-slide-up 0.8s ease-out forwards;
+    animation-delay: 0.7s;
+  }
+
+  .animate-text-reveal-3 {
+    animation: text-reveal-slide-up 0.8s ease-out forwards;
+    animation-delay: 0.9s;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out forwards;
+  }
+
+  /* For the glow on the progress dots and other elements */
+  .shadow-green-glow {
+    box-shadow: 0 0 8px 3px var(--neon-green);
+  }
+
+  /* Chatbot Scrollbar Hiding */
+  .hide-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+
+  /* Chatbot specific animations for messages */
+  @keyframes slideInFromRight {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideInFromLeft {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in-right {
+    animation: slideInFromRight 0.4s ease-out;
+  }
+  .animate-slide-in-left {
+    animation: slideInFromLeft 0.4s ease-out; /* Added for bot messages */
+  }
+
+
+  @keyframes slideInUp {
+    0% {
+      transform: translateY(50px);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in-up {
+    animation: slideInUp 0.5s ease-out;
+  }
+}
+
+/* Original animations, ensuring they are at the end if you want them to override */
+@keyframes pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(34, 197, 94, 0.4), 0 0 35px rgba(34, 197, 94, 0.2);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes fadeInUp {
+  0% {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-delay-100 { animation-delay: 0.1s; }
+.animate-delay-200 { animation-delay: 0.2s; }
+.animate-delay-300 { animation-delay: 0.3s; }
+.animate-delay-400 { animation-delay: 0.4s; }
+.animate-delay-500 { animation-delay: 0.5s; }
