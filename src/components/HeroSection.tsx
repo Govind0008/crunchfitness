@@ -9,19 +9,6 @@ const HeroSection = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!heroRef.current) return;
-
-      const { clientX, clientY } = e;
-      const { innerWidth, innerHeight } = window;
-
-      const xPos = (clientX / innerWidth - 0.5) * 5;
-      const yPos = (clientY / innerHeight - 0.5) * 5;
-
-      if (textRef.current) {
-        textRef.current.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
-      }
-    };
 
     // Intersection Observer for scroll animations
     const observer = new IntersectionObserver(
@@ -39,11 +26,7 @@ const HeroSection = () => {
       observer.observe(statsRef.current);
     }
 
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      observer.disconnect();
-    };
+  
   }, []);
 
   const handleStartJourney = () => {
@@ -65,7 +48,7 @@ const HeroSection = () => {
     <section
       id="home"
       ref={heroRef}
-      className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden pt-28"
     >
       
       <div className="absolute inset-0">

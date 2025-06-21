@@ -9,7 +9,7 @@ const Plans = () => {
       <Navigation />
 
       {/* Hero Section */}
-      <section className="pt-20 pb-10 bg-gradient-to-br from-black via-gray-900 to-black">
+      <section className="pt-28 pb-10 bg-gradient-to-br from-black via-gray-900 to-black">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-5xl md:text-7xl font-orbitron font-black mb-6">
             <span className="text-white">MEMBERSHIP</span>

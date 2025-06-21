@@ -69,7 +69,7 @@ const Gallery = () => {
 
       {/* Hero Section */}
       <section
-        className="pt-32 pb-20 relative overflow-hidden bg-cover bg-center bg-no-repeat"
+        className="pt-28 pb-28 relative overflow-hidden bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: 'url("/lovable-uploads/training-main.jpeg")' }}
         aria-labelledby="gallery-hero-heading"
       >

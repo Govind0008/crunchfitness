@@ -63,47 +63,55 @@ const TestimonialsSection = () => {
     };
   }, []);
 
-  const nextTestimonial = () => {
-    setCurrentTestimonial((prev) => (prev + 1) % testimonials.length);
-  };
+  const currentReview = testimonials[currentTestimonial];
 
+  // Add navigation handlers for carousel
   const prevTestimonial = () => {
     setCurrentTestimonial((prev) => (prev - 1 + testimonials.length) % testimonials.length);
   };
 
-  const currentReview = testimonials[currentTestimonial];
+  const nextTestimonial = () => {
+    setCurrentTestimonial((prev) => (prev + 1) % testimonials.length);
+  };
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "HealthClub",
+    "name": "Crunch Fitness Club",
+    "url": "https://www.crunchfitness.fit/",
+    "image": "https://www.crunchfitness.fit/images/logo.png", // Replace with actual logo if available
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Wakad Main Road",
+      "addressLocality": "Pune",
+      "addressRegion": "MH",
+      "postalCode": "411057",
+      "addressCountry": "IN"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.9",
+      "reviewCount": "250"
+    },
+    "review": testimonials.map((t) => ({
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": t.rating.toString()
+      },
+      "author": {
+        "@type": "Person",
+        "name": t.name
+      },
+      "reviewBody": t.text
+    }))
+  };
 
   return (
     <section ref={sectionRef} className="py-20 bg-gradient-to-br from-gray-900 to-black relative overflow-hidden">
-      {/* Schema Markup for Reviews (JSON-LD) */}
+      {/* Corrected JSON-LD schema */}
       <script type="application/ld+json">
-        {JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "AggregateRating",
-          "itemReviewed": {
-            "@type": "FitnessCenter",
-            "name": "Crunch Fitness Club",
-            "url": "https://www.crunchfitness.fit/" // Your gym's main URL
-          },
-          "ratingValue": "4.9", // Overall average rating for your gym
-          "reviewCount": "250",  // Total number of reviews
-          "review": testimonials.map(t => ({
-            "@type": "Review",
-            "reviewRating": {
-              "@type": "Rating",
-              "ratingValue": t.rating.toString()
-            },
-            "author": {
-              "@type": "Person",
-              "name": t.name
-            },
-            "reviewBody": t.text,
-            "itemReviewed": { // Important to link each review back to the gym
-              "@type": "FitnessCenter",
-              "name": "Crunch Fitness Club"
-            }
-          }))
-        })}
+        {JSON.stringify(schema)}
       </script>
 
       {/* Enhanced Background Elements */}
@@ -153,7 +161,7 @@ const TestimonialsSection = () => {
 
               {/* Enhanced Quote Icon */}
               <div className="flex justify-center mb-6">
-                <Quote className="w-12 h-12 text-green-500 animate-pulse hover:animate-spin transition-all duration-300" />
+                <Quote className="w-12 h-12 text-green-500 hover:animate-spin transition-all duration-300" />
               </div>
 
               {/* Testimonial Content */}

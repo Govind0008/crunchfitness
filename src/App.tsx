@@ -15,12 +15,14 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+import ScrollToTop from "@/components/ScrollToTop"; 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <ScrollToTop /> 
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/about-us" element={<AboutUs />} />
@@ -29,12 +31,10 @@ const App = () => (
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/contact" element={<Contact />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
-
 export default App;
