@@ -148,13 +148,7 @@ const Team = () => {
   ];
 return (
     <div className="min-h-screen bg-black text-white pt-20">
-      <Helmet>
-        <title>Meet Our Expert Team | Crunch Fitness | Wakad, Pune</title>
-        <meta name="description" content="Meet the certified personal trainers, manager, and founder at Crunch Fitness Club in Wakad, Pune. Learn about our expert team dedicated to your fitness success." />
-        <meta name="keywords" content="gym trainers Pune, personal trainers Wakad, Crunch Fitness team, fitness coach, gym staff, certified instructors" />
-      </Helmet>
-
-      <Navigation />
+            <Navigation />
 
       <section className="relative min-h-[60vh] flex items-center justify-center overflow-hidden" aria-labelledby="team-hero-heading">
         <div className="absolute inset-0">
@@ -163,26 +157,8 @@ return (
             alt="Crunch Fitness expert team training in a modern gym setting"
             className="w-full h-full object-cover object-[center_40%] brightness-75"
           />
-          <div className="absolute inset-0 bg-black/60"></div>
+          
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-transparent to-black/70"></div>
-        </div>
-
-        <div className="relative z-10 text-center px-4 max-w-5xl mx-auto">
-          <div className={`transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-            <h1 id="team-hero-heading" className="text-5xl md:text-7xl font-orbitron font-black mb-6">
-              <span className="text-white">MEET OUR</span><br />
-              <span className="text-green-500">EXPERT TEAM</span>
-            </h1>
-            <div className="bg-black/50 backdrop-blur-sm rounded-lg p-6 mb-8 border border-green-500/20">
-              <blockquote className="text-xl md:text-2xl font-rajdhani italic text-gray-300 mb-4">
-                "Success isn't given. It's earned. In the gym, on the track, on the field, in every game."
-              </blockquote>
-              <cite className="text-green-500 font-orbitron font-bold">- Team Crunch Fitness</cite>
-            </div>
-            <p className="text-lg text-gray-400 font-rajdhani">
-              Our certified fitness trainers and expert gym instructors at Crunch Fitness Club Wakad, Pune, are here to guide you on your personal training journey with unparalleled expertise and dedication.
-            </p>
-          </div>
         </div>
       </section>
 

@@ -2,11 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* --- FONT IMPORTS --- */
-/* Titillium Web for headings and impactful text */
-/* Open Sans for body text and general readability */
-@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=Open+Sans:wght@300;400;600;700&display=swap');
-/* --- END FONT IMPORTS --- */
 
 @layer base {
   :root {
