@@ -43,7 +43,7 @@ const EnhancedChatbot: React.FC = () => {
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Enhanced gym data with accurate pricing and real trainer information
   const gymData = {
@@ -322,51 +322,51 @@ const EnhancedChatbot: React.FC = () => {
     // Intent patterns with confidence scoring
     const intentPatterns = {
       greeting: {
-        patterns: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'start'],
+        patterns: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'good afternoon', 'namaste', 'start', 'hii', 'helo'],
         confidence: 0.9
       },
       membership: {
-        patterns: ['membership', 'plan', 'price', 'cost', 'sign up', 'join', 'fee', 'subscription'],
+        patterns: ['membership', 'plan', 'price', 'cost', 'sign up', 'join', 'fee', 'subscription', 'how much', 'rate', 'charge', 'enroll', 'register', 'cheap', 'affordable', 'best plan', 'recommend plan', 'daily pass', 'monthly', 'quarterly', 'annual', 'yearly', '1 month', '3 month', '6 month', '12 month', 'trial'],
         confidence: 0.9
       },
       location: {
-        patterns: ['location', 'where', 'address', 'find', 'wakad', 'pune', 'direction'],
+        patterns: ['location', 'where', 'address', 'find', 'wakad', 'pune', 'direction', 'map', 'reach', 'how to come', 'parking', 'landmark', 'nearby', 'situated'],
         confidence: 0.9
       },
       timings: {
-        patterns: ['time', 'open', 'hour', 'schedule', 'when', 'timing', 'close'],
+        patterns: ['time', 'open', 'hour', 'schedule', 'when', 'timing', 'close', 'opening', 'closing', 'weekday', 'weekend', 'sunday', 'saturday', 'today', 'busy', 'crowded', 'peak'],
         confidence: 0.9
       },
       trainers: {
-        patterns: ['trainer', 'coach', 'instructor', 'personal training', 'pt'],
+        patterns: ['trainer', 'coach', 'instructor', 'personal training', 'pt', 'trainer available', 'meet trainer', 'who trains', 'staff', 'nilima', 'gaurav', 'vikas', 'sheetal', 'rushikesh', 'arjun', 'rohit', 'rahul', 'swapnil', 'pooja'],
         confidence: 0.8
       },
       services: {
-        patterns: ['class', 'service', 'workout', 'exercise', 'training', 'program'],
+        patterns: ['class', 'service', 'zumba', 'crossfit', 'yoga', 'pilates', 'hiit', 'cardio', 'group class', 'activities', 'programs', 'what do you offer', 'facilities'],
         confidence: 0.8
       },
       nutrition: {
-        patterns: ['diet', 'nutrition', 'food', 'meal', 'eating', 'weight loss', 'calories'],
+        patterns: ['diet', 'nutrition', 'food', 'meal', 'eating', 'calories', 'protein', 'supplement', 'weight loss diet', 'what to eat', 'meal plan', 'macro', 'fat loss diet', 'bulk', 'cut', 'healthy eating'],
         confidence: 0.8
       },
       workout_plan: {
-        patterns: ['workout plan', 'exercise routine', 'training program', 'fitness plan', 'routine'],
+        patterns: ['workout plan', 'exercise routine', 'training program', 'fitness plan', 'routine', 'beginner workout', 'how to start', 'gym routine', 'weekly plan', 'split', 'push pull', 'full body'],
         confidence: 0.8
       },
       equipment: {
-        patterns: ['equipment', 'machine', 'weights', 'dumbbells', 'treadmill', 'gym gear'],
-        confidence: 0.7
+        patterns: ['equipment', 'machine', 'weights', 'dumbbells', 'treadmill', 'gym gear', 'barbell', 'bench press', 'cable', 'squat rack', 'powerlifting', 'free weights', 'cardio machine', 'facilities available'],
+        confidence: 0.8
       },
       contact: {
-        patterns: ['contact', 'phone', 'call', 'email', 'website', 'reach', 'talk'],
+        patterns: ['contact', 'phone', 'call', 'email', 'website', 'reach', 'talk', 'whatsapp', 'number', 'message us', 'enquiry', 'inquiry', 'connect'],
         confidence: 0.9
       },
       help: {
-        patterns: ['help', 'assist', 'support', 'what can you do', 'guide'],
+        patterns: ['help', 'assist', 'support', 'what can you do', 'guide', 'what can you help', 'capabilities', 'options', 'menu'],
         confidence: 0.9
       },
       goals: {
-        patterns: ['goal', 'target', 'achieve', 'want to', 'lose weight', 'gain muscle', 'get fit'],
+        patterns: ['goal', 'target', 'achieve', 'want to', 'lose weight', 'gain muscle', 'get fit', 'transform', 'fat loss', 'build muscle', 'weight gain', 'slim', 'toned', 'six pack', 'stamina', 'strength', 'endurance', 'flexible', 'beginner', 'new to gym', 'first time'],
         confidence: 0.8
       }
     };
@@ -405,7 +405,7 @@ const EnhancedChatbot: React.FC = () => {
 
   // Context-aware response generation
   const generateResponse = useCallback((input: string, analysis: { intent: string; confidence: number; entities: string[] }): string => {
-    const { intent, confidence, entities } = analysis;
+    const { intent, entities } = analysis;
     
     // Update context
     setContext(prev => ({
@@ -578,7 +578,7 @@ Which trainer interests you most? I can share more details!`;
 
         return `👥 **Meet Our Expert Training Team:**
 
-${gymData.trainers.map((trainer, index) => 
+${gymData.trainers.map((trainer) =>
           `**${trainer.name}** - ${trainer.title}
 🎯 ${trainer.specializations.slice(0, 3).join(', ')}
 ⭐ ${trainer.successStories}
@@ -601,9 +601,9 @@ ${mentionedService.description}
 
 📅 **Schedule:** ${mentionedService.schedule}
 ⏱️ **Duration:** ${mentionedService.duration}
-🔥 **Calories:** ${mentionedService.calories}
+🔥 **Calories Burned:** ${mentionedService.calories}
 
-This is included in our Pro and Elite memberships! Want to try a free session or learn about other classes?`;
+All classes are available to active Crunch Fitness members. Want to try a session or learn about our membership plans?`;
         }
 
         return `💪 **Our Amazing Services & Classes:**
@@ -618,30 +618,24 @@ Which class excites you most? I can share detailed schedules and help you get st
       },
 
       nutrition: () => {
-        const nutritionTips = [
-          "🥗 **Nutrition is 70% of your fitness journey!** Our certified nutritionist John Smith can create personalized meal plans based on your goals, preferences, and lifestyle.",
-          "🍎 **Smart Eating Made Simple:** Whether it's weight loss, muscle gain, or maintenance, proper nutrition amplifies your gym results by 3x!",
-          "⚡ **Fuel Your Workouts:** The right pre and post-workout nutrition can boost performance and recovery significantly!"
-        ];
+        const rohit = gymData.trainers.find(t => t.name === 'Rohit Pote')!;
+        return `🥗 **Nutrition is 70% of your fitness journey!**
 
-        const randomTip = nutritionTips[Math.floor(Math.random() * nutritionTips.length)];
-
-        return `${randomTip}
-
-**Our Nutrition Services:**
-• Personalized meal plans
-• Macro counting guidance  
+Proper diet amplifies your gym results significantly. At Crunch Fitness we offer:
+• Personalized meal plans tailored to your goals
+• Macro counting & calorie guidance
 • Supplement recommendations
-• Weekly check-ins and adjustments
-• Recipe suggestions and meal prep tips
+• Pre/post-workout nutrition advice
+• Weight loss & muscle gain diet planning
 
-**Meet John Smith - Nutrition Expert:**
-• Precision Nutrition L1 Certified
-• 6+ years experience
-• Average client results: 15-25kg weight loss in 6 months
-• Specializes in sustainable lifestyle changes
+**Meet ${rohit.name} — ${rohit.title}**
+🎯 Specializes in: ${rohit.specializations.join(', ')}
+⭐ Experience: ${rohit.experience}
+💡 ${rohit.bio}
+✅ ${rohit.successStories}
+📅 ${rohit.availability}
 
-Ready to transform your relationship with food? Book a consultation!`;
+Whether your goal is fat loss, muscle gain, or overall health — the right nutrition plan makes all the difference. Ask me about specific diet tips or book a consultation!`;
       },
 
       workout_plan: () => {
@@ -659,33 +653,189 @@ ${plans.map(([level, plan]) =>
 Tell me about your current fitness level and goals - I'll recommend the perfect program and match you with the right trainer!`;
       },
 
-      goals: () => {
-        const goalResponses = {
-          'weight loss': "🔥 **Weight Loss Transformation:** Combine cardio classes (Zumba, HIIT), strength training, and our nutrition program. John Smith specializes in sustainable weight loss - average client loses 15-25kg in 6 months!",
-          'muscle gain': "💪 **Muscle Building:** Focus on progressive weight training with Jane Doe (our strength expert) plus proper nutrition. The Pro plan includes personal training sessions perfect for muscle growth!",
-          'fitness': "⚡ **Overall Fitness:** A balanced approach with CrossFit, strength training, and flexibility work. David Kim can create a comprehensive program that improves all aspects of fitness!"
-        };
+      equipment: () => {
+        const lowInput = input.toLowerCase();
 
-        const detectedGoal = Object.keys(goalResponses).find(goal => 
-          input.toLowerCase().includes(goal.replace(' ', '')) || 
-          input.toLowerCase().includes(goal)
-        );
+        if (lowInput.includes('powerlifting') || lowInput.includes('squat rack') || lowInput.includes('barbell') || lowInput.includes('deadlift')) {
+          return `🏆 **Powerlifting Area — Our Crown Jewel:**
 
-        if (detectedGoal) {
-          return goalResponses[detectedGoal as keyof typeof goalResponses] + "\n\nWhat's your current fitness level? I can create a detailed roadmap for your goals!";
+Most members don't know we have a **dedicated competition-grade powerlifting zone!**
+
+**What's inside:**
+• 🏋️ Olympic barbells & calibrated plates
+• 🔲 Competition-standard squat racks
+• 🔩 Deadlift platform with proper flooring
+• ⚖️ Bench press stations
+
+**Expert coaching available:**
+👨‍💼 **Rushikesh Zurange** — Strength & Powerlifting Coach | 7+ years
+👨‍💼 **Rahul Saware** — Bodybuilding Coach | 5+ years
+
+Whether you're prepping for a competition or just want to lift heavy, this area was made for you. Want to schedule a walkthrough?`;
         }
 
-        return `🎯 **Let's Define Your Fitness Goals:**
+        if (lowInput.includes('treadmill') || lowInput.includes('cardio machine') || lowInput.includes('cycle') || lowInput.includes('elliptical')) {
+          return `🏃 **Cardio Equipment Zone:**
 
-**Popular Goals We Help Achieve:**
-• **Weight Loss** - Cardio + Strength + Nutrition
-• **Muscle Gain** - Progressive Training + Diet
-• **General Fitness** - Balanced Programs
-• **Strength Building** - Powerlifting + Olympic Lifts
-• **Flexibility** - Yoga + Pilates + Mobility
-• **Endurance** - CrossFit + Cardio Training
+Our modern cardio section is packed with:
+• 🏃 Treadmills (commercial-grade with incline & speed control)
+• 🚴 Stationary bikes & spin bikes
+• ⚡ Elliptical cross-trainers
+• 🔄 Rowing machines
+• 📺 Entertainment screens on most machines
 
-What's your primary goal? I'll create a personalized roadmap with the right trainer, classes, and nutrition plan!`;
+**Pro Tip from our trainers:** Combine 20–30 mins cardio with strength training for maximum fat loss results!
+
+Best for: Weight loss, stamina building, warm-up & cool-down. Want a recommended cardio routine?`;
+        }
+
+        if (lowInput.includes('dumbbell') || lowInput.includes('free weight') || lowInput.includes('bench')) {
+          return `💪 **Free Weights & Strength Zone:**
+
+Our free weights area includes:
+• 🏋️ Dumbbells: 2.5kg to 50kg range
+• 🔩 Barbells & EZ curl bars
+• 🛏️ Flat, incline & decline benches
+• 🔧 Weight plates (rubber & iron)
+
+**Space & Safety:**
+Spacious layout with proper mirror coverage for form checks. Rubber flooring to protect equipment and your joints.
+
+**Perfect for:** Compound lifts, isolation exercises, progressive overload training.
+
+Want a free weights workout plan? Tell me your goal!`;
+        }
+
+        return `🏋️ **Our World-Class Equipment & Facilities:**
+
+**Cardio Zone:**
+• Commercial treadmills, bikes, ellipticals & rowers
+• Entertainment displays on key machines
+
+**Free Weights Area:**
+• Dumbbells: 2.5kg–50kg | Barbells | EZ bars
+• Flat, incline, decline benches
+
+**Strength & Cable Machines:**
+• Full cable pulley systems (lat pulldown, seated row, etc.)
+• Chest press, leg press, leg curl/extension
+• Shoulder press & functional trainers
+
+**🏆 Exclusive Powerlifting Zone:**
+• Olympic squat racks & deadlift platforms
+• Calibrated competition plates & barbells
+• (A hidden gem — most gyms don't have this!)
+
+**Group Fitness Studio:**
+• Dedicated space for Zumba, Yoga & CrossFit
+
+Ask me about a specific piece of equipment or tell me your goal and I'll show you exactly what to use!`;
+      },
+
+      goals: () => {
+        const lowInput = input.toLowerCase();
+        const rohit     = gymData.trainers.find(t => t.name === 'Rohit Pote')!;
+        const rushikesh = gymData.trainers.find(t => t.name === 'Rushikesh Zurange')!;
+        const pooja     = gymData.trainers.find(t => t.name === 'Pooja Bansode')!;
+        const rahulSahu = gymData.trainers.find(t => t.name === 'Rahul Sahu')!;
+
+        if (lowInput.includes('weight loss') || lowInput.includes('fat loss') || lowInput.includes('slim') || lowInput.includes('lose weight')) {
+          return `🔥 **Weight Loss Transformation Plan:**
+
+**Best approach for fat loss at Crunch Fitness:**
+• Zumba & HIIT classes (burn 400–800 cal/session)
+• Strength training to boost metabolism
+• Personalized nutrition plan by **${rohit.name}** (${rohit.experience} experience)
+• Cardio equipment — treadmills, cycles, cross-trainers
+
+**Recommended trainer: ${rohit.name}**
+${rohit.bio}
+✅ ${rohit.successStories}
+
+**Best membership for weight loss:** 6 Month plan (₹8,000) — gives you enough time for a real transformation!
+
+Ready to start? Ask me about our membership plans or contact us to book a consultation!`;
+        }
+
+        if (lowInput.includes('muscle') || lowInput.includes('bulk') || lowInput.includes('strength') || lowInput.includes('gain') || lowInput.includes('bodybuilding')) {
+          return `💪 **Muscle Building & Strength Plan:**
+
+**Best approach for muscle gain at Crunch Fitness:**
+• Progressive weight training with free weights & machines
+• Powerlifting area — competition-grade equipment
+• Customised hypertrophy programs
+• Nutrition support for bulking
+
+**Recommended trainers:**
+🏋️ **${rushikesh.name}** — ${rushikesh.title} | ${rushikesh.experience}
+${rushikesh.successStories}
+
+🥇 **Rahul Saware** — Bodybuilding Coach | 5+ years
+Prepared 20+ clients for competitions, 90% success rate
+
+**Best membership:** 6–12 Month plan for serious muscle gains!
+
+Want to know more about strength training or meet our coaches?`;
+        }
+
+        if (lowInput.includes('beginner') || lowInput.includes('new to gym') || lowInput.includes('first time') || lowInput.includes('starting')) {
+          return `🌟 **Welcome to Your Fitness Journey!**
+
+Starting out is the most important step. Here's what we recommend for beginners:
+
+**Week 1–2:** Gym orientation + basic equipment walkthrough
+**Month 1:** Full body workout 3x/week (guided by our trainers)
+**Month 2–3:** Split training + nutrition basics
+
+**Best trainer for beginners: Swapnil Bhile**
+Certified Personal Trainer & Motivator | 2+ years
+Perfect for beginners — 95% member retention rate!
+
+**Recommended start:** 3 Month plan (₹6,500) — enough time to build real habits!
+
+Don't worry, every champion was once a beginner. Our team will guide you every step of the way. Want to book a free orientation visit?`;
+        }
+
+        if (lowInput.includes('flexible') || lowInput.includes('yoga') || lowInput.includes('mobility') || lowInput.includes('injury')) {
+          return `🧘 **Flexibility, Mobility & Injury Prevention:**
+
+**Best approach:**
+• Yoga classes — Daily 7AM & 6:30PM
+• Pilates — Tue, Thu, Sat 8AM
+• Functional training for mobility
+
+**Recommended trainer: ${rahulSahu.name}** — ${rahulSahu.title}
+${rahulSahu.bio}
+✅ ${rahulSahu.successStories}
+
+**For ladies:** ${pooja.name} (${pooja.title}) also offers yoga & women's health programs!
+
+Flexibility training complements all other workouts and reduces injury risk significantly. Interested in our class schedule?`;
+        }
+
+        return `🎯 **Let's Find Your Perfect Fitness Plan:**
+
+Tell me your goal and I'll give you a full roadmap! Here's what we can help with:
+
+🔥 **Fat Loss / Weight Loss**
+→ Cardio + HIIT + Nutrition by Rohit Pote
+
+💪 **Muscle Gain / Bodybuilding**
+→ Strength training + Powerlifting area + Rushikesh / Rahul Saware
+
+⚡ **CrossFit / Athletic Performance**
+→ Daily CrossFit sessions with Arjun Kamble (10+ years)
+
+🧘 **Flexibility / Mobility**
+→ Yoga, Pilates + Rahul Sahu's functional training
+
+👩 **Women's Fitness**
+→ Ladies-only programs with Pooja Bansode
+
+🌟 **Complete Beginner**
+→ Guided start with Swapnil Bhile
+
+Which goal resonates with you? Type it out and I'll give you a detailed plan!`;
       },
 
       contact: () => {
@@ -742,21 +892,19 @@ Just ask me anything in natural language - I understand context and remember our
       return generator();
     }
 
-    // Fallback with smart suggestions
-    const suggestions = [
-      "Tell me about membership plans",
-      "I want to lose weight - help me",
-      "Show me workout schedules",
-      "Find me a nutrition expert",
-      "When are you open?"
-    ];
+    // Fallback with context-aware smart suggestions
+    return `I want to make sure I give you the right info! 🤔 Here's what I can help with at Crunch Fitness:
 
-    return `I understand you're asking about "${input}" but I'd like to help you better! 🤔
+💳 **Memberships** → "What are the membership prices?"
+🏋️ **Equipment** → "What equipment do you have?"
+👥 **Trainers** → "Tell me about your trainers"
+📅 **Classes** → "What classes are available?"
+🥗 **Nutrition** → "I need a diet plan"
+🎯 **Goals** → "I want to lose weight / build muscle"
+⏰ **Timings** → "What are your gym timings?"
+📍 **Location** → "Where are you located?"
 
-Here are some things I can definitely help with:
-${suggestions.map(s => `• ${s}`).join('\n')}
-
-Or just tell me more about what you're looking for - I'm getting smarter with every conversation! 🧠✨`;
+Just type your question naturally — like "I'm a beginner, how do I start?" and I'll guide you step by step! 💪`;
   }, []);
 
   // Enhanced message handling with typing simulation
@@ -853,154 +1001,126 @@ Or just tell me more about what you're looking for - I'm getting smarter with ev
   const areQuickActionsVisible = inputValue.trim() === '' && !isBotTyping;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] font-sans sm:bottom-6 sm:right-6">
-      {/* Enhanced Chat Toggle Button with pulsing animation */}
+    <div className="fixed bottom-5 right-5 z-[100] sm:bottom-7 sm:right-7">
+
+      {/* ── Toggle Button ── */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="relative w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 hover:shadow-green-500/50 group animate-bounce"
-          aria-label="Open Crunch Fitness AI chatbot"
-          style={{
-            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-            boxShadow: '0 10px 30px rgba(16, 185, 129, 0.4), 0 0 0 0 rgba(16, 185, 129, 0.4)',
-            animation: 'pulse-ring 2s infinite'
-          }}
+          aria-label="Open Coach Crunch chatbot"
+          className="relative w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95"
+          style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 8px 32px rgba(16,185,129,0.45)' }}
         >
-          <MessageCircle size={30} className="relative z-10" />
-          <Sparkles size={16} className="absolute top-2 right-2 text-yellow-300 animate-pulse" />
-          
-          {/* Notification badge */}
-          <div className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-xs font-bold animate-pulse">
-            AI
-          </div>
+          {/* pulse ring */}
+          <span className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: '#10b981' }} />
+          <MessageCircle size={26} className="text-white relative z-10" />
+          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-green-400 border-2 border-black rounded-full flex items-center justify-center">
+            <Sparkles size={10} className="text-black" />
+          </span>
         </button>
       )}
 
-      {/* Enhanced Chat Window with glassmorphism */}
+      {/* ── Chat Window ── */}
       {isOpen && (
         <div
-          className="backdrop-blur-xl bg-white/95 dark:bg-gray-900/95 rounded-2xl shadow-2xl w-[90vw] max-w-md h-[70vh] max-h-[600px] flex flex-col border border-white/20 overflow-hidden transform transition-all duration-500 ease-out"
+          className="flex flex-col rounded-2xl overflow-hidden border border-gray-700/60 shadow-2xl w-[92vw] max-w-[400px]"
           style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.8) 100%)',
-            backdropFilter: 'blur(20px)',
-            animation: 'slideInUp 0.5s ease-out'
+            height: 'min(600px, 80vh)',
+            background: 'linear-gradient(160deg, #0f0f0f 0%, #111827 100%)',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(16,185,129,0.15)',
+            animation: 'chatSlideUp 0.35s cubic-bezier(0.34,1.56,0.64,1) both'
           }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="chatbot-header"
         >
-          {/* Enhanced Header with gradient and AI indicator */}
-          <div 
-            className="relative text-white p-4 rounded-t-2xl flex items-center justify-between overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
-              boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse"></div>
-            
-            <div className="relative z-10 flex items-center space-x-3">
-              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                <Bot size={20} className="text-white" />
+
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0"
+            style={{ background: 'linear-gradient(90deg,#064e3b,#065f46)' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                <Bot size={18} className="text-green-400" />
               </div>
               <div>
-                <h3 id="chatbot-header" className="font-bold text-lg">Crunch Fitness AI</h3>
-                <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-green-300 rounded-full animate-pulse"></div>
-                  <p className="text-xs opacity-90">Smart Assistant Online</p>
+                <h3 id="chatbot-header" className="font-heading font-bold text-white text-sm leading-none">Coach Crunch</h3>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-green-300 text-[10px] font-body">Online • Ready to help</span>
                 </div>
               </div>
             </div>
-            
             <button
               onClick={() => setIsOpen(false)}
-              className="relative z-10 p-2 rounded-full hover:bg-white/20 transition-colors duration-200"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-200"
               aria-label="Close chatbot"
             >
-              <X size={20} />
+              <X size={16} />
             </button>
           </div>
 
-          {/* Messages Container with enhanced styling */}
+          {/* Messages */}
           <div
-            className="flex-1 p-4 overflow-y-auto space-y-4 bg-gradient-to-b from-gray-50/50 to-white/50"
-            style={{
-              scrollbarWidth: 'thin',
-              scrollbarColor: '#10b981 transparent'
-            }}
+            className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#10b981 transparent' }}
             role="log"
             aria-live="polite"
           >
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${message.isBot ? 'justify-start' : 'justify-end'} animate-fadeInUp`}
+                className={`flex ${message.isBot ? 'justify-start' : 'justify-end'}`}
+                style={{ animation: 'msgFadeUp 0.25s ease both' }}
               >
-                <div className={`flex items-start space-x-2 max-w-[85%] ${message.isBot ? '' : 'flex-row-reverse space-x-reverse'}`}>
+                <div className={`flex items-end gap-2 max-w-[85%] ${message.isBot ? '' : 'flex-row-reverse'}`}>
                   {/* Avatar */}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                    message.isBot 
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
-                      : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                  <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ${
+                    message.isBot ? 'bg-green-500/20 border border-green-500/40' : 'bg-gray-700'
                   }`}>
-                    {message.isBot ? <Bot size={16} /> : <User size={16} />}
+                    {message.isBot
+                      ? <Bot size={13} className="text-green-400" />
+                      : <User size={13} className="text-gray-300" />
+                    }
                   </div>
-                  
-                  {/* Message bubble */}
-                  <div
-                    className={`px-4 py-3 rounded-2xl shadow-lg transition-all duration-300 hover:shadow-xl ${
-                      message.isBot
-                        ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-none'
-                        : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-br-none'
-                    }`}
-                    style={{
-                      maxWidth: '100%',
-                      wordBreak: 'break-word'
-                    }}
+
+                  {/* Bubble */}
+                  <div className={`px-3.5 py-2.5 rounded-2xl text-sm font-body leading-relaxed break-words ${
+                    message.isBot
+                      ? 'bg-gray-800 border border-gray-700 text-gray-100 rounded-bl-sm'
+                      : 'bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-br-sm'
+                  }`}
+                    style={{ maxWidth: '100%', wordBreak: 'break-word' }}
                   >
-                    <div 
-                      className="whitespace-pre-wrap text-sm leading-relaxed"
+                    <div
+                      className="whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{
                         __html: message.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                       }}
                     />
-                    
-                    <div className={`flex items-center justify-between mt-2 text-xs ${
-                      message.isBot ? 'text-gray-500' : 'text-green-100'
-                    }`}>
-                      <time dateTime={message.timestamp.toISOString()}>
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </time>
-                      
-                      {message.confidence && (
-                        <div className="flex items-center space-x-1">
-                          <div className={`w-2 h-2 rounded-full ${
-                            message.confidence > 0.8 ? 'bg-green-500' : 
-                            message.confidence > 0.6 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}></div>
-                          <span className="opacity-70">AI</span>
-                        </div>
-                      )}
-                    </div>
+                    <time
+                      dateTime={message.timestamp.toISOString()}
+                      className={`block text-right mt-1 text-[10px] ${message.isBot ? 'text-gray-500' : 'text-green-100/70'}`}
+                    >
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </time>
                   </div>
                 </div>
               </div>
             ))}
 
-            {/* Enhanced Bot Typing Indicator */}
+            {/* Typing indicator */}
             {isBotTyping && (
-              <div className="flex justify-start animate-fadeInUp">
-                <div className="flex items-start space-x-2">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 flex items-center justify-center">
-                    <Bot size={16} className="text-white" />
+              <div className="flex justify-start" style={{ animation: 'msgFadeUp 0.25s ease both' }}>
+                <div className="flex items-end gap-2">
+                  <div className="w-7 h-7 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                    <Bot size={13} className="text-green-400" />
                   </div>
-                  <div className="bg-white border border-gray-200 px-4 py-3 rounded-2xl rounded-bl-none shadow-lg">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  <div className="bg-gray-800 border border-gray-700 px-4 py-3 rounded-2xl rounded-bl-sm">
+                    <div className="flex gap-1 items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">Thinking...</div>
                   </div>
                 </div>
               </div>
@@ -1009,19 +1129,16 @@ Or just tell me more about what you're looking for - I'm getting smarter with ev
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Smart Quick Actions */}
+          {/* Quick Actions */}
           {areQuickActionsVisible && (
-            <div className="p-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white animate-fadeInUp">
-              <div className="text-xs text-gray-600 mb-2 font-medium">💡 Quick Actions:</div>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="px-4 pb-3 pt-2 border-t border-gray-800 flex-shrink-0">
+              <p className="text-[10px] font-heading text-gray-500 uppercase tracking-wider mb-2">Quick actions</p>
+              <div className="flex flex-wrap gap-1.5">
                 {quickActions.map((action, index) => (
                   <button
                     key={index}
                     onClick={() => handleQuickActionClick(action)}
-                    className="bg-white hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 text-gray-700 hover:text-green-700 border border-gray-200 hover:border-green-300 transition-all duration-200 px-3 py-2 rounded-xl text-xs font-medium shadow-sm hover:shadow-md transform hover:scale-105"
-                    style={{
-                      backdropFilter: 'blur(10px)'
-                    }}
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-green-500/10 border border-gray-700 hover:border-green-500/50 text-gray-300 hover:text-green-400 rounded-full text-xs font-body transition-all duration-200 hover:scale-105 active:scale-95"
                   >
                     {action}
                   </button>
@@ -1030,86 +1147,50 @@ Or just tell me more about what you're looking for - I'm getting smarter with ev
             </div>
           )}
 
-          {/* Enhanced Input Area */}
-          <div className="p-4 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
-            <div className="flex space-x-3 items-end">
+          {/* Input */}
+          <div className="px-4 py-3 border-t border-gray-800 flex-shrink-0 bg-gray-900/50">
+            <div className="flex gap-2 items-end">
               <div className="flex-1 relative">
                 <textarea
                   ref={inputRef}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Ask me anything about fitness, nutrition, or our gym..."
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 text-gray-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm resize-none transition-all duration-200"
-                  style={{
-                    minHeight: '44px',
-                    maxHeight: '120px'
-                  }}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Ask about memberships, trainers, timings…"
                   rows={1}
+                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 focus:border-green-500/60 text-white placeholder-gray-500 rounded-xl text-sm font-body resize-none focus:outline-none transition-colors duration-200"
+                  style={{ minHeight: '42px', maxHeight: '112px' }}
                 />
-                
-                {/* Character count for longer messages */}
                 {inputValue.length > 100 && (
-                  <div className="absolute bottom-1 right-1 text-xs text-gray-400">
-                    {inputValue.length}/500
-                  </div>
+                  <span className="absolute bottom-1.5 right-2 text-[10px] text-gray-600">{inputValue.length}/500</span>
                 )}
               </div>
-              
               <button
                 onClick={() => handleSendMessage()}
                 disabled={!inputValue.trim() || isBotTyping}
-                className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-500 text-white p-3 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none disabled:cursor-not-allowed"
                 aria-label="Send message"
+                className="w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}
               >
-                <Send size={18} />
+                <Send size={16} className="text-white" />
               </button>
             </div>
-            
-            {/* AI Status Indicator */}
-            <div className="flex items-center justify-center mt-2 text-xs text-gray-500">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span>Powered by Advanced AI • Context-Aware • Learning</span>
-              </div>
-            </div>
+            <p className="text-center text-[10px] text-gray-600 font-body mt-2">
+              Coach Crunch • Wakad, Pune
+            </p>
           </div>
         </div>
       )}
 
-      <style jsx>{`
-        @keyframes pulse-ring {
-          0% {
-            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-          }
-          70% {
-            box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-          }
+      {/* keyframes — plain style tag, no jsx prop */}
+      <style>{`
+        @keyframes chatSlideUp {
+          from { transform: translateY(24px) scale(0.96); opacity: 0; }
+          to   { transform: translateY(0)    scale(1);    opacity: 1; }
         }
-        
-        @keyframes slideInUp {
-          from {
-            transform: translateY(100%) scale(0.9);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0) scale(1);
-            opacity: 1;
-          }
-        }
-        
-        @keyframes fadeInUp {
-          from {
-            transform: translateY(20px);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
+        @keyframes msgFadeUp {
+          from { transform: translateY(10px); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
         }
       `}</style>
     </div>

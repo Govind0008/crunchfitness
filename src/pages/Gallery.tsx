@@ -81,12 +81,12 @@ const Gallery = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className={`text-center transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-            <h1 id="gallery-hero-heading" className="text-5xl md:text-7xl font-bold mb-6">
+            <h1 id="gallery-hero-heading" className="text-5xl md:text-7xl font-bold font-heading mb-6">
               <span className="text-white">GALLERY &</span>
               <br />
               <span className="bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent">EXPERIENCES</span>
             </h1>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+            <p className="text-xl text-gray-300 font-body max-w-3xl mx-auto">
               Explore our state-of-the-art facilities, view gym photos, and witness the amazing member transformations happening every day at Crunch Fitness Club Wakad, Pune.
             </p>
           </div>
@@ -105,14 +105,14 @@ const Gallery = () => {
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 bg-red-500/10 px-4 py-2 rounded-full mb-4">
               <Trophy className="w-5 h-5 text-red-400" />
-              <span className="text-red-400 font-semibold text-sm">FEATURED AREA</span>
+              <span className="text-red-400 font-semibold font-heading text-sm">FEATURED AREA</span>
             </div>
-            <h2 className="text-4xl md:text-6xl font-bold mb-6">
+            <h2 className="text-4xl md:text-6xl font-bold font-heading mb-6">
               <span className="text-white">POWERLIFTING</span>
               <br />
               <span className="bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text text-transparent">PARADISE</span>
             </h2>
-            <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+            <p className="text-xl text-gray-300 font-body max-w-2xl mx-auto">
               Our crown jewel - a dedicated powerlifting area with competition-standard equipment 
             </p>
           </div>
@@ -135,6 +135,7 @@ const Gallery = () => {
                     <img
                       src={image.src}
                       alt={image.title}
+                      loading="lazy"
                       className="absolute inset-0 w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
@@ -183,12 +184,12 @@ const Gallery = () => {
                         <Icon className="w-6 h-6" />
                       </div>
                       <div className="flex-1">
-                        <h3 className={`text-xl font-bold mb-2 transition-colors duration-300 ${
+                        <h3 className={`text-xl font-bold font-heading mb-2 transition-colors duration-300 ${
                           activeFeature === index ? 'text-red-400' : 'text-white'
                         }`}>
                           {feature.title}
                         </h3>
-                        <p className="text-gray-300 leading-relaxed">
+                        <p className="text-gray-300 font-body leading-relaxed">
                           {feature.description}
                         </p>
                       </div>
@@ -203,8 +204,8 @@ const Gallery = () => {
               {/* CTA Section - Just Informative */}
               <div className="pt-6">
                 <div className="bg-gradient-to-r from-red-500/10 to-orange-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
-                  <h4 className="text-xl font-bold text-red-400 mb-2">Hidden Gem of Our Gym</h4>
-                  <p className="text-gray-300">
+                  <h4 className="text-xl font-bold font-heading text-red-400 mb-2">Hidden Gem of Our Gym</h4>
+                  <p className="text-gray-300 font-body">
                     Most members don't know about our professional powerlifting area. Come explore and discover the difference competition-grade equipment makes!
                   </p>
                 </div>
@@ -222,7 +223,7 @@ const Gallery = () => {
               <button
                 key={category}
                 onClick={() => setActiveCategory(category)}
-                className={`px-6 py-3 rounded-full font-semibold transition-all duration-300 ${
+                className={`px-6 py-3 rounded-full font-semibold font-heading transition-all duration-300 ${
                   activeCategory === category
                     ? 'bg-green-400 text-black'
                     : 'bg-gray-800 text-white hover:bg-gray-700'
@@ -253,6 +254,7 @@ const Gallery = () => {
                 <img
                   src={image.src}
                   alt={image.title}
+                  loading="lazy"
                   className="absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-110"
                 />
 
@@ -264,8 +266,8 @@ const Gallery = () => {
                 >
                   <div className="text-center">
                     <ZoomIn className="w-8 h-8 text-white mb-2 mx-auto" />
-                    <p className="text-white font-semibold text-lg">{image.title}</p>
-                    <p className="text-green-400 text-sm">{image.category}</p>
+                    <p className="text-white font-semibold font-body text-lg">{image.title}</p>
+                    <p className="text-green-400 text-sm font-body">{image.category}</p>
                   </div>
                 </div>
 
@@ -313,10 +315,10 @@ const Gallery = () => {
                     className="max-w-full max-h-[80vh] object-contain mx-auto rounded-2xl shadow-xl"
                   />
                   <div className="text-center mt-4">
-                    <h3 id="modal-image-title" className="text-2xl font-bold text-white mb-2">
+                    <h3 id="modal-image-title" className="text-2xl font-bold font-heading text-white mb-2">
                       {currentImage.title}
                     </h3>
-                    <p className="text-green-400">Click outside to close</p>
+                    <p className="text-green-400 font-body">Click outside to close</p>
                   </div>
                 </>
               ) : null;

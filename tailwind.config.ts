@@ -133,7 +133,9 @@ export default {
 			},
 			fontFamily: {
 				'orbitron': ['Orbitron', 'monospace'],
-				'rajdhani': ['Rajdhani', 'sans-serif']
+				'rajdhani': ['Rajdhani', 'sans-serif'],
+				'heading': ['Orbitron', 'monospace'],
+				'body': ['Rajdhani', 'sans-serif'],
 			},
 			perspective: {
 				'1000': '1000px'

@@ -1,22 +1,71 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Users, Target, Award, Zap } from 'lucide-react';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 
+// Animates a number from 0 → target when `active` becomes true
+const useCounter = (target: number, duration = 1400, active = false) => {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let start = 0;
+    const step = target / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= target) { setCount(target); clearInterval(timer); }
+      else setCount(Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [target, duration, active]);
+  return count;
+};
+
+const statDefs = [
+  { icon: <Users className="w-8 h-8" />, target: 500, suffix: '+', label: 'Active Members' },
+  { icon: <Target className="w-8 h-8" />, target: 5,   suffix: '',  label: 'Years Experience' },
+  { icon: <Award className="w-8 h-8" />, target: 10,  suffix: '+', label: 'Certified Trainers' },
+  { icon: <Zap className="w-8 h-8" />,   target: 24,  suffix: '/7',label: 'Access Available' },
+];
+
+const AboutStatCard = ({ def, active, index }: { def: typeof statDefs[0]; active: boolean; index: number }) => {
+  const count = useCounter(def.target, 1400, active);
+  return (
+    <div
+      className={`text-center transform transition-all duration-700 ${
+        active ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+      }`}
+      style={{ transitionDelay: `${index * 100}ms` }}
+    >
+      <div className="inline-flex p-4 rounded-xl bg-green-400/10 text-green-400 mb-4 neon-glow">
+        {def.icon}
+      </div>
+      <h3 className="text-3xl md:text-4xl font-heading font-bold text-white mb-2">
+        {count}{def.suffix}
+      </h3>
+      <p className="text-gray-400 font-body text-lg">{def.label}</p>
+    </div>
+  );
+};
+
 const AboutUs = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const [statsVisible, setStatsVisible] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // This useEffect is for the initial fade-in animation of the sections
     setIsVisible(true);
   }, []);
 
-  const stats = [
-    { icon: <Users className="w-8 h-8" />, number: "500+", label: "Active Members" },
-    { icon: <Target className="w-8 h-8" />, number: "5", label: "Years Experience" },
-    { icon: <Award className="w-8 h-8" />, number: "10+", label: "Certified Trainers" },
-    { icon: <Zap className="w-8 h-8" />, number: "24/7", label: "Access Available" }
-  ];
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
+      { threshold: 0.3 }
+    );
+    if (statsRef.current) observer.observe(statsRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -49,23 +98,12 @@ const AboutUs = () => {
       {/* Stats Section */}
       <section className="py-20 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <div
-                key={index}
-                className={`text-center transform transition-all duration-700 delay-${index * 100} ${
-                  isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                }`}
-              >
-                <div className="inline-flex p-4 rounded-xl bg-green-400/10 text-green-400 mb-4 neon-glow">
-                  {stat.icon}
-                </div>
-                {/* SEO: Using h3 for sub-sections within the page */}
-                <h3 className="text-3xl md:text-4xl font-heading font-bold text-white mb-2"> {/* Changed font-orbitron to font-heading */}
-                  {stat.number}
-                </h3>
-                <p className="text-gray-400 font-body text-lg">{stat.label}</p> {/* Changed font-rajdhani to font-body */}
-              </div>
+          <div
+            ref={statsRef}
+            className="grid grid-cols-2 md:grid-cols-4 gap-8"
+          >
+            {statDefs.map((def, index) => (
+              <AboutStatCard key={index} def={def} active={statsVisible} index={index} />
             ))}
           </div>
         </div>
@@ -92,28 +130,34 @@ const AboutUs = () => {
               </p>
             </div>
 
-            {/* Video Player Section */}
+            {/* Video / Fallback Image */}
             <div className={`relative transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10'}`}>
-              <div className="w-full h-80 bg-gradient-to-br from-green-400/20 to-green-600/20 rounded-2xl glass-morphism flex items-center justify-center overflow-hidden">
-                <video
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  poster="/lovable-uploads/video_poster.jpg"
-                  className="absolute inset-0 w-full h-full object-cover rounded-2xl"
-                  aria-label="Promotional video for Crunch Fitness Club" // Added aria-label for accessibility
-                >
-                  {/* Providing multiple sources for browser compatibility is good practice */}
-                  {/* <source src="/lovable-uploads/crunch_info.webm" type="video/webm" /> */}
-                  <source src="/lovable-uploads/crunch_info.mp4" type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-                {/* Optional overlay text */}
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                    <p className="text-white font-heading font-bold text-xl text-center z-10"> {/* Changed font-orbitron to font-heading */}
-                        TRAIN HARD. LIVE STRONG.
-                    </p>
+              <div className="relative w-full h-80 rounded-2xl overflow-hidden border border-green-400/20">
+                {!videoError ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    onError={() => setVideoError(true)}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    aria-label="Promotional video for Crunch Fitness Club"
+                  >
+                    <source src="/lovable-uploads/crunch_info.mp4" type="video/mp4" />
+                  </video>
+                ) : (
+                  /* Fallback: gym image when video file is missing */
+                  <img
+                    src="/lovable-uploads/gym.JPG"
+                    alt="Crunch Fitness Club gym interior"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <p className="text-white font-heading font-bold text-xl text-center drop-shadow-lg">
+                    TRAIN HARD. LIVE STRONG.
+                  </p>
                 </div>
               </div>
             </div>

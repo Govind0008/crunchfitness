@@ -171,9 +171,10 @@ return (
             {teamMembers.map((member, index) => (
               <div
                 key={index}
-                className={`relative group transition-all duration-700 delay-${index * 100} transform hover:scale-105 ${
+                className={`relative group transition-all duration-700 transform hover:scale-105 ${
                   isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
                 }`}
+                style={{ transitionDelay: `${index * 100}ms` }}
                 onMouseEnter={() => setHoveredMember(index)}
                 onMouseLeave={() => setHoveredMember(null)}
               >
@@ -191,7 +192,8 @@ return (
                     <img
                       src={member.image}
                       alt={`${member.name}, ${member.role} at Crunch Fitness Club`}
-                      className={`w-full h-full object-cover object-[${member.objectPosition}] transform group-hover:scale-110 transition-transform duration-500`}
+                      className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
+                      style={{ objectPosition: member.objectPosition }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
                   </div>

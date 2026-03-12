@@ -213,7 +213,8 @@ const Founder = () => {
             <img
               src={founderImagePath}
               alt="Nilima Patil, Founder of Crunch Fitness, a multi-medalist and certified trainer, standing confidently."
-              className="rounded-2xl w-full shadow-2xl object-cover object-[center_10%] max-h-[500px] border border-border hover:border-primary transition-colors duration-300"
+              className="rounded-2xl w-full shadow-2xl object-cover max-h-[500px] border border-border hover:border-primary transition-colors duration-300"
+              style={{ objectPosition: 'center 10%' }}
               loading="lazy"
             />
           </div>
@@ -292,7 +293,6 @@ const Founder = () => {
 
           {journeyEvents.map((event, index) => {
             const isEven = index % 2 === 0;
-            const animationDelay = `delay-${(index + 1) * 100}`;
 
             return (
               <div
@@ -301,19 +301,23 @@ const Founder = () => {
                 data-animation-id={`journey-event-${index}`}
                 className={`relative mb-20 flex items-center w-full ${isEven ? 'justify-start' : 'justify-end'}`}
               >
-                {/* Timeline Dot/Icon */}
+                {/* Timeline Dot */}
                 <div className={`absolute left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-primary z-10 border-2 border-background neon-glow ${inView[`journey-event-${index}`] ? 'scale-125' : 'scale-0'} transition-transform duration-500`}></div>
 
-                <div className={`w-full md:w-5/12 ${isEven ? 'md:pr-10' : 'md:pl-10'}
+                <div
+                  className={`w-full md:w-5/12 ${isEven ? 'md:pr-10' : 'md:pl-10'}
                    ${inView[`journey-event-${index}`] ? 'opacity-100 translate-x-0' : (isEven ? 'opacity-0 -translate-x-20' : 'opacity-0 translate-x-20')}
-                   transition-all duration-700 ease-out ${animationDelay}`}>
+                   transition-all duration-700 ease-out`}
+                  style={{ transitionDelay: `${(index + 1) * 100}ms` }}
+                >
                   <div className="glass-morphism p-6 rounded-2xl shadow-2xl border border-border hover:border-primary transition-colors duration-300">
                     <div className="relative w-full mb-4 overflow-hidden rounded-lg">
                       {(event.image || event.isMainImage) && (
                         <img
                           src={event.isMainImage ? founderImagePath : event.image}
                           alt={event.imageAlt}
-                          className={`w-full h-48 object-cover shadow-lg border border-border ${event.imagePosition || 'object-center'}`}
+                          className="w-full h-48 object-cover shadow-lg border border-border"
+                          style={{ objectPosition: event.imagePosition?.replace('object-[', '').replace(']', '') || 'center' }}
                           loading="lazy"
                         />
                       )}
