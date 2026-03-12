@@ -302,6 +302,33 @@ const Contact = () => {
                       )}
                     </button>
 
+                    {/* WhatsApp alternative */}
+                    <div className="flex items-center gap-3 my-1">
+                      <div className="flex-1 h-px bg-gray-700" />
+                      <span className="text-gray-500 text-xs">or</span>
+                      <div className="flex-1 h-px bg-gray-700" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = formData.name ? `Name: ${formData.name}` : '';
+                        const phone = formData.phone ? `\nPhone: ${formData.phone}` : '';
+                        const plan = formData.plan ? `\nInterested in: ${formData.plan}` : '';
+                        const msg = formData.message ? `\nMessage: ${formData.message}` : '';
+                        const text = encodeURIComponent(
+                          `Hi! I'd like to book a visit to Crunch Fitness.${name ? `\n${name}` : ''}${phone}${plan}${msg}`
+                        );
+                        window.open(`https://wa.me/919762904097?text=${text}`, '_blank');
+                      }}
+                      className="w-full py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] font-heading flex items-center justify-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-5 h-5 fill-white">
+                        <path d="M16.003 2C8.28 2 2 8.28 2 16.003c0 2.478.654 4.845 1.797 6.9L2 30l7.283-1.77A13.944 13.944 0 0016.003 30C23.72 30 30 23.72 30 16.003 30 8.28 23.72 2 16.003 2zm0 25.524a11.51 11.51 0 01-5.908-1.626l-.424-.253-4.324 1.05 1.082-4.198-.277-.432A11.47 11.47 0 014.476 16c0-6.355 5.172-11.524 11.527-11.524S27.527 9.645 27.527 16c0 6.354-5.172 11.524-11.524 11.524zm6.32-8.631c-.346-.173-2.048-1.01-2.366-1.127-.317-.115-.548-.173-.779.173-.23.346-.892 1.127-1.094 1.358-.201.23-.403.26-.749.087-.346-.173-1.46-.538-2.781-1.716-1.028-.917-1.722-2.05-1.924-2.396-.202-.346-.021-.533.152-.705.156-.154.346-.403.519-.605.173-.202.23-.346.346-.577.115-.23.058-.432-.029-.605-.087-.173-.779-1.878-1.068-2.57-.28-.674-.565-.583-.779-.594l-.663-.011c-.23 0-.605.086-.923.432-.317.346-1.21 1.183-1.21 2.885s1.239 3.346 1.41 3.577c.173.23 2.44 3.72 5.912 5.216.826.357 1.47.57 1.972.729.829.264 1.583.226 2.179.137.665-.1 2.048-.837 2.337-1.645.289-.807.289-1.499.202-1.645-.086-.144-.317-.23-.663-.403z" />
+                      </svg>
+                      BOOK VIA WHATSAPP
+                    </button>
+
                     {status === 'error' && (
                       <p className="text-center text-red-400 text-sm" role="alert">
                         Failed to send. Please try again or email us directly at Crunchfitness680@gmail.com

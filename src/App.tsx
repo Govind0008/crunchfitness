@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
+import PageTransition from "@/components/PageTransition";
 
 // Code-split every page — only the current route's bundle is loaded
 const Index    = lazy(() => import("./pages/Index"));
@@ -33,16 +34,18 @@ const App = () => (
       <BrowserRouter>
         <ScrollToTop />
         <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/"          element={<Index />} />
-            <Route path="/about-us"  element={<AboutUs />} />
-            <Route path="/team"      element={<Team />} />
-            <Route path="/founders"  element={<Founder />} />
-            <Route path="/gallery"   element={<Gallery />} />
-            <Route path="/plans"     element={<Plans />} />
-            <Route path="/contact"   element={<Contact />} />
-            <Route path="*"          element={<NotFound />} />
-          </Routes>
+          <PageTransition>
+            <Routes>
+              <Route path="/"          element={<Index />} />
+              <Route path="/about-us"  element={<AboutUs />} />
+              <Route path="/team"      element={<Team />} />
+              <Route path="/founders"  element={<Founder />} />
+              <Route path="/gallery"   element={<Gallery />} />
+              <Route path="/plans"     element={<Plans />} />
+              <Route path="/contact"   element={<Contact />} />
+              <Route path="*"          element={<NotFound />} />
+            </Routes>
+          </PageTransition>
         </Suspense>
       </BrowserRouter>
     </TooltipProvider>
