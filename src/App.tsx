@@ -7,6 +7,14 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import OfferBanner from "@/components/OfferBanner";
+import { useLocation } from "react-router-dom";
+
+const OfferBannerWrapper = () => {
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/admin')) return null;
+  return <OfferBanner />;
+};
 
 // Code-split every page — only the current route's bundle is loaded
 const Index          = lazy(() => import("./pages/Index"));
@@ -38,6 +46,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <ScrollToTop />
+        <OfferBannerWrapper />
         <Suspense fallback={<PageLoader />}>
           <PageTransition>
             <Routes>

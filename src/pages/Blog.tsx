@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Clock, Calendar, Tag, ArrowRight } from 'lucide-react';
 import Navigation from '../components/Navigation';
@@ -102,11 +102,11 @@ const Blog = () => {
   useEffect(() => {
     const q = query(
       collection(db, 'posts'),
-      where('published', '==', true),
       orderBy('publishedAt', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost)));
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost));
+      setPosts(all.filter((p) => p.published));
       setLoading(false);
     });
     return unsub;

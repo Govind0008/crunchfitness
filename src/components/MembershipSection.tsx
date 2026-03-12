@@ -1,7 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { Check, Star, Zap, Crown, Gift, Sparkles } from 'lucide-react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
-const plans = [
+const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Sparkles, Zap, Gift, Crown, Star,
+};
+
+interface FirestorePlan {
+  id: string;
+  order: number;
+  duration: string;
+  price: string;
+  originalPrice: string;
+  description: string;
+  features: string[];
+  savings: string;
+  badge: string;
+  isPopular: boolean;
+  gradient: string;
+  iconName: string;
+}
+
+const STATIC_PLANS = [
   {
     name: '1 Day',
     price: '₹300',
@@ -66,6 +87,8 @@ const plans = [
 
 const MembershipSection = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const [firestorePlans, setFirestorePlans] = useState<FirestorePlan[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -78,6 +101,16 @@ const MembershipSection = () => {
     if (sectionRef.current) observer.observe(sectionRef.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
+    return onSnapshot(q, (snap) => {
+      setFirestorePlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestorePlan)));
+      setLoadingPlans(false);
+    });
+  }, []);
+
+  const usingFirestore = !loadingPlans && firestorePlans.length > 0;
 
   const scrollToContact = () => {
     document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
@@ -120,20 +153,26 @@ const MembershipSection = () => {
 
         {/* ── Cards grid ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5 items-stretch">
-          {plans.map((plan, index) => {
-            const Icon = plan.icon;
+          {(usingFirestore ? firestorePlans : STATIC_PLANS).map((plan, index) => {
+            const gradient = plan.gradient;
+            const isPopular = plan.isPopular;
+            const Icon = usingFirestore
+              ? (ICON_MAP[(plan as FirestorePlan).iconName] ?? Sparkles)
+              : (plan as typeof STATIC_PLANS[0]).icon;
+            const name = usingFirestore ? (plan as FirestorePlan).duration : (plan as typeof STATIC_PLANS[0]).name;
+            const features: string[] = Array.isArray(plan.features) ? plan.features as string[] : [];
 
             return (
               // pt-6 on every wrapper reserves uniform badge space above all cards
               <div
-                key={plan.name}
+                key={usingFirestore ? (plan as FirestorePlan).id : name}
                 className={`relative group flex flex-col pt-6 transition-all duration-700 ${
                   isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                } ${plan.isPopular ? 'sm:col-span-2 xl:col-span-1' : ''}`}
+                } ${isPopular ? 'sm:col-span-2 xl:col-span-1' : ''}`}
                 style={{ transitionDelay: `${index * 110}ms` }}
               >
                 {/* Popular badge — sits inside the pt-6 space, never shifts card content */}
-                {plan.isPopular && (
+                {isPopular && (
                   <div className="absolute top-0 inset-x-0 flex justify-center z-20">
                     <span className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black text-[11px] font-black px-4 py-1.5 rounded-full shadow-lg shadow-orange-500/40 tracking-wide">
                       🔥 MOST POPULAR
@@ -143,19 +182,19 @@ const MembershipSection = () => {
 
                 {/* Hover glow layer */}
                 <div
-                  className={`absolute inset-x-0 bottom-0 top-6 rounded-[26px] bg-gradient-to-r ${plan.gradient} opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500`}
+                  className={`absolute inset-x-0 bottom-0 top-6 rounded-[26px] bg-gradient-to-r ${gradient} opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500`}
                 />
 
                 {/* Card — identical structure for all plans, no conditional padding */}
                 <div
                   className={`relative flex flex-col flex-1 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:-translate-y-1 ${
-                    plan.isPopular
+                    isPopular
                       ? 'border border-yellow-400/50 bg-gray-900 shadow-2xl shadow-yellow-500/10'
                       : 'border border-gray-800 bg-gray-900 group-hover:border-gray-700'
                   }`}
                 >
                   {/* Coloured top stripe */}
-                  <div className={`h-[3px] w-full bg-gradient-to-r ${plan.gradient} flex-shrink-0`} />
+                  <div className={`h-[3px] w-full bg-gradient-to-r ${gradient} flex-shrink-0`} />
 
                   {/* Glass sheen */}
                   <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
@@ -165,12 +204,12 @@ const MembershipSection = () => {
                     {/* Icon + badge row */}
                     <div className="flex items-start justify-between mb-5">
                       <div
-                        className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center shadow-lg flex-shrink-0`}
+                        className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg flex-shrink-0`}
                       >
                         <Icon size={20} className="text-white" />
                       </div>
                       <span
-                        className={`text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r ${plan.gradient} text-white shadow-sm`}
+                        className={`text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r ${gradient} text-white shadow-sm`}
                       >
                         {plan.badge}
                       </span>
@@ -178,7 +217,7 @@ const MembershipSection = () => {
 
                     {/* Plan name */}
                     <h3 className="text-lg font-bold text-white mb-1 leading-snug">
-                      {plan.name}
+                      {name}
                     </h3>
 
                     {/* Description */}
@@ -194,7 +233,7 @@ const MembershipSection = () => {
                         </span>
                       )}
                       <div
-                        className={`text-3xl font-black bg-gradient-to-r ${plan.gradient} bg-clip-text text-transparent`}
+                        className={`text-3xl font-black bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}
                       >
                         {plan.price}
                       </div>
@@ -210,10 +249,10 @@ const MembershipSection = () => {
 
                     {/* Features — grows to fill remaining space */}
                     <ul className="flex-1 space-y-2.5 mb-6">
-                      {plan.features.map((feature, i) => (
+                      {features.map((feature, i) => (
                         <li key={i} className="flex items-center gap-2.5 text-sm text-gray-300">
                           <span
-                            className={`w-[18px] h-[18px] rounded-full bg-gradient-to-br ${plan.gradient} flex items-center justify-center flex-shrink-0`}
+                            className={`w-[18px] h-[18px] rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}
                           >
                             <Check size={10} className="text-white" strokeWidth={3} />
                           </span>
@@ -225,11 +264,11 @@ const MembershipSection = () => {
                     {/* CTA — always pinned to bottom */}
                     <button
                       onClick={scrollToContact}
-                      className={`mt-auto w-full py-3 rounded-2xl text-sm font-bold text-white bg-gradient-to-r ${plan.gradient} transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-black/30 active:scale-[0.97] ${
-                        plan.isPopular ? 'shadow-md shadow-orange-500/20' : ''
+                      className={`mt-auto w-full py-3 rounded-2xl text-sm font-bold text-white bg-gradient-to-r ${gradient} transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-black/30 active:scale-[0.97] ${
+                        isPopular ? 'shadow-md shadow-orange-500/20' : ''
                       }`}
                     >
-                      {plan.isPopular ? '🚀 JOIN NOW' : 'GET STARTED'}
+                      {isPopular ? '🚀 JOIN NOW' : 'GET STARTED'}
                     </button>
                   </div>
                 </div>

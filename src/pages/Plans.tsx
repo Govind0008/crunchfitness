@@ -3,11 +3,34 @@ import {
   Check, Star, Shield, Users, Zap, Award, ArrowRight,
   Clock, Target, TrendingUp, Sparkles, Crown, Gift,
 } from 'lucide-react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { useNavigate } from 'react-router-dom';
 
-const membershipPlans = [
+const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Sparkles, Zap, Gift, Crown, Star,
+};
+
+interface FirestorePlan {
+  id: string;
+  order: number;
+  duration: string;
+  price: string;
+  originalPrice: string;
+  description: string;
+  features: string[];
+  idealFor: string;
+  savings: string;
+  badge: string;
+  isPopular: boolean;
+  gradient: string;
+  iconName: string;
+  ctaText: string;
+}
+
+const STATIC_PLANS = [
   {
     id: 0,
     duration: '1 Day',
@@ -149,6 +172,8 @@ const whyUs = [
 
 const ProfessionalPlans = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const [firestorePlans, setFirestorePlans] = useState<FirestorePlan[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -161,8 +186,19 @@ const ProfessionalPlans = () => {
     return () => observer.disconnect();
   }, []);
 
-  const goToContact = (planId: number) => {
-    navigate('/contact', { state: { selectedPlan: membershipPlans[planId].duration } });
+  useEffect(() => {
+    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
+    return onSnapshot(q, (snap) => {
+      setFirestorePlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestorePlan)));
+      setLoadingPlans(false);
+    });
+  }, []);
+
+  // Use Firestore plans if loaded & non-empty, otherwise static fallback
+  const usingFirestore = !loadingPlans && firestorePlans.length > 0;
+
+  const goToContact = (duration: string) => {
+    navigate('/contact', { state: { selectedPlan: duration } });
   };
 
   return (
@@ -220,21 +256,25 @@ const ProfessionalPlans = () => {
             </p>
           </div>
 
-          {/* Cards — pt-6 on every wrapper reserves uniform space for the popular badge */}
+          {/* Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5 items-stretch">
-            {membershipPlans.map((plan, index) => {
-              const Icon = plan.icon;
+            {(usingFirestore ? firestorePlans : STATIC_PLANS).map((plan, index) => {
+              const gradient = (plan as FirestorePlan).gradient ?? (plan as typeof STATIC_PLANS[0]).gradient;
+              const isPopular = plan.isPopular;
+              const Icon = usingFirestore
+                ? (ICON_MAP[(plan as FirestorePlan).iconName] ?? Sparkles)
+                : (plan as typeof STATIC_PLANS[0]).icon;
+              const features: string[] = Array.isArray(plan.features) ? plan.features as string[] : [];
+
               return (
-                // pt-6 uniform on all wrappers so card tops align regardless of badge
                 <div
-                  key={plan.id}
+                  key={usingFirestore ? (plan as FirestorePlan).id : (plan as typeof STATIC_PLANS[0]).id}
                   className={`relative group flex flex-col pt-6 transition-all duration-700 ${
                     isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                  } ${plan.isPopular ? 'sm:col-span-2 xl:col-span-1' : ''}`}
+                  } ${isPopular ? 'sm:col-span-2 xl:col-span-1' : ''}`}
                   style={{ transitionDelay: `${index * 110}ms` }}
                 >
-                  {/* Badge — anchored to top-0 of the pt-6 space */}
-                  {plan.isPopular && (
+                  {isPopular && (
                     <div className="absolute top-0 inset-x-0 flex justify-center z-20">
                       <span className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black text-[11px] font-black px-4 py-1.5 rounded-full shadow-lg shadow-orange-500/30 tracking-wide">
                         🔥 MOST POPULAR
@@ -242,47 +282,34 @@ const ProfessionalPlans = () => {
                     </div>
                   )}
 
-                  {/* Hover glow */}
-                  <div className={`absolute inset-x-0 bottom-0 top-6 rounded-[26px] bg-gradient-to-r ${plan.gradient} opacity-0 group-hover:opacity-15 blur-xl transition-opacity duration-500`} />
+                  <div className={`absolute inset-x-0 bottom-0 top-6 rounded-[26px] bg-gradient-to-r ${gradient} opacity-0 group-hover:opacity-15 blur-xl transition-opacity duration-500`} />
 
-                  {/* Card */}
-                  <div
-                    className={`relative flex flex-col flex-1 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:-translate-y-1 ${
-                      plan.isPopular
-                        ? 'border border-yellow-400/50 bg-gray-900 shadow-2xl shadow-yellow-500/10'
-                        : 'border border-gray-800 bg-gray-900 group-hover:border-gray-700'
-                    }`}
-                  >
-                    {/* Coloured top stripe */}
-                    <div className={`h-[3px] w-full bg-gradient-to-r ${plan.gradient} flex-shrink-0`} />
-
-                    {/* Glass sheen */}
+                  <div className={`relative flex flex-col flex-1 rounded-3xl overflow-hidden transition-transform duration-300 group-hover:-translate-y-1 ${
+                    isPopular
+                      ? 'border border-yellow-400/50 bg-gray-900 shadow-2xl shadow-yellow-500/10'
+                      : 'border border-gray-800 bg-gray-900 group-hover:border-gray-700'
+                  }`}>
+                    <div className={`h-[3px] w-full bg-gradient-to-r ${gradient} flex-shrink-0`} />
                     <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
 
                     <div className="flex flex-col flex-1 p-6">
-
-                      {/* Icon + badge pill */}
                       <div className="flex items-start justify-between mb-5">
-                        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center shadow-lg flex-shrink-0`}>
+                        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg flex-shrink-0`}>
                           <Icon size={20} className="text-white" />
                         </div>
-                        <span className={`text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r ${plan.gradient} text-white`}>
+                        <span className={`text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r ${gradient} text-white`}>
                           {plan.badge}
                         </span>
                       </div>
 
-                      {/* Name + description */}
                       <h3 className="text-lg font-bold font-heading text-white mb-1">{plan.duration}</h3>
                       <p className="text-gray-500 text-xs font-body mb-5 leading-relaxed">{plan.description}</p>
 
-                      {/* Price */}
                       <div className="mb-5">
                         {plan.originalPrice && (
-                          <span className="text-gray-600 line-through text-sm block mb-0.5">
-                            {plan.originalPrice}
-                          </span>
+                          <span className="text-gray-600 line-through text-sm block mb-0.5">{plan.originalPrice}</span>
                         )}
-                        <div className={`text-3xl font-black font-heading bg-gradient-to-r ${plan.gradient} bg-clip-text text-transparent`}>
+                        <div className={`text-3xl font-black font-heading bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
                           {plan.price}
                         </div>
                         {plan.savings && (
@@ -292,14 +319,12 @@ const ProfessionalPlans = () => {
                         )}
                       </div>
 
-                      {/* Divider */}
                       <div className="h-px bg-gray-800 mb-4" />
 
-                      {/* Features — flex-1 so CTA is always pinned to bottom */}
                       <ul className="flex-1 space-y-2.5 mb-4">
-                        {plan.features.map((feature, i) => (
+                        {features.map((feature, i) => (
                           <li key={i} className="flex items-start gap-2.5 text-sm font-body text-gray-300">
-                            <span className={`mt-0.5 w-[17px] h-[17px] rounded-full bg-gradient-to-br ${plan.gradient} flex items-center justify-center flex-shrink-0`}>
+                            <span className={`mt-0.5 w-[17px] h-[17px] rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
                               <Check size={10} className="text-white" strokeWidth={3} />
                             </span>
                             {feature}
@@ -307,20 +332,14 @@ const ProfessionalPlans = () => {
                         ))}
                       </ul>
 
-                      {/* Ideal for */}
                       <div className="bg-gray-800/60 rounded-xl px-3 py-2.5 mb-5">
-                        <span className="text-[10px] font-bold font-heading text-gray-500 uppercase tracking-wider block mb-0.5">
-                          Perfect for
-                        </span>
+                        <span className="text-[10px] font-bold font-heading text-gray-500 uppercase tracking-wider block mb-0.5">Perfect for</span>
                         <span className="text-gray-300 text-xs font-body">{plan.idealFor}</span>
                       </div>
 
-                      {/* CTA */}
                       <button
-                        onClick={() => goToContact(plan.id)}
-                        className={`mt-auto w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white bg-gradient-to-r ${plan.gradient} transition-all duration-200 hover:opacity-90 hover:shadow-lg active:scale-[0.97] group/btn ${
-                          plan.isPopular ? 'shadow-md shadow-orange-500/20' : ''
-                        }`}
+                        onClick={() => goToContact(plan.duration)}
+                        className={`mt-auto w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white bg-gradient-to-r ${gradient} transition-all duration-200 hover:opacity-90 hover:shadow-lg active:scale-[0.97] group/btn ${isPopular ? 'shadow-md shadow-orange-500/20' : ''}`}
                       >
                         {plan.ctaText}
                         <ArrowRight size={15} className="group-hover/btn:translate-x-0.5 transition-transform" />
