@@ -971,8 +971,10 @@ Just type your question naturally — like "I'm a beginner, how do I start?" and
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isBotTyping]);
 
-  // Auto-open on first visit
+  // Auto-open on first visit — desktop only (skip on mobile to avoid covering the screen)
   useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) return;
     const hasVisited = sessionStorage.getItem('hasVisitedChatbot');
     if (!hasVisited) {
       setTimeout(() => setIsOpen(true), 1000);
@@ -1025,7 +1027,7 @@ Just type your question naturally — like "I'm a beginner, how do I start?" and
         <div
           className="flex flex-col rounded-2xl overflow-hidden border border-gray-700/60 shadow-2xl w-[92vw] max-w-[400px]"
           style={{
-            height: 'min(600px, 80vh)',
+            height: 'min(600px, 60vh)',
             background: 'linear-gradient(160deg, #0f0f0f 0%, #111827 100%)',
             boxShadow: '0 25px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(16,185,129,0.15)',
             animation: 'chatSlideUp 0.35s cubic-bezier(0.34,1.56,0.64,1) both'
