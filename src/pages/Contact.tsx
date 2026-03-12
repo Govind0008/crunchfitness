@@ -180,7 +180,7 @@ const Contact = () => {
               </div>
 
               {/* Map */}
-              <div className="mt-10 rounded-2xl overflow-hidden border border-gray-800 h-60">
+              <div className="mt-10 rounded-2xl overflow-hidden border border-gray-800" style={{ height: '320px' }}>
                 <iframe
                   src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3781.425823159867!2d73.7674834742727!3d18.599907366747868!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bc2b979fd8fdac5%3A0xd27c5a7f4bc4a76e!2sCrunch%20Fitness%20Club!5e0!3m2!1sen!2sin!4v1748722317938!5m2!1sen!2sin"
                   width="100%" height="100%"
@@ -190,6 +190,16 @@ const Contact = () => {
                   title="Crunch Fitness Club location"
                 />
               </div>
+              {/* Get Directions button */}
+              <a
+                href="https://maps.google.com/?q=Crunch+Fitness+Club,+Pink+City+Road,+Wakad,+Pune"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 hover:border-green-500/60 text-green-400 rounded-xl text-sm font-semibold transition-all duration-200"
+              >
+                <MapPin size={15} />
+                Open in Google Maps
+              </a>
             </div>
 
             {/* Form */}
