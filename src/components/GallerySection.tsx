@@ -9,7 +9,7 @@ const galleryImages = [
   { id: 5, src: "https://images.unsplash.com/photo-1506629905607-b9f96c504ce0?auto=format&fit=crop&w=800&q=75", alt: "Energetic group fitness class at Crunch Fitness Club, Wakad", category: "Classes"   },
   { id: 6, src: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=800&q=75", alt: "Recovery and wellness area for post-workout therapy at Crunch Fitness", category: "Recovery" },
 ];
-
+   
 const categories = ["All", "Equipment", "Cardio", "Training", "Weights", "Classes", "Recovery"];
 
 // Simple image card with loading skeleton
