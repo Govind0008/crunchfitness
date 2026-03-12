@@ -87,14 +87,14 @@ const Footer = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="w-5 h-5 text-green-400 flex-shrink-0" />
-                  <a href="tel:+918888888888" className="text-gray-400 font-rajdhani text-sm hover:text-green-400 transition-colors">
-                    +91 88888 88888
+                  <a href="tel:+918483048363" className="text-gray-400 font-rajdhani text-sm hover:text-green-400 transition-colors">
+                    +91 84830 48363
                   </a>
                 </div>
                 <div className="flex items-center gap-3">
                   <Mail className="w-5 h-5 text-green-400 flex-shrink-0" />
-                  <a href="mailto:info@crunchfitness.fit" className="text-gray-400 font-rajdhani text-sm hover:text-green-400 transition-colors">
-                    info@crunchfitness.fit
+                  <a href="mailto:Crunchfitness680@gmail.com" className="text-gray-400 font-rajdhani text-sm hover:text-green-400 transition-colors">
+                    Crunchfitness680@gmail.com
                   </a>
                 </div>
               </div>
@@ -106,8 +106,9 @@ const Footer = () => {
               <div className="flex items-start gap-3 mb-6">
                 <Clock className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
                 <div className="text-gray-400 font-rajdhani text-sm space-y-1">
-                  <div>Mon – Fri: 5:00 AM – 11:00 PM</div>
-                  <div>Sat – Sun: 6:00 AM – 10:00 PM</div>
+                  <div>Mon – Fri: 6:00 AM – 10:00 PM</div>
+                  <div>Saturday: 6:00 AM – 10:00 PM</div>
+                  <div>Sunday: 6:00 AM – 12:00 PM</div>
                 </div>
               </div>
 

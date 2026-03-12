@@ -142,8 +142,7 @@ const Contact = () => {
                     title: 'Phone',
                     content: (
                       <>
-                        <a href="tel:+918888888888" className="block hover:text-green-400 transition-colors">+91 88888 88888</a>
-                        <a href="tel:+917777777777" className="block hover:text-green-400 transition-colors">+91 77777 77777</a>
+                        <a href="tel:+918483048363" className="block hover:text-green-400 transition-colors">+91 84830 48363</a>
                       </>
                     ),
                   },
@@ -152,8 +151,7 @@ const Contact = () => {
                     title: 'Email',
                     content: (
                       <>
-                        <a href="mailto:info@crunchfitness.fit" className="block hover:text-green-400 transition-colors">info@crunchfitness.fit</a>
-                        <a href="mailto:support@crunchfitness.fit" className="block hover:text-green-400 transition-colors">support@crunchfitness.fit</a>
+                        <a href="mailto:Crunchfitness680@gmail.com" className="block hover:text-green-400 transition-colors">Crunchfitness680@gmail.com</a>
                       </>
                     ),
                   },
@@ -162,9 +160,9 @@ const Contact = () => {
                     title: 'Hours',
                     content: (
                       <div className="space-y-1">
-                        <p><time dateTime="Mo-Fr 05:00-23:00">Monday – Friday: 5:00 AM – 11:00 PM</time></p>
+                        <p><time dateTime="Mo-Fr 06:00-22:00">Monday – Friday: 6:00 AM – 10:00 PM</time></p>
                         <p><time dateTime="Sa 06:00-22:00">Saturday: 6:00 AM – 10:00 PM</time></p>
-                        <p><time dateTime="Su 07:00-21:00">Sunday: 7:00 AM – 9:00 PM</time></p>
+                        <p><time dateTime="Su 06:00-12:00">Sunday: 6:00 AM – 12:00 PM</time></p>
                       </div>
                     ),
                   },
@@ -296,7 +294,7 @@ const Contact = () => {
 
                     {status === 'error' && (
                       <p className="text-center text-red-400 text-sm" role="alert">
-                        Failed to send. Please try again or email us directly at info@crunchfitness.fit
+                        Failed to send. Please try again or email us directly at Crunchfitness680@gmail.com
                       </p>
                     )}
                   </form>

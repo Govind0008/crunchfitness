@@ -88,8 +88,9 @@ const EnhancedChatbot: React.FC = () => {
       }
     },
     timings: {
-      weekdays: '5:00 AM - 11:00 PM',
-      weekends: '6:00 AM - 10:00 PM',
+      weekdays: '6:00 AM - 10:00 PM',
+      saturday: '6:00 AM - 10:00 PM',
+      sunday: '6:00 AM - 12:00 PM (Noon)',
       peakHours: '6:00 AM - 9:00 AM, 6:00 PM - 9:00 PM',
       offPeakHours: '9:00 AM - 6:00 PM'
     },
@@ -100,10 +101,10 @@ const EnhancedChatbot: React.FC = () => {
       parking: 'Free parking available'
     },
     contact: {
-      phone: '+91-9876543210',
-      email: 'info@crunchfitness.fit',
+      phone: '+91-8483048363',
+      email: 'Crunchfitness680@gmail.com',
       website: 'https://www.crunchfitness.fit/',
-      whatsapp: '+91-9876543210'
+      whatsapp: '+91-9762904097'
     },
     trainers: [
       {
@@ -508,23 +509,29 @@ We're easily accessible and in the heart of Wakad! Need directions or want to kn
       timings: () => {
         const now = new Date();
         const currentHour = now.getHours();
-        const isWeekend = now.getDay() === 0 || now.getDay() === 6;
-        
+        const day = now.getDay(); // 0=Sun, 6=Sat
+
         let currentStatus = '';
-        if (isWeekend) {
+        if (day === 0) {
+          // Sunday: 6 AM – 12 PM (Noon)
+          currentStatus = (currentHour >= 6 && currentHour < 12) ? '🟢 **Currently OPEN**' : '🔴 **Currently CLOSED**';
+        } else if (day === 6) {
+          // Saturday: 6 AM – 10 PM
           currentStatus = (currentHour >= 6 && currentHour < 22) ? '🟢 **Currently OPEN**' : '🔴 **Currently CLOSED**';
         } else {
-          currentStatus = (currentHour >= 5 && currentHour < 23) ? '🟢 **Currently OPEN**' : '🔴 **Currently CLOSED**';
+          // Mon–Fri: 6 AM – 10 PM
+          currentStatus = (currentHour >= 6 && currentHour < 22) ? '🟢 **Currently OPEN**' : '🔴 **Currently CLOSED**';
         }
 
         return `⏰ **Gym Timings:**
 
-**Weekdays:** ${gymData.timings.weekdays}
-**Weekends:** ${gymData.timings.weekends}
+**Mon – Fri:** ${gymData.timings.weekdays}
+**Saturday:** ${gymData.timings.saturday}
+**Sunday:** ${gymData.timings.sunday}
 
 ${currentStatus}
 
-**💡 Pro Tip:** 
+**💡 Pro Tip:**
 • **Peak Hours:** ${gymData.timings.peakHours} (busier)
 • **Off-Peak:** ${gymData.timings.offPeakHours} (less crowded)
 
