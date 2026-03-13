@@ -1272,7 +1272,7 @@ const TrainerDashboard = () => {
         )}
       </div>
         </main>
-      </div>{/* end main content */}
+      </div>
 
       {/* ═══════════════════ CLIENT FORM MODAL ═══════════════════ */}
       {showClientForm && (

@@ -1150,7 +1150,7 @@ const ClientDashboard = () => {
           </div>
         </div>
       )}
-    </div>{/* end root */}
+    </div>
   );
 };
 
