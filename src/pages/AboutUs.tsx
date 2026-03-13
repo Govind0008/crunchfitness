@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Users, Target, Award, Zap } from 'lucide-react';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 
 // Animates a number from 0 → target when `active` becomes true
@@ -69,7 +68,6 @@ const AboutUs = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Navigation />
 
       {/* Hero Section */}
       <section className="pt-32 pb-20 relative overflow-hidden">

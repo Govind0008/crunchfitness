@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { useNavigate } from 'react-router-dom';
 
@@ -203,7 +202,6 @@ const ProfessionalPlans = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Navigation />
 
       {/* ── Hero header ── */}
       <div className="relative bg-black border-b border-gray-800 pt-24 pb-14 overflow-hidden">

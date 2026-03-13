@@ -3,7 +3,6 @@ import { useParams, Link } from 'react-router-dom';
 import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Clock, Calendar, Tag, ArrowLeft, Share2 } from 'lucide-react';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 
 interface BlogPost {
@@ -78,7 +77,6 @@ const BlogPost = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Navigation />
 
       {/* Cover image hero */}
       <div className="relative h-[50vh] min-h-[320px] overflow-hidden">

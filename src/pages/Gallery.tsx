@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { ZoomIn, X, Trophy, Target, Users, ArrowRight } from 'lucide-react';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
@@ -118,7 +117,6 @@ const Gallery = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Navigation />
 
       {/* Hero */}
       <section

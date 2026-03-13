@@ -1,5 +1,4 @@
 
-import Navigation from '../components/Navigation';
 import HeroSection from '../components/HeroSection';
 import MembershipSection from '../components/MembershipSection';
 import GallerySection from '../components/GallerySection';
@@ -20,7 +19,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-black text-white overflow-x-hidden">
-      <Navigation />
       <main>
         <HeroSection />
         <div ref={galleryRef} className="reveal"><GallerySection /></div>

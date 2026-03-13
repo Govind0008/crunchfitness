@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,19 +7,31 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import Navigation from "@/components/Navigation";
 import OfferBanner from "@/components/OfferBanner";
 import Chatbot from "@/components/Chatbot";
 import WhatsAppButton from "@/components/WhatsAppButton";
 
-// Hide offer banner and floating buttons on admin pages
+// Rendered outside PageTransition so position:fixed is always relative to the viewport
 const GlobalUI = () => {
   const { pathname } = useLocation();
-  if (pathname.startsWith('/admin')) return null;
+  const isAdmin = pathname.startsWith('/admin');
+  const [bannerVisible, setBannerVisible] = useState(false);
+  const handleBannerVisibility = useCallback((v: boolean) => {
+    setBannerVisible(v);
+    // navbar h-28 = 7rem; banner h-9 = 2.25rem
+    document.documentElement.style.setProperty(
+      '--page-top',
+      v ? '9.25rem' : '7rem'
+    );
+  }, []);
+
   return (
     <>
-      <OfferBanner />
-      <Chatbot />
-      <WhatsAppButton />
+      <Navigation bannerVisible={bannerVisible} />
+      {!isAdmin && <OfferBanner onVisibilityChange={handleBannerVisibility} />}
+      {!isAdmin && <Chatbot />}
+      {!isAdmin && <WhatsAppButton />}
     </>
   );
 };

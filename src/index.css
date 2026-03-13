@@ -5,6 +5,7 @@
 
 @layer base {
   :root {
+    --page-top: 7rem; /* navbar h-28 = 7rem; increases to 9.25rem when offer banner is visible */
     --background: 0 0% 0%; /* Deep black background */
     --foreground: 0 0% 95%; /* Near-white text for contrast */
     --card: 0 0% 5%; /* Very dark gray for card backgrounds, slight tint */
@@ -338,4 +339,16 @@
 
 .page-transition {
   animation: pageEnter 0.35s ease-out both;
+  padding-top: var(--page-top);
+  transition: padding-top 0.3s ease;
+}
+
+/* ── Offer banner marquee ───────────────────────────────────────────────────── */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 28s linear infinite;
+  will-change: transform;
 }

@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Award, Dumbbell, Flame, Star, PlayCircle, BookOpen, Globe } from 'lucide-react';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { Helmet } from 'react-helmet';
 
@@ -174,7 +173,6 @@ const Founder = () => {
         <meta property="og:type" content="website" />
       </Helmet>
 
-      <Navigation />
 
       {/* Hero Section - IMMERSIVE IMAGE BACKGROUND & TEXT REVEAL */}
       <section

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Clock, Calendar, Tag, ArrowRight } from 'lucide-react';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
@@ -118,7 +117,6 @@ const Blog = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Navigation />
 
       {/* Hero */}
       <section className="pt-32 pb-16 relative overflow-hidden">

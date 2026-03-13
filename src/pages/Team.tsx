@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Instagram, Crown } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 import { Helmet } from 'react-helmet';
 
@@ -187,7 +186,6 @@ const Team = () => {
       <Helmet>
         <title>Our Team | Crunch Fitness Club</title>
       </Helmet>
-      <Navigation />
 
       {/* Hero */}
       <section className="relative min-h-[60vh] flex items-center justify-center overflow-hidden" aria-labelledby="team-hero-heading">
