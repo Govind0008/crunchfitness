@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  collection, addDoc, deleteDoc, updateDoc, where,
+  collection, addDoc, deleteDoc, updateDoc, where, getDocs,
   doc, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, getAuth } from 'firebase/auth';
@@ -523,8 +523,20 @@ const AdminDashboard = () => {
 
   const handleDeleteMember = async (member: TeamMember) => {
     try {
-      await deleteDoc(doc(db, 'teamMembers', member.id));
-      setDeleteMemberConfirm(null); showToast('Member removed.');
+      // Cascade: delete duties, class sessions, and trainer account linked to this member
+      const [dutiesSnap, sessionsSnap, rolesSnap] = await Promise.all([
+        getDocs(query(collection(db, 'duties'),       where('trainerId', '==', member.id))),
+        getDocs(query(collection(db, 'classSessions'), where('trainerId', '==', member.id))),
+        getDocs(query(collection(db, 'userRoles'),    where('trainerId', '==', member.id))),
+      ]);
+      await Promise.all([
+        ...dutiesSnap.docs.map((d)   => deleteDoc(d.ref)),
+        ...sessionsSnap.docs.map((d) => deleteDoc(d.ref)),
+        ...rolesSnap.docs.map((d)    => deleteDoc(d.ref)),
+        deleteDoc(doc(db, 'teamMembers', member.id)),
+      ]);
+      setDeleteMemberConfirm(null);
+      showToast('Member and all associated data removed.');
     } catch { showToast('Error deleting member.'); }
   };
 
@@ -743,8 +755,21 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteTrainerAccount = async (uid: string) => {
-    try { await deleteDoc(doc(db, 'userRoles', uid)); showToast('Account removed from portal.'); }
-    catch { showToast('Error removing account.'); }
+    try {
+      const roleDoc = trainerAccounts.find((a) => a.id === uid);
+      const trainerId = roleDoc?.trainerId;
+      const deletes: Promise<void>[] = [deleteDoc(doc(db, 'userRoles', uid))];
+      if (trainerId) {
+        const [dutiesSnap, sessionsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'duties'),        where('trainerId', '==', trainerId))),
+          getDocs(query(collection(db, 'classSessions'), where('trainerId', '==', trainerId))),
+        ]);
+        dutiesSnap.docs.forEach((d)   => deletes.push(deleteDoc(d.ref)));
+        sessionsSnap.docs.forEach((d) => deletes.push(deleteDoc(d.ref)));
+      }
+      await Promise.all(deletes);
+      showToast('Trainer account and schedule data removed.');
+    } catch { showToast('Error removing account.'); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
