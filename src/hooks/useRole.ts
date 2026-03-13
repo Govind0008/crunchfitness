@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useAuth } from './useAuth';
+import { getStoredUser, type User } from '../lib/api';
 
 export type UserRole = 'admin' | 'trainer' | 'client' | null;
 
@@ -14,21 +12,28 @@ export interface RoleDoc {
   email?: string;
 }
 
+function userToRoleDoc(u: User | null): RoleDoc | null {
+  if (!u) return null;
+  return {
+    role: u.role,
+    trainerId: u.trainerId,
+    clientId:  u.clientId,
+    name:      u.name,
+    email:     u.email,
+  };
+}
+
 export function useRole() {
-  const { user, loading: authLoading } = useAuth();
-  const [role, setRole] = useState<RoleDoc | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(getStoredUser);
+  const loading = false; // JWT is synchronous — no network round-trip needed
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) { setRole(null); setLoading(false); return; }
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'cf_user') setUser(getStoredUser());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
-    const unsub = onSnapshot(doc(db, 'userRoles', user.uid), (snap) => {
-      setRole(snap.exists() ? (snap.data() as RoleDoc) : null);
-      setLoading(false);
-    });
-    return unsub;
-  }, [user, authLoading]);
-
-  return { role, loading, user };
+  return { role: userToRoleDoc(user), loading, user };
 }

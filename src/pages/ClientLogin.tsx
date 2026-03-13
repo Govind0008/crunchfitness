@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { apiLogin } from '../lib/api';
 import { Lock, Mail, Eye, EyeOff, UserCheck } from 'lucide-react';
 
 const ClientLogin = () => {
@@ -18,16 +16,13 @@ const ClientLogin = () => {
     setError('');
     setLoading(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      const roleSnap = await getDoc(doc(db, 'userRoles', cred.user.uid));
-      if (!roleSnap.exists() || roleSnap.data().role !== 'client') {
-        await auth.signOut();
-        setError('No client account found. Contact your trainer.');
-        return;
+      const data = await apiLogin(email, password);
+      if (data.user.role !== 'client') {
+        throw new Error('No client account found. Contact your trainer.');
       }
       navigate('/client/dashboard');
-    } catch {
-      setError('Invalid email or password.');
+    } catch (err: any) {
+      setError(err.message ?? 'Invalid email or password.');
     } finally {
       setLoading(false);
     }

@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MapPin, Phone, Mail, Clock, Send, CheckCircle } from 'lucide-react';
 import Footer from '../components/Footer';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { submitEnquiry } from '../lib/api';
 
 // ─── Google Sheets integration via Google Apps Script ─────────────────────────
 //
@@ -76,13 +75,8 @@ const Contact = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-      // Also save to Firestore so admin can view enquiries in dashboard
-      await addDoc(collection(db, 'enquiries'), {
-        ...formData,
-        submittedAt: serverTimestamp(),
-        status: 'new',
-        read: false,
-      });
+      // Save to backend so admin can view enquiries in dashboard
+      await submitEnquiry(formData);
       setStatus('success');
       setFormData({ name: '', email: '', phone: '', plan: '', message: '' });
     } catch {

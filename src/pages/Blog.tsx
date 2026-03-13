@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchPosts } from '../lib/api';
 import { Clock, Calendar, Tag, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
 import { useScrollReveal } from '../hooks/useScrollReveal';
@@ -14,7 +13,7 @@ interface BlogPost {
   coverImage: string;
   category: string;
   author: string;
-  publishedAt: { seconds: number };
+  publishedAt: string;
   readTime: number;
   tags: string[];
 }
@@ -23,7 +22,7 @@ const CATEGORIES = ['All', 'Fitness Tips', 'Nutrition', 'Workout Guide', 'Succes
 
 const BlogCard = ({ post, index }: { post: BlogPost; index: number }) => {
   const ref = useScrollReveal<HTMLDivElement>();
-  const date = new Date(post.publishedAt.seconds * 1000).toLocaleDateString('en-IN', {
+  const date = new Date(post.publishedAt).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'short', year: 'numeric',
   });
 
@@ -99,16 +98,10 @@ const Blog = () => {
   const headingRef = useScrollReveal<HTMLDivElement>();
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'posts'),
-      orderBy('publishedAt', 'desc'),
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost));
-      setPosts(all.filter((p) => p.published));
-      setLoading(false);
-    });
-    return unsub;
+    fetchPosts()
+      .then((data) => setPosts(data as BlogPost[]))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = activeCategory === 'All'

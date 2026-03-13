@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, limit, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchPost } from '../lib/api';
 import { Clock, Calendar, Tag, ArrowLeft, Share2 } from 'lucide-react';
 import Footer from '../components/Footer';
 
@@ -14,7 +13,7 @@ interface BlogPost {
   coverImage: string;
   category: string;
   author: string;
-  publishedAt: { seconds: number };
+  publishedAt: string;
   readTime: number;
   tags: string[];
 }
@@ -27,22 +26,10 @@ const BlogPost = () => {
 
   useEffect(() => {
     if (!slug) return;
-    const fetch = async () => {
-      const q = query(
-        collection(db, 'posts'),
-        where('slug', '==', slug),
-        where('published', '==', true),
-        limit(1),
-      );
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        setNotFound(true);
-      } else {
-        setPost({ id: snap.docs[0].id, ...snap.docs[0].data() } as BlogPost);
-      }
-      setLoading(false);
-    };
-    fetch();
+    fetchPost(slug)
+      .then((data) => setPost(data as BlogPost))
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
   }, [slug]);
 
   const handleShare = () => {
@@ -71,7 +58,7 @@ const BlogPost = () => {
     );
   }
 
-  const date = new Date(post.publishedAt.seconds * 1000).toLocaleDateString('en-IN', {
+  const date = new Date(post.publishedAt).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   });
 

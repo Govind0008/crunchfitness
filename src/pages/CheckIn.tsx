@@ -1,23 +1,13 @@
 import { useState } from 'react';
-import {
-  collection, query, where, getDocs, addDoc, serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { checkIn } from '../lib/api';
 import { QrCode, User, Phone, CheckCircle, XCircle, Loader, Dumbbell } from 'lucide-react';
 
-type Step = 'pin' | 'details' | 'success' | 'error';
+type Step = 'form' | 'success';
 
-interface ClassSession {
-  id: string;
+interface SessionInfo {
   title: string;
   trainerName: string;
-  area: string;
   startTime: string;
-  duration: number;
-  capacity: number;
-  pin: string;
-  pinValidFrom: string;
-  pinValidTo: string;
 }
 
 function formatTime(timeStr: string) {
@@ -27,96 +17,45 @@ function formatTime(timeStr: string) {
 }
 
 const CheckIn = () => {
-  const [step, setStep]             = useState<Step>('pin');
-  const [pin, setPin]               = useState('');
-  const [name, setName]             = useState('');
-  const [phone, setPhone]           = useState('');
-  const [session, setSession]       = useState<ClassSession | null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [errorMsg, setErrorMsg]     = useState('');
-  const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(false);
+  const [step, setStep]         = useState<Step>('form');
+  const [pin, setPin]           = useState('');
+  const [name, setName]         = useState('');
+  const [phone, setPhone]       = useState('');
+  const [session, setSession]   = useState<SessionInfo | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [alreadyIn, setAlreadyIn] = useState(false);
 
-  const handlePinSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date();
-
-      // Find session by PIN + today's date
-      const q = query(
-        collection(db, 'classSessions'),
-        where('pin', '==', pin.trim()),
-        where('date', '==', today),
-      );
-      const snap = await getDocs(q);
-
-      if (snap.empty) {
-        setErrorMsg('PIN not found. Check the PIN shown in your class.');
-        return;
+      const data = await checkIn({ pin: pin.trim(), memberName: name.trim(), memberPhone: phone.trim() });
+      setSession(data.session);
+      setAlreadyIn(false);
+      setStep('success');
+    } catch (err: any) {
+      if (err.code === 'ALREADY_CHECKED_IN') {
+        setSession(null);
+        setAlreadyIn(true);
+        setStep('success');
+      } else {
+        setErrorMsg(err.message ?? 'Something went wrong. Please try again.');
       }
-
-      const data = { id: snap.docs[0].id, ...snap.docs[0].data() } as ClassSession;
-
-      // Validate time window
-      if (now < new Date(data.pinValidFrom)) {
-        setErrorMsg(`Class hasn't started yet. Check-in opens at ${formatTime(data.startTime)}.`);
-        return;
-      }
-      if (now > new Date(data.pinValidTo)) {
-        setErrorMsg('Check-in window has closed for this class.');
-        return;
-      }
-
-      setSession(data);
-      setStep('details');
-    } catch {
-      setErrorMsg('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDetailsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session) return;
-    setLoading(true);
+  const reset = () => {
+    setStep('form');
+    setPin('');
+    setName('');
+    setPhone('');
+    setSession(null);
+    setAlreadyIn(false);
     setErrorMsg('');
-    try {
-      // Check capacity
-      const existingQ = query(
-        collection(db, 'attendance'),
-        where('sessionId', '==', session.id),
-      );
-      const existing = await getDocs(existingQ);
-
-      // Check if already checked in by phone
-      const duplicate = existing.docs.find((d) => d.data().memberPhone === phone.trim());
-      if (duplicate) {
-        setAlreadyCheckedIn(true);
-        setStep('success');
-        return;
-      }
-
-      if (existing.size >= session.capacity) {
-        setErrorMsg('This class is at full capacity.');
-        return;
-      }
-
-      await addDoc(collection(db, 'attendance'), {
-        sessionId: session.id,
-        memberName: name.trim(),
-        memberPhone: phone.trim(),
-        checkedInAt: serverTimestamp(),
-      });
-
-      setStep('success');
-    } catch {
-      setErrorMsg('Could not record your check-in. Please try again.');
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -134,10 +73,10 @@ const CheckIn = () => {
           <p className="text-gray-500 text-sm mt-1">Enter the PIN shown in your class</p>
         </div>
 
-        {/* Step: Enter PIN */}
-        {step === 'pin' && (
+        {/* Step: Form */}
+        {step === 'form' && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
-            <form onSubmit={handlePinSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-300 mb-1.5">Class PIN</label>
                 <div className="relative">
@@ -155,34 +94,6 @@ const CheckIn = () => {
                 </div>
               </div>
 
-              {errorMsg && (
-                <div className="flex items-start gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
-                  <XCircle size={15} className="flex-shrink-0 mt-0.5" />
-                  {errorMsg}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || pin.length < 4}
-                className="w-full py-3.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
-              >
-                {loading ? <Loader size={18} className="animate-spin" /> : <><QrCode size={16} /> Verify PIN</>}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Step: Enter name + phone */}
-        {step === 'details' && session && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
-            {/* Session info */}
-            <div className="bg-green-400/10 border border-green-400/20 rounded-xl p-3 mb-5">
-              <p className="text-green-400 font-bold text-sm">{session.title}</p>
-              <p className="text-gray-400 text-xs mt-0.5">{session.area} · {formatTime(session.startTime)} · {session.trainerName}</p>
-            </div>
-
-            <form onSubmit={handleDetailsSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-300 mb-1.5">Your Name</label>
                 <div className="relative">
@@ -223,7 +134,7 @@ const CheckIn = () => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || pin.length < 4}
                 className="w-full py-3.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-bold rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
               >
                 {loading ? <Loader size={18} className="animate-spin" /> : <><CheckCircle size={16} /> Mark Attendance</>}
@@ -233,12 +144,12 @@ const CheckIn = () => {
         )}
 
         {/* Step: Success */}
-        {step === 'success' && session && (
+        {step === 'success' && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl text-center">
             <div className="w-20 h-20 bg-green-400/10 border-2 border-green-400/30 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle size={40} className="text-green-400" />
             </div>
-            {alreadyCheckedIn ? (
+            {alreadyIn ? (
               <>
                 <h2 className="text-xl font-bold text-white mb-2">Already Checked In</h2>
                 <p className="text-gray-400 text-sm">Your attendance was already recorded for this class.</p>
@@ -246,14 +157,16 @@ const CheckIn = () => {
             ) : (
               <>
                 <h2 className="text-xl font-bold text-white mb-2">You're Checked In!</h2>
-                <p className="text-gray-400 text-sm">Welcome to <span className="text-white font-semibold">{session.title}</span>. Have a great workout!</p>
+                <p className="text-gray-400 text-sm">Welcome to <span className="text-white font-semibold">{session?.title}</span>. Have a great workout!</p>
               </>
             )}
-            <div className="mt-4 bg-green-400/10 border border-green-400/20 rounded-xl p-3">
-              <p className="text-xs text-green-400">{session.area} · {formatTime(session.startTime)}</p>
-            </div>
+            {session && (
+              <div className="mt-4 bg-green-400/10 border border-green-400/20 rounded-xl p-3">
+                <p className="text-xs text-green-400">{session.trainerName} · {formatTime(session.startTime)}</p>
+              </div>
+            )}
             <button
-              onClick={() => { setStep('pin'); setPin(''); setName(''); setPhone(''); setSession(null); setAlreadyCheckedIn(false); }}
+              onClick={reset}
               className="mt-6 text-sm text-gray-500 hover:text-gray-300 transition-colors"
             >
               Check in for another class

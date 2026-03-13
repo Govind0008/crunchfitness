@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchOffers } from '../lib/api';
 import { X } from 'lucide-react';
 
 interface Offer {
@@ -38,15 +37,13 @@ const OfferBanner = ({ onVisibilityChange }: Props) => {
   }, [visible, onVisibilityChange]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'offers'), (snap) => {
-      const today = new Date().toISOString().split('T')[0];
-      const dismissedId = sessionStorage.getItem('dismissedOffer');
-      const active = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Offer))
-        .find((o) => o.active && o.startDate <= today && o.endDate >= today && o.id !== dismissedId);
-      setOffer(active ?? null);
-    });
-    return unsub;
+    const dismissedId = sessionStorage.getItem('dismissedOffer');
+    fetchOffers()
+      .then((data) => {
+        const active = (data as Offer[]).find((o) => o.id !== dismissedId);
+        setOffer(active ?? null);
+      })
+      .catch(console.error);
   }, []);
 
   const handleDismiss = useCallback(() => {

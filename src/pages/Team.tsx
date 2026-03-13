@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Instagram, Crown } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchTeam } from '../lib/api';
 import Footer from '../components/Footer';
 import { Helmet } from 'react-helmet';
 
@@ -159,26 +158,21 @@ const FALLBACK_MEMBERS: Member[] = [
 const Team = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [hoveredMember, setHoveredMember] = useState<number | null>(null);
-  const [firestoreMembers, setFirestoreMembers] = useState<Member[]>([]);
-  const [loadingFirestore, setLoadingFirestore] = useState(true);
+  const [apiMembers, setApiMembers] = useState<Member[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
 
   useEffect(() => { setIsVisible(true); }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'teamMembers'), orderBy('order', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Member))
-        .filter((m) => m.visible !== false);
-      setFirestoreMembers(data);
-      setLoadingFirestore(false);
-    });
-    return unsub;
+    fetchTeam()
+      .then((data) => setApiMembers(data as Member[]))
+      .catch(console.error)
+      .finally(() => setLoadingMembers(false));
   }, []);
 
-  // Use Firestore data once it's loaded and non-empty; otherwise show static fallback
-  const displayMembers = !loadingFirestore && firestoreMembers.length > 0
-    ? firestoreMembers
+  // Use API data once loaded and non-empty; otherwise show static fallback
+  const displayMembers = !loadingMembers && apiMembers.length > 0
+    ? apiMembers
     : FALLBACK_MEMBERS;
 
   return (
@@ -206,7 +200,7 @@ const Team = () => {
             <span className="text-white">OUR CERTIFIED</span> <span className="neon-text">TRAINERS</span>
           </h2>
 
-          {loadingFirestore ? (
+          {loadingMembers ? (
             <div className="flex justify-center py-20">
               <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
             </div>

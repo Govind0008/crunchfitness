@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { apiLogin } from '../lib/api';
 import { Lock, Mail, Eye, EyeOff, Dumbbell } from 'lucide-react';
 
 const TrainerLogin = () => {
@@ -18,16 +16,13 @@ const TrainerLogin = () => {
     setError('');
     setLoading(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      const roleSnap = await getDoc(doc(db, 'userRoles', cred.user.uid));
-      if (!roleSnap.exists() || !['trainer', 'admin'].includes(roleSnap.data().role)) {
-        await auth.signOut();
-        setError('You do not have trainer access. Contact your admin.');
-        return;
+      const data = await apiLogin(email, password);
+      if (!['trainer', 'admin'].includes(data.user.role)) {
+        throw new Error('You do not have trainer access. Contact your admin.');
       }
       navigate('/trainer/dashboard');
-    } catch {
-      setError('Invalid email or password. Please try again.');
+    } catch (err: any) {
+      setError(err.message ?? 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
     }

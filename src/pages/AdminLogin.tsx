@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { apiLogin } from '../lib/api';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 const AdminLogin = () => {
@@ -17,10 +16,13 @@ const AdminLogin = () => {
     setError('');
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const data = await apiLogin(email, password);
+      if (data.user.role !== 'admin') {
+        throw new Error('You do not have admin access.');
+      }
       navigate('/admin/dashboard');
-    } catch {
-      setError('Invalid email or password. Please try again.');
+    } catch (err: any) {
+      setError(err.message ?? 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
     }

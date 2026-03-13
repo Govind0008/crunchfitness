@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Check, Star, Zap, Crown, Gift, Sparkles } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchPlans } from '../lib/api';
 
 const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   Sparkles, Zap, Gift, Crown, Star,
@@ -103,11 +102,10 @@ const MembershipSection = () => {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) => {
-      setFirestorePlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestorePlan)));
-      setLoadingPlans(false);
-    });
+    fetchPlans()
+      .then((data) => setFirestorePlans(data as FirestorePlan[]))
+      .catch(console.error)
+      .finally(() => setLoadingPlans(false));
   }, []);
 
   const usingFirestore = !loadingPlans && firestorePlans.length > 0;
