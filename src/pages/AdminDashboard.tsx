@@ -11,7 +11,7 @@ import {
   Plus, Trash2, LogOut, Eye, EyeOff, Upload,
   CheckCircle, XCircle, Loader, ImageIcon, Tag as TagIcon,
   Users, FileText, Edit2, Crown, Instagram, Megaphone, CreditCard,
-  Calendar, Sparkles, Inbox, Phone, Mail, ChevronDown, ChevronUp,
+  Calendar, Sparkles, Inbox, Phone, Mail, ChevronDown, ChevronUp, Menu, X,
 } from 'lucide-react';
 
 // ─── Blog Types ──────────────────────────────────────────────────────────────
@@ -169,6 +169,7 @@ const AdminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState<'posts' | 'team' | 'offers' | 'plans' | 'enquiries'>('posts');
   const [toast, setToast] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Blog state ──
   const [posts, setPosts]           = useState<BlogPost[]>([]);
@@ -514,22 +515,111 @@ const AdminDashboard = () => {
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 bg-green-400 text-black px-5 py-3 rounded-xl shadow-xl font-semibold text-sm animate-fade-in">
-          {toast}
-        </div>
+    <div className="h-screen bg-zinc-950 text-white flex overflow-hidden">
+      {/* ── Mobile overlay ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-zinc-900/95 backdrop-blur border-b border-zinc-800">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      {/* ── Sidebar ── */}
+      <aside className={`fixed top-0 left-0 h-screen w-60 bg-zinc-900 border-r border-zinc-800 flex flex-col z-40 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-zinc-800 flex items-center justify-between">
+          <div>
+            <img src="/lovable-uploads/crunch.png" alt="logo" className="h-10 w-auto object-contain" />
+            <p className="text-xs text-gray-500 mt-1 truncate">{user?.email}</p>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white p-1">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <button
+            onClick={() => { setActiveTab('posts'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'posts' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <FileText size={16} /> Blog Posts
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{posts.length}</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('team'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'team' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Users size={16} /> Team & Trainers
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{members.length}</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('offers'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'offers' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Megaphone size={16} /> Offers & Promos
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{offers.length}</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('plans'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'plans' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <CreditCard size={16} /> Membership Plans
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{plans.length}</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('enquiries'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'enquiries' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Inbox size={16} /> Enquiries
+            {enquiries.filter((e) => !e.read).length > 0 ? (
+              <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                {enquiries.filter((e) => !e.read).length}
+              </span>
+            ) : (
+              <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{enquiries.length}</span>
+            )}
+          </button>
+        </nav>
+
+        {/* Logout */}
+        <div className="px-3 py-4 border-t border-zinc-800">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition-all"
+          >
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main content area ── */}
+      <div className="flex-1 md:ml-60 flex flex-col h-screen overflow-hidden w-full">
+        {/* Toast */}
+        {toast && (
+          <div className="fixed top-6 right-6 z-50 bg-green-400 text-black px-5 py-3 rounded-xl shadow-xl font-semibold text-sm animate-fade-in">
+            {toast}
+          </div>
+        )}
+
+        {/* Top bar */}
+        <header className="flex-shrink-0 z-30 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 md:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/lovable-uploads/crunch.png" alt="logo" className="h-8 w-auto object-contain" />
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+            >
+              <Menu size={20} />
+            </button>
             <div>
-              <p className="font-bold text-sm text-white">Admin Dashboard</p>
-              <p className="text-xs text-gray-500">{user?.email}</p>
+              <h1 className="font-bold text-white text-base">
+                {activeTab === 'posts' && 'Blog Posts'}
+                {activeTab === 'team' && 'Team & Trainers'}
+                {activeTab === 'offers' && 'Offers & Promotions'}
+                {activeTab === 'plans' && 'Membership Plans'}
+                {activeTab === 'enquiries' && 'Customer Enquiries'}
+              </h1>
+              <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -557,64 +647,10 @@ const AdminDashboard = () => {
                 <Plus size={16} /> Add Plan
               </button>
             )}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl text-sm transition-colors"
-            >
-              <LogOut size={15} /> Logout
-            </button>
           </div>
-        </div>
+        </header>
 
-        {/* Tabs */}
-        <div className="max-w-6xl mx-auto px-4 flex gap-1 pb-0">
-          <button
-            onClick={() => setActiveTab('posts')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-              activeTab === 'posts'
-                ? 'border-green-400 text-green-400'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            <FileText size={15} /> Blog Posts
-            <span className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full">{posts.length}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('team')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'team' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-          >
-            <Users size={15} /> Team
-            <span className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full">{members.length}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('offers')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'offers' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-          >
-            <Megaphone size={15} /> Offers
-            <span className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full">{offers.length}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('plans')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'plans' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-          >
-            <CreditCard size={15} /> Plans
-            <span className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full">{plans.length}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('enquiries')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'enquiries' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-          >
-            <Inbox size={15} /> Enquiries
-            {enquiries.filter((e) => !e.read).length > 0 && (
-              <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full">
-                {enquiries.filter((e) => !e.read).length}
-              </span>
-            )}
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-8">
+        <main className="flex-1 overflow-y-auto px-6 py-6 w-full">
 
         {/* ── Blog Posts Tab ── */}
         {activeTab === 'posts' && (
@@ -964,7 +1000,8 @@ const AdminDashboard = () => {
             </>
           );
         })()}
-      </main>
+        </main>
+      </div> {/* end main content area */}
 
       {/* ═══════════════════════════════════════════════════════════════════════
           Blog Post Form Modal

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,6 +17,12 @@ const GlobalUI = () => {
   const { pathname } = useLocation();
   const isAdmin = pathname.startsWith('/admin');
   const [bannerVisible, setBannerVisible] = useState(false);
+
+  // Zero out the page-top offset on admin pages so the layout isn't pushed down
+  useEffect(() => {
+    document.documentElement.style.setProperty('--page-top', isAdmin ? '0px' : (bannerVisible ? '9.25rem' : '7rem'));
+  }, [isAdmin, bannerVisible]);
+
   const handleBannerVisibility = useCallback((v: boolean) => {
     setBannerVisible(v);
     // navbar h-28 = 7rem; banner h-9 = 2.25rem
@@ -28,7 +34,7 @@ const GlobalUI = () => {
 
   return (
     <>
-      <Navigation bannerVisible={bannerVisible} />
+      {!isAdmin && <Navigation bannerVisible={bannerVisible} />}
       {!isAdmin && <OfferBanner onVisibilityChange={handleBannerVisibility} />}
       {!isAdmin && <Chatbot />}
       {!isAdmin && <WhatsAppButton />}
