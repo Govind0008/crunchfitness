@@ -97,6 +97,18 @@
     }
     </script>
 
+  <!-- Google Maps JS API (Places library for real-time reviews) -->
+  <script>
+    window.__googleMapsReady = new Promise(function(resolve) {
+      window.__googleMapsResolve = resolve;
+    });
+    window.initGoogleMaps = function() { window.__googleMapsResolve(); };
+  </script>
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_API_KEY%&libraries=places&callback=initGoogleMaps"
+    async
+    defer
+  ></script>
 </head>
 
 <body>

@@ -8,8 +8,6 @@ import BMICalculator from '../components/BMICalculator';
 import InstagramSection from '../components/InstagramSection';
 import FAQSection from '../components/FAQSection';
 import Footer from '../components/Footer';
-import Chatbot from '../components/Chatbot';
-import WhatsAppButton from '../components/WhatsAppButton';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
 const Index = () => {
@@ -33,8 +31,6 @@ const Index = () => {
         <div ref={faqRef} className="reveal"><FAQSection /></div>
       </main>
       <Footer />
-      <Chatbot />
-      <WhatsAppButton />
     </div>
   );
 };

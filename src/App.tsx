@@ -3,17 +3,25 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import OfferBanner from "@/components/OfferBanner";
-import { useLocation } from "react-router-dom";
+import Chatbot from "@/components/Chatbot";
+import WhatsAppButton from "@/components/WhatsAppButton";
 
-const OfferBannerWrapper = () => {
+// Hide offer banner and floating buttons on admin pages
+const GlobalUI = () => {
   const { pathname } = useLocation();
   if (pathname.startsWith('/admin')) return null;
-  return <OfferBanner />;
+  return (
+    <>
+      <OfferBanner />
+      <Chatbot />
+      <WhatsAppButton />
+    </>
+  );
 };
 
 // Code-split every page — only the current route's bundle is loaded
@@ -46,7 +54,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <ScrollToTop />
-        <OfferBannerWrapper />
+        {/* GlobalUI lives outside PageTransition so CSS transforms don't break position:fixed */}
+        <GlobalUI />
         <Suspense fallback={<PageLoader />}>
           <PageTransition>
             <Routes>

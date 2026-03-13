@@ -1,16 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, Sparkles } from 'lucide-react';
 
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll);
+    const handleScroll = () => {
+      const currentY = window.scrollY;
+      if (currentY < 50) {
+        setHidden(false);
+      } else if (currentY > lastScrollY.current + 5) {
+        setHidden(true);   // scrolling down
+      } else if (currentY < lastScrollY.current - 5) {
+        setHidden(false);  // scrolling up
+      }
+      setScrolled(currentY > 50);
+      lastScrollY.current = currentY;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -38,9 +51,11 @@ const Navigation = () => {
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
+        hidden ? '-translate-y-full' : 'translate-y-0'
+      } ${
         scrolled
           ? 'bg-black/95 backdrop-blur-xl border-b border-green-500/20 shadow-lg shadow-green-500/10'
-          : 'bg-transparent'
+          : 'bg-black/60 backdrop-blur-md'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
