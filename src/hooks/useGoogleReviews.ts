@@ -26,11 +26,10 @@ export interface GooglePlaceData {
   user_ratings_total: number;
 }
 
-const PLACE_NAME = 'Crunch Fitness Club';
+const PLACE_NAME = 'Crunch Fitness Club Wakad Pune';
 const PLACE_LAT  = 18.5999023;
 const PLACE_LNG  = 73.7700584;
 
-// Race the Maps-ready promise against a 10 s timeout so we never hang forever
 function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
   return Promise.race([
     promise,
@@ -50,16 +49,15 @@ export const useGoogleReviews = () => {
 
     const load = async () => {
       try {
-        // Will reject if gm_authFailure fires OR times out after 10 s
         await withTimeout(window.__googleMapsReady, 10_000);
         if (cancelled) return;
 
-        // `libraries=places` is in the script URL so Place is already on the namespace
         const Place = window.google.maps.places.Place;
 
+        // Step 1 — search with only ID field (reviews not valid in searchByText)
         const { places } = await Place.searchByText({
           textQuery: PLACE_NAME,
-          fields: ['id', 'rating', 'userRatingCount', 'reviews'],
+          fields: ['id', 'displayName'],
           locationBias: { lat: PLACE_LAT, lng: PLACE_LNG },
           maxResultCount: 1,
         });
@@ -71,8 +69,8 @@ export const useGoogleReviews = () => {
           return;
         }
 
+        // Step 2 — fetch reviews + rating as a separate call
         const place = places[0];
-        // Fetch full fields (reviews need an extra round-trip in the new API)
         await place.fetchFields({ fields: ['reviews', 'rating', 'userRatingCount'] });
         if (cancelled) return;
 
@@ -92,8 +90,7 @@ export const useGoogleReviews = () => {
         });
       } catch (err: unknown) {
         if (!cancelled) {
-          const msg = err instanceof Error ? err.message : 'Google Maps failed to load';
-          setError(msg);
+          setError(err instanceof Error ? err.message : 'Google Maps failed to load');
         }
       } finally {
         if (!cancelled) setLoading(false);
