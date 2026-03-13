@@ -30,6 +30,16 @@ const PLACE_NAME = 'Crunch Fitness Club';
 const PLACE_LAT  = 18.5999023;
 const PLACE_LNG  = 73.7700584;
 
+// Race the Maps-ready promise against a 10 s timeout so we never hang forever
+function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
+  return Promise.race([
+    promise,
+    new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error('Google Maps load timed out')), ms)
+    ),
+  ]);
+}
+
 export const useGoogleReviews = () => {
   const [data, setData]       = useState<GooglePlaceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,12 +50,12 @@ export const useGoogleReviews = () => {
 
     const load = async () => {
       try {
-        // Will reject immediately if gm_authFailure fires (invalid/restricted key)
-        await window.__googleMapsReady;
+        // Will reject if gm_authFailure fires OR times out after 10 s
+        await withTimeout(window.__googleMapsReady, 10_000);
         if (cancelled) return;
 
-        // New Places API — replaces deprecated PlacesService
-        const { Place } = await window.google.maps.importLibrary('places') as { Place: any };
+        // `libraries=places` is in the script URL so Place is already on the namespace
+        const Place = window.google.maps.places.Place;
 
         const { places } = await Place.searchByText({
           textQuery: PLACE_NAME,
@@ -62,6 +72,7 @@ export const useGoogleReviews = () => {
         }
 
         const place = places[0];
+        // Fetch full fields (reviews need an extra round-trip in the new API)
         await place.fetchFields({ fields: ['reviews', 'rating', 'userRatingCount'] });
         if (cancelled) return;
 
