@@ -4,9 +4,9 @@ import {
   collection, addDoc, deleteDoc, updateDoc, where,
   doc, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { signOut } from 'firebase/auth';
-import { db, auth } from '../lib/firebase';
+import { createUserWithEmailAndPassword, signOut, getAuth } from 'firebase/auth';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { db, auth, firebaseConfig } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
 import {
   Plus, Trash2, LogOut, Eye, EyeOff, Upload,
@@ -717,8 +717,11 @@ const AdminDashboard = () => {
       showToast('Email, password and trainer are required.'); return;
     }
     setAccountSaving(true);
+    // Use a secondary app instance so the admin session is NOT replaced
+    const secondaryApp = initializeApp(firebaseConfig, `trainer-create-${Date.now()}`);
+    const secondaryAuth = getAuth(secondaryApp);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, accountForm.email, accountForm.password);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, accountForm.email, accountForm.password);
       const trainer = members.find((m) => m.id === accountForm.trainerId);
       await setDoc(doc(db, 'userRoles', cred.user.uid), {
         role: 'trainer',
@@ -732,7 +735,11 @@ const AdminDashboard = () => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error creating account.';
       showToast(msg.includes('email-already-in-use') ? 'Email already in use.' : msg);
-    } finally { setAccountSaving(false); }
+    } finally {
+      setAccountSaving(false);
+      // Always clean up the secondary app so it doesn't linger
+      await deleteApp(secondaryApp);
+    }
   };
 
   const handleDeleteTrainerAccount = async (uid: string) => {

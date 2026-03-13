@@ -54,7 +54,7 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyBK99gCuF9YPvYV1w-wzt_STx_9D_slgoM",
   authDomain: "crunch-fitness-blog.firebaseapp.com",
   projectId: "crunch-fitness-blog",
