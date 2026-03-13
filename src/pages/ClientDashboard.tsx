@@ -8,13 +8,23 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { useRole } from '../hooks/useRole';
 import {
-  LogOut, Dumbbell, Calendar, Clock, Users, Target,
+  LogOut, Dumbbell, Calendar, Clock,
   TrendingUp, MessageSquare, Send, CheckCircle,
-  Layers, Activity, ChevronRight, UserCheck, Shield,
-  LayoutDashboard, AlarmClock, Plus, XCircle,
+  Layers, Activity, ChevronRight, Shield,
+  LayoutDashboard, Plus, XCircle,
+  Flame, Zap, Timer, ChevronDown, BookOpen, AlarmClock,
+  Menu, X,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+interface Availability { id: string; day: string; startTime: string; endTime: string; }
+interface SessionRequest {
+  id: string; clientId: string; clientName: string;
+  requestedDate: string; requestedTime: string;
+  duration: number; notes: string;
+  status: 'pending' | 'confirmed' | 'rejected';
+  createdAt: { seconds: number } | null;
+}
 interface PTSession {
   id: string; clientId: string; date: string; time: string;
   duration: number; status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
@@ -58,6 +68,19 @@ function fmt(t: string) {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 function today() { return new Date().toISOString().split('T')[0]; }
+function getDayName(dateStr: string) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+}
+function generateTimeSlots(startTime: string, endTime: string, durationMin = 60): string[] {
+  const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const start = toMins(startTime), end = toMins(endTime);
+  const slots: string[] = [];
+  for (let t = start; t + durationMin <= end; t += 30) {
+    const h = Math.floor(t / 60), m = t % 60;
+    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+  }
+  return slots;
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 const ClientDashboard = () => {
@@ -72,6 +95,7 @@ const ClientDashboard = () => {
   const todayStr    = today();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'workout' | 'progress' | 'messages'>('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Data ──
   const [sessions, setSessions]     = useState<PTSession[]>([]);
@@ -80,6 +104,13 @@ const ClientDashboard = () => {
   const [messages, setMessages]     = useState<ChatMessage[]>([]);
   const [newMsg, setNewMsg]         = useState('');
   const [msgSending, setMsgSending] = useState(false);
+
+  // Availability + booking requests
+  const [trainerAvailability, setTrainerAvailability] = useState<Availability[]>([]);
+  const [sessionRequests, setSessionRequests]         = useState<SessionRequest[]>([]);
+  const [showRequestForm, setShowRequestForm]         = useState(false);
+  const [requestForm, setRequestForm]                 = useState({ date: todayStr, time: '06:00', duration: 60, notes: '' });
+  const [requestSaving, setRequestSaving]             = useState(false);
 
   // Progress form
   const [showProgressForm, setShowProgressForm] = useState(false);
@@ -98,8 +129,12 @@ const ClientDashboard = () => {
   useEffect(() => {
     if (!trainerId || !clientId) return;
     return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessions'), where('clientId', '==', clientId), orderBy('date', 'desc')),
-      (s) => setSessions(s.docs.map((d) => ({ id: d.id, ...d.data() } as PTSession)))
+      query(collection(db, 'trainerData', trainerId, 'sessions'), where('clientId', '==', clientId)),
+      (s) => setSessions(
+        s.docs
+          .map((d) => ({ id: d.id, ...d.data() } as PTSession))
+          .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+      )
     );
   }, [trainerId, clientId]);
 
@@ -117,10 +152,34 @@ const ClientDashboard = () => {
   }, [trainerId, clientId]);
 
   useEffect(() => {
+    if (!trainerId) return;
+    return onSnapshot(
+      collection(db, 'trainerData', trainerId, 'availability'),
+      (s) => setTrainerAvailability(s.docs.map((d) => ({ id: d.id, ...d.data() } as Availability)))
+    );
+  }, [trainerId]);
+
+  useEffect(() => {
     if (!trainerId || !clientId) return;
     return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'clients', clientId, 'progressLogs'), orderBy('date', 'desc')),
-      (s) => setProgress(s.docs.map((d) => ({ id: d.id, ...d.data() } as ProgressLog)))
+      query(collection(db, 'trainerData', trainerId, 'sessionRequests'), where('clientId', '==', clientId)),
+      (s) => setSessionRequests(
+        s.docs
+          .map((d) => ({ id: d.id, ...d.data() } as SessionRequest))
+          .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
+      )
+    );
+  }, [trainerId, clientId]);
+
+  useEffect(() => {
+    if (!trainerId || !clientId) return;
+    return onSnapshot(
+      collection(db, 'trainerData', trainerId, 'clients', clientId, 'progressLogs'),
+      (s) => setProgress(
+        s.docs
+          .map((d) => ({ id: d.id, ...d.data() } as ProgressLog))
+          .sort((a, b) => b.date.localeCompare(a.date))
+      )
     );
   }, [trainerId, clientId]);
 
@@ -167,6 +226,27 @@ const ClientDashboard = () => {
     finally { setMsgSending(false); }
   };
 
+  const handleRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trainerId || !clientId || !requestForm.date || !requestForm.time) return;
+    setRequestSaving(true);
+    try {
+      await addDoc(collection(db, 'trainerData', trainerId, 'sessionRequests'), {
+        clientId,
+        clientName,
+        requestedDate: requestForm.date,
+        requestedTime: requestForm.time,
+        duration: requestForm.duration,
+        notes: requestForm.notes,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+      setShowRequestForm(false);
+      setRequestForm({ date: todayStr, time: '06:00', duration: 60, notes: '' });
+    } catch (err) { console.error(err); }
+    finally { setRequestSaving(false); }
+  };
+
   const handleProgressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trainerId || !clientId) return;
@@ -207,52 +287,160 @@ const ClientDashboard = () => {
     ? Math.max(0, Math.round((new Date(upcomingSessions[0].date + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / 86400000))
     : null;
 
+  const totalMinutesTrained = completedSessions.reduce((sum, s) => sum + (s.duration ?? 0), 0);
+  const todaySession = sessions.find((s) => s.date === todayStr && s.status === 'scheduled');
+
+  // Streak: count consecutive weeks (mon-sun) that have at least one completed session
+  const weekStreak = (() => {
+    let streak = 0;
+    for (let w = 0; w < 52; w++) {
+      const monday = new Date();
+      monday.setDate(monday.getDate() - monday.getDay() + (monday.getDay() === 0 ? -6 : 1) - w * 7);
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      const ws = monday.toISOString().split('T')[0];
+      const we = sunday.toISOString().split('T')[0];
+      const hit = completedSessions.some((s) => s.date >= ws && s.date <= we);
+      if (hit) streak++;
+      else if (w > 0) break;
+    }
+    return streak;
+  })();
+
+  // Last 4 completed sessions for mini history
+  const recentCompleted = completedSessions.slice(0, 4);
+
+  // Requests
+  const pendingRequests  = sessionRequests.filter((r) => r.status === 'pending');
+  const confirmedRequests = sessionRequests.filter((r) => r.status === 'confirmed');
+
+  // Available time slots for the request form's selected date
+  const selectedDayName = requestForm.date ? getDayName(requestForm.date) : '';
+  const availableSlots = trainerAvailability
+    .filter((a) => a.day === selectedDayName)
+    .flatMap((a) => generateTimeSlots(a.startTime, a.endTime, requestForm.duration));
+
+  const pendingRequestCount = pendingRequests.length + confirmedRequests.filter((r) => {
+    // Count confirmed requests that haven't appeared as a real session yet
+    return !sessions.some((s) => s.date === r.requestedDate && s.time === r.requestedTime);
+  }).length;
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
+    <div className="h-screen bg-zinc-950 text-white flex overflow-hidden">
 
-      {/* Header */}
-      <header className="bg-zinc-900 border-b border-zinc-800 px-4 h-16 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-400/10 border border-blue-400/20 rounded-lg flex items-center justify-center">
-            <Dumbbell size={16} className="text-blue-400" />
+      {/* ── Mobile sidebar overlay ── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside className={`fixed top-0 left-0 h-screen w-60 bg-zinc-900 border-r border-zinc-800 flex flex-col z-40 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+
+        {/* User info */}
+        <div className="px-5 py-5 border-b border-zinc-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 bg-blue-400/10 border border-blue-400/20 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Dumbbell size={16} className="text-blue-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white truncate">{clientName}</p>
+              <p className="text-xs text-gray-500">Client Portal</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-bold text-white leading-none">{clientName}</p>
-            <p className="text-xs text-gray-500">Client Portal</p>
-          </div>
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white p-1 flex-shrink-0">
+            <X size={18} />
+          </button>
         </div>
-        <button onClick={handleLogout} className="flex items-center gap-1.5 text-gray-400 hover:text-red-400 text-sm font-semibold transition-colors px-2 py-1.5 rounded-lg hover:bg-red-500/10">
-          <LogOut size={14} /> Sign Out
-        </button>
-      </header>
 
-      {/* Tab Bar */}
-      <div className="bg-zinc-900/60 border-b border-zinc-800 px-4">
-        <div className="flex gap-0 max-w-3xl mx-auto overflow-x-auto">
+        {/* Goal badge */}
+        {clientGoal && (
+          <div className="px-5 py-3 border-b border-zinc-800">
+            <span className={`inline-block text-xs px-2.5 py-1 rounded-full font-semibold ${GOAL_COLORS[clientGoal] ?? 'bg-zinc-700 text-gray-400'}`}>
+              {clientGoal}
+            </span>
+          </div>
+        )}
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {([
-            { id: 'overview',  label: 'Overview',  icon: LayoutDashboard },
-            { id: 'sessions',  label: 'Sessions',  icon: Calendar },
-            { id: 'workout',   label: 'Workout',   icon: Layers },
-            { id: 'progress',  label: 'Progress',  icon: TrendingUp },
-            { id: 'messages',  label: 'Messages',  icon: MessageSquare, badge: unreadCount },
-          ] as const).map(({ id, label, icon: Icon, badge }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`relative flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 whitespace-nowrap transition-all ${
-                activeTab === id ? 'border-blue-400 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+            { id: 'overview',  label: 'Overview',  icon: LayoutDashboard, badge: 0,                   count: null },
+            { id: 'sessions',  label: 'Sessions',  icon: Calendar,        badge: pendingRequestCount, count: sessions.length },
+            { id: 'workout',   label: 'My Workout',icon: Layers,          badge: 0,                   count: null },
+            { id: 'progress',  label: 'Progress',  icon: TrendingUp,      badge: 0,                   count: progress.length },
+            { id: 'messages',  label: 'Messages',  icon: MessageSquare,   badge: unreadCount,         count: null },
+          ] as const).map(({ id, label, icon: Icon, badge, count }) => (
+            <button key={id}
+              onClick={() => { setActiveTab(id); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === id ? 'bg-blue-400/15 text-blue-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'
               }`}>
-              <Icon size={14} /> {label}
-              {(badge ?? 0) > 0 && (
-                <span className="absolute top-2 right-1 w-4 h-4 bg-blue-400 text-black text-[10px] font-black rounded-full flex items-center justify-center">
-                  {badge}
-                </span>
-              )}
+              <Icon size={16} />
+              {label}
+              {(badge ?? 0) > 0
+                ? <span className="ml-auto text-xs bg-blue-400 text-black px-1.5 py-0.5 rounded-full font-bold min-w-[18px] text-center">{badge}</span>
+                : count !== null
+                  ? <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-500">{count}</span>
+                  : null
+              }
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
 
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        {/* Trainer info */}
+        <div className="px-5 py-3 border-t border-zinc-800">
+          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1">Your Trainer</p>
+          <p className="text-sm font-bold text-white">{trainerName}</p>
+        </div>
+
+        {/* Logout */}
+        <div className="px-3 pb-4">
+          <button onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition-all">
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main content ── */}
+      <div className="flex-1 md:ml-60 flex flex-col h-screen overflow-hidden w-full">
+
+        {/* Top bar */}
+        <header className="flex-shrink-0 z-20 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 md:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors">
+              <Menu size={20} />
+            </button>
+            <div>
+              <h1 className="font-bold text-white text-base leading-tight">
+                {activeTab === 'overview'  && 'Overview'}
+                {activeTab === 'sessions'  && 'Sessions'}
+                {activeTab === 'workout'   && 'My Workout'}
+                {activeTab === 'progress'  && 'Progress'}
+                {activeTab === 'messages'  && `Chat with ${trainerName}`}
+              </h1>
+              <p className="text-xs text-gray-500">Client Portal</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {activeTab === 'sessions' && (
+              <button onClick={() => setShowRequestForm(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl text-sm transition-all">
+                <Plus size={13} /> Request
+              </button>
+            )}
+            {activeTab === 'progress' && (
+              <button onClick={() => setShowProgressForm(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all">
+                <Plus size={13} /> Log Entry
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Scrollable content */}
+        <main className={`flex-1 ${activeTab === 'messages' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <div className={activeTab === 'messages' ? 'h-full flex flex-col px-4 md:px-6 py-4' : 'max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-6'}>
 
         {/* ═══════════ OVERVIEW TAB ═══════════ */}
         {activeTab === 'overview' && (
@@ -276,12 +464,30 @@ const ClientDashboard = () => {
               </div>
             </div>
 
+            {/* Today's session alert */}
+            {todaySession && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-5 py-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-green-400/15 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Zap size={16} className="text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-green-400">Session Today!</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{fmt(todaySession.time)} · {todaySession.duration}min with {trainerName}</p>
+                    {todaySession.notes && <p className="text-xs text-gray-500 italic mt-0.5">{todaySession.notes}</p>}
+                  </div>
+                </div>
+                <span className="text-xs bg-green-400/15 text-green-400 border border-green-400/30 px-2.5 py-1 rounded-full font-bold whitespace-nowrap">Today</span>
+              </div>
+            )}
+
             {/* Quick stats */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { label: 'Upcoming', value: upcomingSessions.length, icon: Calendar, color: 'text-blue-400', tab: 'sessions' as const },
                 { label: 'Completed', value: completedSessions.length, icon: CheckCircle, color: 'text-green-400', tab: 'sessions' as const },
                 { label: 'Progress Logs', value: progress.length, icon: TrendingUp, color: 'text-purple-400', tab: 'progress' as const },
+                { label: 'Mins Trained', value: totalMinutesTrained, icon: Timer, color: 'text-orange-400', tab: 'sessions' as const },
               ].map(({ label, value, icon: Icon, color, tab }) => (
                 <button key={label} onClick={() => setActiveTab(tab)}
                   className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-4 text-center transition-all group">
@@ -291,6 +497,19 @@ const ClientDashboard = () => {
                 </button>
               ))}
             </div>
+
+            {/* Streak */}
+            {weekStreak > 0 && (
+              <div className="bg-zinc-900 border border-orange-500/20 rounded-2xl px-5 py-4 flex items-center gap-4">
+                <div className="w-10 h-10 bg-orange-400/10 border border-orange-400/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Flame size={18} className="text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">{weekStreak}-Week Streak 🔥</p>
+                  <p className="text-xs text-gray-500 mt-0.5">You've trained consistently — keep it up!</p>
+                </div>
+              </div>
+            )}
 
             {/* Next session */}
             {upcomingSessions.length > 0 && (
@@ -319,6 +538,46 @@ const ClientDashboard = () => {
                     </div>
                     <span className="text-xs bg-blue-400/15 text-blue-400 border border-blue-400/30 px-2.5 py-1 rounded-full font-semibold">Scheduled</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Today's workout plan preview */}
+            {workoutPlan && (
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Your Workout Plan</h3>
+                <div className="bg-zinc-900 border border-purple-500/20 rounded-2xl overflow-hidden">
+                  <div className="px-5 py-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-purple-400/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Layers size={15} className="text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">{workoutPlan.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{(workoutPlan.exercises ?? []).length} exercises assigned</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setActiveTab('workout')}
+                      className="text-xs text-purple-400 hover:text-purple-300 font-bold px-3 py-1.5 rounded-lg hover:bg-purple-400/10 transition-all whitespace-nowrap flex items-center gap-1">
+                      View <ChevronRight size={12} />
+                    </button>
+                  </div>
+                  {(workoutPlan.exercises ?? []).slice(0, 3).map((ex, i) => (
+                    <div key={i} className="border-t border-zinc-800/60 px-5 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-gray-600 w-5">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="text-sm text-gray-300">{ex.name}</span>
+                      </div>
+                      <span className="text-xs font-bold text-purple-400">{ex.sets}×{ex.reps}</span>
+                    </div>
+                  ))}
+                  {(workoutPlan.exercises ?? []).length > 3 && (
+                    <div className="border-t border-zinc-800/60 px-5 py-2.5 text-center">
+                      <button onClick={() => setActiveTab('workout')} className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 mx-auto">
+                        +{(workoutPlan.exercises ?? []).length - 3} more exercises <ChevronDown size={11} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -381,6 +640,40 @@ const ClientDashboard = () => {
               </div>
             )}
 
+            {/* Recent session history */}
+            {recentCompleted.length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Recent Sessions</h3>
+                <div className="space-y-2">
+                  {recentCompleted.map((s) => (
+                    <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle size={14} className="text-green-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-white">{s.date}</p>
+                          {s.notes && <p className="text-xs text-gray-500 italic mt-0.5">{s.notes}</p>}
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-500">{s.duration}min</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state — no sessions yet */}
+            {sessions.length === 0 && (
+              <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-2xl p-6 text-center">
+                <Calendar size={28} className="text-gray-700 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-gray-400">No sessions scheduled yet</p>
+                <p className="text-xs text-gray-600 mt-1">Your trainer will schedule your first PT session soon.</p>
+                <button onClick={() => setActiveTab('messages')}
+                  className="mt-4 inline-flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 font-semibold px-3 py-2 rounded-lg hover:bg-blue-400/10 transition-all">
+                  <MessageSquare size={12} /> Message {trainerName}
+                </button>
+              </div>
+            )}
+
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex gap-3">
               <Shield size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-gray-400 leading-relaxed">
@@ -393,25 +686,80 @@ const ClientDashboard = () => {
         {/* ═══════════ SESSIONS TAB ═══════════ */}
         {activeTab === 'sessions' && (
           <>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">Your personal training sessions with {trainerName}.</p>
-              <div className="flex items-center gap-2">
-                <span className="text-xs bg-blue-400/10 text-blue-400 border border-blue-400/20 px-2.5 py-1 rounded-full font-semibold">
-                  {upcomingSessions.length} upcoming
-                </span>
-                {completionRate !== null && sessions.length >= 2 && (
-                  <span className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-2.5 py-1 rounded-full font-semibold">
-                    {completionRate}% done
-                  </span>
-                )}
+            {/* Trainer Availability */}
+            {trainerAvailability.length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <AlarmClock size={12} /> Trainer Availability
+                </h3>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((day) => {
+                    const slots = trainerAvailability.filter((a) => a.day === day);
+                    if (!slots.length) return null;
+                    return (
+                      <div key={day} className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 last:border-0">
+                        <span className="text-sm font-semibold text-white w-28">{day}</span>
+                        <div className="flex flex-wrap gap-1.5 justify-end">
+                          {slots.map((slot) => (
+                            <span key={slot.id} className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-2.5 py-1 rounded-full font-semibold">
+                              {fmt(slot.startTime)} – {fmt(slot.endTime)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* My Booking Requests */}
+            {sessionRequests.length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <BookOpen size={12} /> My Session Requests
+                </h3>
+                <div className="space-y-2">
+                  {sessionRequests.map((req) => (
+                    <div key={req.id} className={`bg-zinc-900 border rounded-2xl px-4 py-3 ${
+                      req.status === 'pending'   ? 'border-orange-500/25' :
+                      req.status === 'confirmed' ? 'border-green-500/25' :
+                                                   'border-zinc-700'
+                    }`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                              <Calendar size={13} className="text-blue-400" /> {req.requestedDate}
+                              <Clock size={12} className="text-gray-500 ml-1" />
+                              <span className="text-gray-400 font-normal">{fmt(req.requestedTime)} · {req.duration}min</span>
+                            </div>
+                          </div>
+                          {req.notes && <p className="text-xs text-gray-500 italic mt-1">{req.notes}</p>}
+                        </div>
+                        <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold whitespace-nowrap ${
+                          req.status === 'pending'   ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                          req.status === 'confirmed' ? 'bg-green-500/15 text-green-400 border-green-500/30' :
+                                                       'bg-zinc-700 text-gray-500 border-zinc-600'
+                        }`}>
+                          {req.status === 'pending' ? 'Awaiting Trainer' : req.status === 'confirmed' ? 'Confirmed ✓' : 'Declined'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {sessions.length === 0 ? (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
                 <Calendar size={36} className="text-gray-700 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">No sessions scheduled yet.</p>
+                <p className="text-gray-500 text-sm font-semibold">No sessions scheduled yet.</p>
                 <p className="text-gray-600 text-xs mt-1">Your trainer will schedule your sessions.</p>
+                <button onClick={() => setActiveTab('messages')}
+                  className="mt-4 inline-flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 font-semibold px-3 py-2 rounded-lg hover:bg-blue-400/10 transition-all">
+                  <MessageSquare size={12} /> Message your trainer
+                </button>
               </div>
             ) : (
               <>
@@ -420,10 +768,13 @@ const ClientDashboard = () => {
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Upcoming</p>
                     <div className="space-y-2">
                       {upcomingSessions.map((s) => (
-                        <div key={s.id} className="bg-zinc-900 border border-blue-500/20 rounded-2xl px-4 py-3">
+                        <div key={s.id} className={`bg-zinc-900 border rounded-2xl px-4 py-3 ${s.date === todayStr ? 'border-green-500/30' : 'border-blue-500/20'}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-white flex-wrap">
+                                {s.date === todayStr && (
+                                  <span className="text-xs font-bold text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded-full">Today</span>
+                                )}
                                 <Calendar size={13} className="text-blue-400" /> {s.date}
                                 <Clock size={12} className="text-gray-500 ml-1" />
                                 <span className="text-gray-400 font-normal">{fmt(s.time)} · {s.duration}min</span>
@@ -511,13 +862,7 @@ const ClientDashboard = () => {
         {/* ═══════════ PROGRESS TAB ═══════════ */}
         {activeTab === 'progress' && (
           <>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">Your body metrics over time</p>
-              <button onClick={() => setShowProgressForm(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all">
-                <Plus size={13} /> Log Entry
-              </button>
-            </div>
+            <p className="text-xs text-gray-500">Your body metrics over time</p>
 
             {progress.length === 0 ? (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
@@ -581,7 +926,7 @@ const ClientDashboard = () => {
 
         {/* ═══════════ MESSAGES TAB ═══════════ */}
         {activeTab === 'messages' && (
-          <div className="flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
+          <div className="flex flex-col flex-1 overflow-hidden">
             <p className="text-xs text-gray-500 mb-4 flex-shrink-0">Chat with {trainerName}</p>
 
             {/* Message list */}
@@ -639,6 +984,8 @@ const ClientDashboard = () => {
           </div>
         )}
       </div>
+        </main>
+      </div>{/* end main content */}
 
       {/* ══ Progress Form Modal ══ */}
       {showProgressForm && (
@@ -690,7 +1037,120 @@ const ClientDashboard = () => {
           </div>
         </div>
       )}
-    </div>
+      {/* ══ Request Session Modal ══ */}
+      {showRequestForm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+              <h3 className="font-bold text-white">Request a Session</h3>
+              <button onClick={() => setShowRequestForm(false)} className="text-gray-400 hover:text-white"><XCircle size={20} /></button>
+            </div>
+            <form onSubmit={handleRequestSubmit} className="p-6 space-y-4">
+              {/* Availability hint */}
+              {trainerAvailability.length > 0 && (
+                <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-green-400 mb-1.5">Trainer is available on:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+                      .filter((d) => trainerAvailability.some((a) => a.day === d))
+                      .map((d) => {
+                        const slots = trainerAvailability.filter((a) => a.day === d);
+                        return (
+                          <div key={d} className="text-xs text-gray-300">
+                            <span className="font-semibold text-white">{d.slice(0, 3)}</span>{' '}
+                            {slots.map((s) => `${fmt(s.startTime)}–${fmt(s.endTime)}`).join(', ')}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Preferred Date</label>
+                <input
+                  type="date"
+                  required
+                  min={todayStr}
+                  value={requestForm.date}
+                  onChange={(e) => setRequestForm((p) => ({ ...p, date: e.target.value, time: '06:00' }))}
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-400"
+                />
+                {requestForm.date && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {getDayName(requestForm.date)}
+                    {trainerAvailability.some((a) => a.day === getDayName(requestForm.date))
+                      ? <span className="text-green-400 ml-1">· Trainer is available</span>
+                      : <span className="text-yellow-400 ml-1">· No availability set for this day</span>
+                    }
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Preferred Time</label>
+                {availableSlots.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {availableSlots.map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setRequestForm((p) => ({ ...p, time: slot }))}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                          requestForm.time === slot
+                            ? 'bg-blue-500 border-blue-500 text-white'
+                            : 'bg-zinc-800 border-zinc-700 text-gray-300 hover:border-blue-400'
+                        }`}
+                      >
+                        {fmt(slot)}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    type="time"
+                    required
+                    value={requestForm.time}
+                    onChange={(e) => setRequestForm((p) => ({ ...p, time: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-400"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Duration</label>
+                <select
+                  value={requestForm.duration}
+                  onChange={(e) => setRequestForm((p) => ({ ...p, duration: Number(e.target.value) }))}
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-400"
+                >
+                  {[30, 45, 60, 75, 90].map((d) => (
+                    <option key={d} value={d}>{d} minutes</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Notes (optional)</label>
+                <input
+                  value={requestForm.notes}
+                  onChange={(e) => setRequestForm((p) => ({ ...p, notes: e.target.value }))}
+                  placeholder="Any specific focus or notes for your trainer…"
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setShowRequestForm(false)} className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl font-semibold text-sm">Cancel</button>
+                <button type="submit" disabled={requestSaving} className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:bg-zinc-700 text-white font-bold rounded-xl text-sm">
+                  {requestSaving ? 'Sending…' : 'Send Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>{/* end root */}
   );
 };
 
