@@ -23,8 +23,8 @@
   <meta property="og:description"
     content="Join Crunch Fitness Club in Wakad, Pune (411033) on Pink City Road. Your premier destination for strength training, cardio, and personalized fitness programs in Maharashtra. Start your journey today!" />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://www.crunchfitness.fit/" />
-  <meta property="og:image" content="https://www.crunchfitness.fit/lovable-uploads/training-main.jpeg" />
+  <meta property="og:url" content="https://www.crunchfitness.fitness/" />
+  <meta property="og:image" content="https://www.crunchfitness.fitness/lovable-uploads/training-main.jpeg" />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crunchfitnessclub" />
@@ -32,15 +32,15 @@
     content="Crunch Fitness Club Pune (Wakad) | Best Gym in wakad Pune (411033) | Best Gym in Maharashtra" />
   <meta name="twitter:description"
     content="Join Crunch Fitness Club in Wakad, Pune (411033) on Pink City Road. Your premier destination for strength training, cardio, and personalized fitness programs in Maharashtra. Start your journey today!" />
-  <meta name="twitter:image" content="https://www.crunchfitness.fit/lovable-uploads/training-main.jpeg" />
+  <meta name="twitter:image" content="https://www.crunchfitness.fitness/lovable-uploads/training-main.jpeg" />
 
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "FitnessCenter",
       "name": "Crunch Fitness Club",
-      "image": "https://www.crunchfitness.fitness/lovable-uploads/crunch.png",
-      "url": "https://www.crunchfitness.fitness/",
+      "image": "https://www.crunchfitness.fitnessness/lovable-uploads/crunch.png",
+      "url": "https://www.crunchfitness.fitnessness/",
       "telephone": "+91-8483048363",
       "address": {
         "@type": "PostalAddress",
@@ -99,14 +99,20 @@
 
   <!-- Google Maps JS API (Places library for real-time reviews) -->
   <script>
-    window.__googleMapsReady = new Promise(function(resolve) {
+    window.__googleMapsReady = new Promise(function(resolve, reject) {
       window.__googleMapsResolve = resolve;
+      window.__googleMapsReject  = reject;
     });
+    // Called by SDK on successful load
     window.initGoogleMaps = function() { window.__googleMapsResolve(); };
+    // Called by SDK when API key auth fails — rejects the promise so the app doesn't hang
+    window.gm_authFailure = function() {
+      window.__googleMapsReject(new Error('Google Maps auth failed – check your API key'));
+    };
   </script>
+  <!-- loading=async must be a URL param per Maps SDK v3 guidance -->
   <script
-    src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_API_KEY%&libraries=places&callback=initGoogleMaps"
-    async
+    src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_API_KEY%&libraries=places&callback=initGoogleMaps&loading=async"
     defer
   ></script>
 </head>

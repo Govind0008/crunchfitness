@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  collection, addDoc, deleteDoc, updateDoc,
-  doc, onSnapshot, orderBy, query, serverTimestamp,
+  collection, addDoc, deleteDoc, updateDoc, where,
+  doc, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -162,12 +163,89 @@ const DEFAULT_PLANS = [
   { order: 4, duration: '12 Months', price: '₹12,000', originalPrice: '₹36,000', isPopular: false, badge: 'Best Value', iconName: 'Star', gradient: 'from-indigo-400 to-purple-600', description: 'Ultimate fitness investment', features: ['Everything in 6 Month plan', 'Monthly personal training sessions', 'Advanced nutrition planning', 'Supplement recommendations', 'VIP member benefits', 'Unlimited guest passes', 'Free merchandise', 'Priority support'], idealFor: 'Long-term commitment, maximum value', savings: '₹24,000', ctaText: 'Maximum Value' },
 ];
 
+// ─── Duty / Schedule Types ────────────────────────────────────────────────────
+const AREAS = ['Cardio Zone', 'Powerlifting', 'CrossFit', 'Yoga & Flexibility', 'Functional Training', 'Boxing', 'Floor Duty'];
+const SHIFTS = ['Morning (6am – 2pm)', 'Evening (2pm – 10pm)', 'Full Day (6am – 10pm)'];
+const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+interface Duty {
+  id: string;
+  trainerId: string;
+  trainerName: string;
+  trainerImage: string;
+  area: string;
+  days: string[];
+  shift: string;
+  weekStart: string;
+}
+
+interface ClassSession {
+  id: string;
+  trainerId: string;
+  trainerName: string;
+  title: string;
+  area: string;
+  date: string;
+  startTime: string;
+  duration: number;
+  capacity: number;
+  pin: string;
+  pinValidFrom: string;
+  pinValidTo: string;
+}
+
+interface TrainerAccount {
+  id: string;       // Firestore doc id = Firebase Auth uid
+  email: string;
+  name: string;
+  trainerId: string;
+  role: 'trainer';
+}
+
+function getWeekStart(date = new Date()): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d.toISOString().split('T')[0];
+}
+
+function getWeekEnd(weekStart: string): string {
+  const d = new Date(weekStart);
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().split('T')[0];
+}
+
+function generatePin(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function pinWindow(date: string, startTime: string, duration: number) {
+  const base = new Date(`${date}T${startTime}:00`);
+  const from = new Date(base.getTime() - 30 * 60 * 1000);
+  const to   = new Date(base.getTime() + (duration + 30) * 60 * 1000);
+  return { pinValidFrom: from.toISOString(), pinValidTo: to.toISOString() };
+}
+
+const EMPTY_DUTY = { trainerId: '', area: AREAS[0], days: [] as string[], shift: SHIFTS[0] };
+const EMPTY_SESSION = { trainerId: '', title: '', area: AREAS[0], date: today(), startTime: '06:00', duration: 60, capacity: 20 };
+
+const AREA_COLORS: Record<string, string> = {
+  'Cardio Zone':         'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  'Powerlifting':        'bg-red-500/15 text-red-400 border-red-500/30',
+  'CrossFit':            'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  'Yoga & Flexibility':  'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  'Functional Training': 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  'Boxing':              'bg-pink-500/15 text-pink-400 border-pink-500/30',
+  'Floor Duty':          'bg-green-500/15 text-green-400 border-green-500/30',
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'posts' | 'team' | 'offers' | 'plans' | 'enquiries'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'team' | 'offers' | 'plans' | 'enquiries' | 'roster' | 'schedule' | 'accounts'>('posts');
   const [toast, setToast] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -217,6 +295,28 @@ const AdminDashboard = () => {
   const [expandedEnquiry, setExpandedEnquiry] = useState<string | null>(null);
   const [deleteEnquiryConfirm, setDeleteEnquiryConfirm] = useState<string | null>(null);
 
+  // ── Duty Roster state ──
+  const [duties, setDuties]           = useState<Duty[]>([]);
+  const [showDutyForm, setShowDutyForm] = useState(false);
+  const [editingDutyId, setEditingDutyId] = useState<string | null>(null);
+  const [dutyForm, setDutyForm]       = useState({ ...EMPTY_DUTY });
+  const [dutySaving, setDutySaving]   = useState(false);
+  const [rosterWeek, setRosterWeek]   = useState(getWeekStart());
+
+  // ── Class Sessions state ──
+  const [sessions, setSessions]       = useState<ClassSession[]>([]);
+  const [showSessionForm, setShowSessionForm] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [sessionForm, setSessionForm] = useState({ ...EMPTY_SESSION });
+  const [sessionSaving, setSessionSaving] = useState(false);
+  const [sessionDate, setSessionDate] = useState(today());
+
+  // ── Trainer Accounts state ──
+  const [trainerAccounts, setTrainerAccounts] = useState<TrainerAccount[]>([]);
+  const [showAccountForm, setShowAccountForm] = useState(false);
+  const [accountForm, setAccountForm] = useState({ email: '', password: '', name: '', trainerId: '' });
+  const [accountSaving, setAccountSaving] = useState(false);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   // ── Firestore listeners ──
@@ -251,6 +351,30 @@ const AdminDashboard = () => {
     const q = query(collection(db, 'enquiries'), orderBy('submittedAt', 'desc'));
     return onSnapshot(q, (snap) =>
       setEnquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Enquiry)))
+    );
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'duties'), where('weekStart', '==', rosterWeek));
+    return onSnapshot(q, (snap) =>
+      setDuties(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Duty)))
+    );
+  }, [rosterWeek]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'classSessions'), where('date', '==', sessionDate), orderBy('startTime', 'asc'));
+    return onSnapshot(q, (snap) =>
+      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession)))
+    );
+  }, [sessionDate]);
+
+  useEffect(() => {
+    return onSnapshot(collection(db, 'userRoles'), (snap) =>
+      setTrainerAccounts(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as TrainerAccount))
+          .filter((r) => r.role === 'trainer')
+      )
     );
   }, []);
 
@@ -512,6 +636,111 @@ const AdminDashboard = () => {
   const handleLogout = async () => { await signOut(auth); navigate('/admin/login'); };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Duty Roster handlers
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleDutySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dutyForm.trainerId || dutyForm.days.length === 0) { showToast('Select trainer and at least one day.'); return; }
+    setDutySaving(true);
+    try {
+      const trainer = members.find((m) => m.id === dutyForm.trainerId);
+      const data = {
+        ...dutyForm,
+        trainerName: trainer?.name ?? '',
+        trainerImage: trainer?.image ?? '',
+        weekStart: rosterWeek,
+        weekEnd: getWeekEnd(rosterWeek),
+      };
+      if (editingDutyId) {
+        await updateDoc(doc(db, 'duties', editingDutyId), data);
+        showToast('Duty updated!');
+      } else {
+        await addDoc(collection(db, 'duties'), data);
+        showToast('Duty assigned!');
+      }
+      setShowDutyForm(false);
+      setEditingDutyId(null);
+      setDutyForm({ ...EMPTY_DUTY });
+    } catch (err) { console.error(err); showToast('Error saving duty.'); }
+    finally { setDutySaving(false); }
+  };
+
+  const handleDeleteDuty = async (id: string) => {
+    try { await deleteDoc(doc(db, 'duties', id)); showToast('Duty removed.'); }
+    catch { showToast('Error deleting duty.'); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Class Session handlers
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleSessionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sessionForm.trainerId || !sessionForm.title) { showToast('Title and trainer are required.'); return; }
+    setSessionSaving(true);
+    try {
+      const trainer = members.find((m) => m.id === sessionForm.trainerId);
+      const { pinValidFrom, pinValidTo } = pinWindow(sessionForm.date, sessionForm.startTime, sessionForm.duration);
+      const data = {
+        ...sessionForm,
+        trainerName: trainer?.name ?? '',
+        pin: editingSessionId ? undefined : generatePin(),
+        pinValidFrom,
+        pinValidTo,
+      };
+      if (editingSessionId) {
+        // Don't overwrite pin on edit
+        const { pin: _p, ...rest } = data as typeof data & { pin?: string };
+        await updateDoc(doc(db, 'classSessions', editingSessionId), rest);
+        showToast('Session updated!');
+      } else {
+        await addDoc(collection(db, 'classSessions'), data);
+        showToast('Class session created!');
+      }
+      setShowSessionForm(false);
+      setEditingSessionId(null);
+      setSessionForm({ ...EMPTY_SESSION, date: sessionDate });
+    } catch (err) { console.error(err); showToast('Error saving session.'); }
+    finally { setSessionSaving(false); }
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    try { await deleteDoc(doc(db, 'classSessions', id)); showToast('Session deleted.'); }
+    catch { showToast('Error deleting session.'); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Trainer Account handlers
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleCreateTrainerAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accountForm.email || !accountForm.password || !accountForm.trainerId) {
+      showToast('Email, password and trainer are required.'); return;
+    }
+    setAccountSaving(true);
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, accountForm.email, accountForm.password);
+      const trainer = members.find((m) => m.id === accountForm.trainerId);
+      await setDoc(doc(db, 'userRoles', cred.user.uid), {
+        role: 'trainer',
+        trainerId: accountForm.trainerId,
+        name: trainer?.name ?? accountForm.name,
+        email: accountForm.email,
+      });
+      showToast('Trainer account created!');
+      setShowAccountForm(false);
+      setAccountForm({ email: '', password: '', name: '', trainerId: '' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error creating account.';
+      showToast(msg.includes('email-already-in-use') ? 'Email already in use.' : msg);
+    } finally { setAccountSaving(false); }
+  };
+
+  const handleDeleteTrainerAccount = async (uid: string) => {
+    try { await deleteDoc(doc(db, 'userRoles', uid)); showToast('Account removed from portal.'); }
+    catch { showToast('Error removing account.'); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -580,6 +809,29 @@ const AdminDashboard = () => {
               <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{enquiries.length}</span>
             )}
           </button>
+
+          {/* Trainer section divider */}
+          <p className="px-3 pt-4 pb-1 text-[10px] font-bold text-gray-600 uppercase tracking-widest">Trainer Portal</p>
+          <button
+            onClick={() => { setActiveTab('roster'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'roster' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Calendar size={16} /> Duty Roster
+          </button>
+          <button
+            onClick={() => { setActiveTab('schedule'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'schedule' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Sparkles size={16} /> Class Schedule
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{sessions.length}</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('accounts'); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'accounts' ? 'bg-green-400/15 text-green-400' : 'text-gray-400 hover:bg-zinc-800 hover:text-white'}`}
+          >
+            <Crown size={16} /> Trainer Accounts
+            <span className="ml-auto text-xs bg-zinc-800 px-1.5 py-0.5 rounded-full text-gray-400">{trainerAccounts.length}</span>
+          </button>
         </nav>
 
         {/* Logout */}
@@ -618,6 +870,9 @@ const AdminDashboard = () => {
                 {activeTab === 'offers' && 'Offers & Promotions'}
                 {activeTab === 'plans' && 'Membership Plans'}
                 {activeTab === 'enquiries' && 'Customer Enquiries'}
+                {activeTab === 'roster' && 'Duty Roster'}
+                {activeTab === 'schedule' && 'Class Schedule'}
+                {activeTab === 'accounts' && 'Trainer Accounts'}
               </h1>
               <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
             </div>
@@ -645,6 +900,24 @@ const AdminDashboard = () => {
               <button onClick={openAddPlan}
                 className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all duration-200 hover:scale-105">
                 <Plus size={16} /> Add Plan
+              </button>
+            )}
+            {activeTab === 'roster' && (
+              <button onClick={() => { setEditingDutyId(null); setDutyForm({ ...EMPTY_DUTY }); setShowDutyForm(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all duration-200 hover:scale-105">
+                <Plus size={16} /> Assign Duty
+              </button>
+            )}
+            {activeTab === 'schedule' && (
+              <button onClick={() => { setEditingSessionId(null); setSessionForm({ ...EMPTY_SESSION, date: sessionDate }); setShowSessionForm(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all duration-200 hover:scale-105">
+                <Plus size={16} /> Add Class
+              </button>
+            )}
+            {activeTab === 'accounts' && (
+              <button onClick={() => { setAccountForm({ email: '', password: '', name: '', trainerId: '' }); setShowAccountForm(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all duration-200 hover:scale-105">
+                <Plus size={16} /> Create Login
               </button>
             )}
           </div>
@@ -1000,6 +1273,163 @@ const AdminDashboard = () => {
             </>
           );
         })()}
+        {/* ── Duty Roster Tab ── */}
+        {activeTab === 'roster' && (
+          <div className="space-y-6">
+            {/* Week picker */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-sm font-semibold text-gray-400">Week starting:</label>
+              <input
+                type="date"
+                value={rosterWeek}
+                onChange={(e) => setRosterWeek(e.target.value)}
+                className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+              />
+              <button
+                onClick={() => setRosterWeek(getWeekStart())}
+                className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl text-sm font-semibold transition-all"
+              >
+                This Week
+              </button>
+              <button
+                onClick={() => { const d = new Date(rosterWeek); d.setDate(d.getDate() + 7); setRosterWeek(d.toISOString().split('T')[0]); }}
+                className="px-3 py-2 bg-green-400/10 hover:bg-green-400/20 text-green-400 border border-green-400/20 rounded-xl text-sm font-semibold transition-all"
+              >
+                Next Week →
+              </button>
+              <span className="text-xs text-gray-600 ml-auto">{rosterWeek} → {getWeekEnd(rosterWeek)}</span>
+            </div>
+
+            {/* Roster grid */}
+            {WEEK_DAYS.map((day) => {
+              const dayDuties = duties.filter((d) => d.days.includes(day));
+              return (
+                <div key={day} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-2.5 bg-zinc-800/50 border-b border-zinc-800 flex items-center justify-between">
+                    <span className="text-sm font-bold text-white">{day}</span>
+                    <span className="text-xs text-gray-500">{dayDuties.length} trainer{dayDuties.length !== 1 ? 's' : ''} assigned</span>
+                  </div>
+                  {dayDuties.length === 0 ? (
+                    <p className="px-4 py-3 text-xs text-gray-600">No duties assigned.</p>
+                  ) : (
+                    <div className="divide-y divide-zinc-800">
+                      {dayDuties.map((duty) => (
+                        <div key={duty.id} className="flex items-center gap-3 px-4 py-3">
+                          {duty.trainerImage
+                            ? <img src={duty.trainerImage} alt={duty.trainerName} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                            : <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0 text-xs font-bold text-gray-400">{duty.trainerName?.[0]}</div>
+                          }
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{duty.trainerName}</p>
+                            <p className="text-xs text-gray-500">{duty.shift}</p>
+                          </div>
+                          <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${AREA_COLORS[duty.area] ?? AREA_COLORS['Floor Duty']}`}>
+                            {duty.area}
+                          </span>
+                          <button onClick={() => handleDeleteDuty(duty.id)} className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Class Schedule Tab ── */}
+        {activeTab === 'schedule' && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-sm font-semibold text-gray-400">Date:</label>
+              <input
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+              />
+              <button onClick={() => setSessionDate(today())} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl text-sm font-semibold">Today</button>
+            </div>
+
+            {sessions.length === 0 ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+                <p className="text-gray-500 text-sm">No classes scheduled for this date.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sessions.map((s) => (
+                  <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 flex items-center gap-4 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-white">{s.title}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${AREA_COLORS[s.area] ?? AREA_COLORS['Floor Duty']}`}>{s.area}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {s.trainerName} · {s.startTime} · {s.duration} min · Cap {s.capacity}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="bg-zinc-800 rounded-lg px-3 py-1.5 text-center">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider">PIN</p>
+                        <p className="font-mono font-black text-green-400 text-lg tracking-widest">{s.pin}</p>
+                      </div>
+                      <button
+                        onClick={() => { setEditingSessionId(s.id); setSessionForm({ trainerId: s.trainerId, title: s.title, area: s.area, date: s.date, startTime: s.startTime, duration: s.duration, capacity: s.capacity }); setShowSessionForm(true); }}
+                        className="p-2 text-gray-400 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all"
+                      ><Edit2 size={14} /></button>
+                      <button onClick={() => handleDeleteSession(s.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Trainer Accounts Tab ── */}
+        {activeTab === 'accounts' && (
+          <div className="space-y-4">
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-xs text-gray-400 flex items-start gap-2">
+              <span className="text-yellow-400 mt-0.5">⚠</span>
+              Trainer logins are created with email + password. They can only see their own schedule and duty — not blog, plans, or enquiries.
+              <a href="/checkin" target="_blank" rel="noopener noreferrer" className="ml-auto text-green-400 whitespace-nowrap hover:underline">Member check-in →</a>
+            </div>
+
+            {trainerAccounts.length === 0 ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+                <Crown size={32} className="text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">No trainer accounts yet. Create one to give portal access.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {trainerAccounts.map((acc) => {
+                  const member = members.find((m) => m.id === acc.trainerId);
+                  return (
+                    <div key={acc.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 flex items-center gap-4">
+                      {member?.image
+                        ? <img src={member.image} alt={acc.name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                        : <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center text-sm font-bold text-gray-400 flex-shrink-0">{acc.name?.[0]}</div>
+                      }
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-white">{acc.name}</p>
+                        <p className="text-xs text-gray-500">{acc.email}</p>
+                      </div>
+                      <span className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-2 py-0.5 rounded-full">Trainer</span>
+                      <button onClick={() => handleDeleteTrainerAccount(acc.id)} className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         </main>
       </div> {/* end main content area */}
 
@@ -1490,6 +1920,222 @@ const AdminDashboard = () => {
               <button onClick={() => setDeleteEnquiryConfirm(null)} className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl font-semibold text-sm">Cancel</button>
               <button onClick={() => handleDeleteEnquiry(deleteEnquiryConfirm)} className="flex-1 py-2.5 bg-red-500 hover:bg-red-400 text-white rounded-xl font-bold text-sm">Delete</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Duty Form Modal ═══ */}
+      {showDutyForm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+              <h3 className="font-heading font-bold text-lg">{editingDutyId ? 'Edit Duty' : 'Assign Duty'}</h3>
+              <button onClick={() => setShowDutyForm(false)} className="text-gray-400 hover:text-white"><XCircle size={22} /></button>
+            </div>
+            <form onSubmit={handleDutySubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Trainer *</label>
+                <select
+                  value={dutyForm.trainerId}
+                  onChange={(e) => setDutyForm((p) => ({ ...p, trainerId: e.target.value }))}
+                  required
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                >
+                  <option value="">Select trainer…</option>
+                  {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Area *</label>
+                <select
+                  value={dutyForm.area}
+                  onChange={(e) => setDutyForm((p) => ({ ...p, area: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                >
+                  {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Shift *</label>
+                <select
+                  value={dutyForm.shift}
+                  onChange={(e) => setDutyForm((p) => ({ ...p, shift: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                >
+                  {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Days on duty *</label>
+                <div className="flex flex-wrap gap-2">
+                  {WEEK_DAYS.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setDutyForm((p) => ({
+                        ...p,
+                        days: p.days.includes(day) ? p.days.filter((d) => d !== day) : [...p.days, day],
+                      }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        dutyForm.days.includes(day)
+                          ? 'bg-green-400 text-black border-green-400'
+                          : 'bg-zinc-800 text-gray-400 border-zinc-700 hover:border-zinc-500'
+                      }`}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowDutyForm(false)} className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl font-semibold text-sm">Cancel</button>
+                <button type="submit" disabled={dutySaving} className="flex-1 py-2.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-xl text-sm flex items-center justify-center gap-2">
+                  {dutySaving ? <Loader size={16} className="animate-spin" /> : editingDutyId ? 'Update' : 'Assign'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Session Form Modal ═══ */}
+      {showSessionForm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+              <h3 className="font-heading font-bold text-lg">{editingSessionId ? 'Edit Class' : 'Add Class Session'}</h3>
+              <button onClick={() => setShowSessionForm(false)} className="text-gray-400 hover:text-white"><XCircle size={22} /></button>
+            </div>
+            <form onSubmit={handleSessionSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Class Title *</label>
+                <input
+                  value={sessionForm.title}
+                  onChange={(e) => setSessionForm((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="e.g. Cardio Blast, Deadlift Workshop"
+                  required
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Trainer *</label>
+                  <select
+                    value={sessionForm.trainerId}
+                    onChange={(e) => setSessionForm((p) => ({ ...p, trainerId: e.target.value }))}
+                    required
+                    className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                  >
+                    <option value="">Select…</option>
+                    {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Area</label>
+                  <select
+                    value={sessionForm.area}
+                    onChange={(e) => setSessionForm((p) => ({ ...p, area: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                  >
+                    {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Date</label>
+                  <input type="date" value={sessionForm.date} onChange={(e) => setSessionForm((p) => ({ ...p, date: e.target.value }))}
+                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Start Time</label>
+                  <input type="time" value={sessionForm.startTime} onChange={(e) => setSessionForm((p) => ({ ...p, startTime: e.target.value }))}
+                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Duration (min)</label>
+                  <input type="number" min={15} max={180} value={sessionForm.duration} onChange={(e) => setSessionForm((p) => ({ ...p, duration: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Capacity</label>
+                <input type="number" min={1} max={200} value={sessionForm.capacity} onChange={(e) => setSessionForm((p) => ({ ...p, capacity: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400" />
+              </div>
+              {!editingSessionId && (
+                <p className="text-xs text-gray-500 bg-zinc-800 rounded-lg px-3 py-2">
+                  A 6-digit PIN is auto-generated. It activates 30 min before the class and expires 30 min after it ends.
+                </p>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowSessionForm(false)} className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl font-semibold text-sm">Cancel</button>
+                <button type="submit" disabled={sessionSaving} className="flex-1 py-2.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-xl text-sm flex items-center justify-center gap-2">
+                  {sessionSaving ? <Loader size={16} className="animate-spin" /> : editingSessionId ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Trainer Account Form Modal ═══ */}
+      {showAccountForm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+              <h3 className="font-heading font-bold text-lg">Create Trainer Login</h3>
+              <button onClick={() => setShowAccountForm(false)} className="text-gray-400 hover:text-white"><XCircle size={22} /></button>
+            </div>
+            <form onSubmit={handleCreateTrainerAccount} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Link to Trainer *</label>
+                <select
+                  value={accountForm.trainerId}
+                  onChange={(e) => {
+                    const m = members.find((x) => x.id === e.target.value);
+                    setAccountForm((p) => ({ ...p, trainerId: e.target.value, name: m?.name ?? p.name }));
+                  }}
+                  required
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-sm focus:outline-none focus:border-green-400"
+                >
+                  <option value="">Select trainer profile…</option>
+                  {members.map((m) => <option key={m.id} value={m.id}>{m.name} — {m.role}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Login Email *</label>
+                <input
+                  type="email"
+                  value={accountForm.email}
+                  onChange={(e) => setAccountForm((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="trainer@gmail.com"
+                  required
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Password *</label>
+                <input
+                  type="password"
+                  value={accountForm.password}
+                  onChange={(e) => setAccountForm((p) => ({ ...p, password: e.target.value }))}
+                  placeholder="Min. 6 characters"
+                  required
+                  minLength={6}
+                  className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+              <p className="text-xs text-gray-500 bg-zinc-800 rounded-lg px-3 py-2">
+                Share this email + password with the trainer. They log in at <span className="text-green-400">/trainer/login</span>
+              </p>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAccountForm(false)} className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-300 rounded-xl font-semibold text-sm">Cancel</button>
+                <button type="submit" disabled={accountSaving} className="flex-1 py-2.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-xl text-sm flex items-center justify-center gap-2">
+                  {accountSaving ? <Loader size={16} className="animate-spin" /> : 'Create Account'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -169,7 +169,7 @@ const Founder = () => {
         <meta property="og:title" content="Meet Nilima Patil: Founder of Crunch Fitness | Inspiring Journey" />
         <meta property="og:description" content="Discover the inspiring journey of Nilima Patil, the multi-certified fitness expert and international medalist in powerlifting behind Crunch Fitness in Wakad, Pune." />
         <meta property="og:image" content={heroBackgroundImage} />
-        <meta property="og:url" content="https://www.crunchfitness.fit/founder" />
+        <meta property="og:url" content="https://www.crunchfitness.fitness/founder" />
         <meta property="og:type" content="website" />
       </Helmet>
 

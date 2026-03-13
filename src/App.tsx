@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import TrainerRoute from "@/components/TrainerRoute";
 import Navigation from "@/components/Navigation";
 import OfferBanner from "@/components/OfferBanner";
 import Chatbot from "@/components/Chatbot";
@@ -15,7 +16,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
 const GlobalUI = () => {
   const { pathname } = useLocation();
-  const isAdmin = pathname.startsWith('/admin');
+  const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/trainer') || pathname === '/checkin';
   const [bannerVisible, setBannerVisible] = useState(false);
 
   // Zero out the page-top offset on admin pages so the layout isn't pushed down
@@ -52,9 +53,12 @@ const Plans          = lazy(() => import("./pages/Plans"));
 const Contact        = lazy(() => import("./pages/Contact"));
 const Blog           = lazy(() => import("./pages/Blog"));
 const BlogPost       = lazy(() => import("./pages/BlogPost"));
-const AdminLogin     = lazy(() => import("./pages/AdminLogin"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const NotFound       = lazy(() => import("./pages/NotFound"));
+const AdminLogin       = lazy(() => import("./pages/AdminLogin"));
+const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
+const TrainerLogin     = lazy(() => import("./pages/TrainerLogin"));
+const TrainerDashboard = lazy(() => import("./pages/TrainerDashboard"));
+const CheckIn          = lazy(() => import("./pages/CheckIn"));
+const NotFound         = lazy(() => import("./pages/NotFound"));
 
 // Minimal dark spinner shown while a lazy chunk is loading
 const PageLoader = () => (
@@ -88,6 +92,9 @@ const App = () => (
               <Route path="/blog/:slug"       element={<BlogPost />} />
               <Route path="/admin/login"      element={<AdminLogin />} />
               <Route path="/admin/dashboard"  element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/trainer/login"    element={<TrainerLogin />} />
+              <Route path="/trainer/dashboard" element={<TrainerRoute><TrainerDashboard /></TrainerRoute>} />
+              <Route path="/checkin"          element={<CheckIn />} />
               <Route path="*"                 element={<NotFound />} />
             </Routes>
           </PageTransition>

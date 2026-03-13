@@ -5,7 +5,9 @@ declare global {
     google: any;
     __googleMapsReady: Promise<void>;
     __googleMapsResolve: () => void;
+    __googleMapsReject: (err: Error) => void;
     initGoogleMaps: () => void;
+    gm_authFailure: () => void;
   }
 }
 
@@ -25,81 +27,65 @@ export interface GooglePlaceData {
 }
 
 const PLACE_NAME = 'Crunch Fitness Club';
-const PLACE_LAT = 18.5999023;
-const PLACE_LNG = 73.7700584;
+const PLACE_LAT  = 18.5999023;
+const PLACE_LNG  = 73.7700584;
 
 export const useGoogleReviews = () => {
-  const [data, setData] = useState<GooglePlaceData | null>(null);
+  const [data, setData]       = useState<GooglePlaceData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
+        // Will reject immediately if gm_authFailure fires (invalid/restricted key)
         await window.__googleMapsReady;
         if (cancelled) return;
 
-        // Create a hidden div to satisfy PlacesService requirement
-        const mapDiv = document.createElement('div');
-        mapDiv.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
-        document.body.appendChild(mapDiv);
+        // New Places API — replaces deprecated PlacesService
+        const { Place } = await window.google.maps.importLibrary('places') as { Place: any };
 
-        const map = new window.google.maps.Map(mapDiv, {
-          center: { lat: PLACE_LAT, lng: PLACE_LNG },
-          zoom: 15,
+        const { places } = await Place.searchByText({
+          textQuery: PLACE_NAME,
+          fields: ['id', 'rating', 'userRatingCount', 'reviews'],
+          locationBias: { lat: PLACE_LAT, lng: PLACE_LNG },
+          maxResultCount: 1,
         });
 
-        const service = new window.google.maps.places.PlacesService(map);
+        if (cancelled) return;
 
-        service.findPlaceFromQuery(
-          {
-            query: PLACE_NAME,
-            fields: ['place_id'],
-            locationBias: { lat: PLACE_LAT, lng: PLACE_LNG },
-          },
-          (results: any[], status: string) => {
-            if (cancelled) return;
-
-            if (
-              status !== window.google.maps.places.PlacesServiceStatus.OK ||
-              !results?.[0]
-            ) {
-              setError('Place not found');
-              setLoading(false);
-              document.body.removeChild(mapDiv);
-              return;
-            }
-
-            service.getDetails(
-              {
-                placeId: results[0].place_id,
-                fields: ['reviews', 'rating', 'user_ratings_total'],
-              },
-              (place: any, detailStatus: string) => {
-                if (cancelled) return;
-                document.body.removeChild(mapDiv);
-
-                if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
-                  setData({
-                    reviews: place.reviews || [],
-                    rating: place.rating ?? 0,
-                    user_ratings_total: place.user_ratings_total ?? 0,
-                  });
-                } else {
-                  setError('Could not fetch reviews');
-                }
-                setLoading(false);
-              }
-            );
-          }
-        );
-      } catch {
-        if (!cancelled) {
-          setError('Google Maps failed to load');
-          setLoading(false);
+        if (!places?.length) {
+          setError('Place not found');
+          return;
         }
+
+        const place = places[0];
+        await place.fetchFields({ fields: ['reviews', 'rating', 'userRatingCount'] });
+        if (cancelled) return;
+
+        const reviews: GoogleReview[] = (place.reviews ?? []).map((r: any) => ({
+          author_name:               r.authorAttribution?.displayName ?? 'Anonymous',
+          rating:                    r.rating ?? 5,
+          text:                      r.text?.text ?? r.text ?? '',
+          relative_time_description: r.relativePublishTimeDescription ?? '',
+          profile_photo_url:         r.authorAttribution?.photoURI ?? '',
+          time:                      r.publishTime instanceof Date ? r.publishTime.getTime() : 0,
+        }));
+
+        setData({
+          reviews,
+          rating:             place.rating ?? 0,
+          user_ratings_total: place.userRatingCount ?? 0,
+        });
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : 'Google Maps failed to load';
+          setError(msg);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
