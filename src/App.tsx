@@ -8,6 +8,7 @@ import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import TrainerRoute from "@/components/TrainerRoute";
+import ClientRoute from "@/components/ClientRoute";
 import Navigation from "@/components/Navigation";
 import OfferBanner from "@/components/OfferBanner";
 import Chatbot from "@/components/Chatbot";
@@ -16,7 +17,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
 const GlobalUI = () => {
   const { pathname } = useLocation();
-  const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/trainer') || pathname === '/checkin';
+  const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/trainer') || pathname.startsWith('/client') || pathname === '/checkin';
   const [bannerVisible, setBannerVisible] = useState(false);
 
   // Zero out the page-top offset on admin pages so the layout isn't pushed down
@@ -57,6 +58,8 @@ const AdminLogin       = lazy(() => import("./pages/AdminLogin"));
 const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
 const TrainerLogin     = lazy(() => import("./pages/TrainerLogin"));
 const TrainerDashboard = lazy(() => import("./pages/TrainerDashboard"));
+const ClientLogin      = lazy(() => import("./pages/ClientLogin"));
+const ClientDashboard  = lazy(() => import("./pages/ClientDashboard"));
 const CheckIn          = lazy(() => import("./pages/CheckIn"));
 const NotFound         = lazy(() => import("./pages/NotFound"));
 
@@ -94,6 +97,8 @@ const App = () => (
               <Route path="/admin/dashboard"  element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
               <Route path="/trainer/login"    element={<TrainerLogin />} />
               <Route path="/trainer/dashboard" element={<TrainerRoute><TrainerDashboard /></TrainerRoute>} />
+              <Route path="/client/login"     element={<ClientLogin />} />
+              <Route path="/client/dashboard" element={<ClientRoute><ClientDashboard /></ClientRoute>} />
               <Route path="/checkin"          element={<CheckIn />} />
               <Route path="*"                 element={<NotFound />} />
             </Routes>
