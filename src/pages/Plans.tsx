@@ -3,8 +3,7 @@ import {
   Check, Star, Shield, Users, Zap, Award, ArrowRight,
   Clock, Target, TrendingUp, Sparkles, Crown, Gift,
 } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { fetchPlans } from '../lib/api';
 import Footer from '../components/Footer';
 import { useNavigate } from 'react-router-dom';
 
@@ -186,11 +185,10 @@ const ProfessionalPlans = () => {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) => {
-      setFirestorePlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestorePlan)));
-      setLoadingPlans(false);
-    });
+    fetchPlans()
+      .then((data) => setFirestorePlans(data as FirestorePlan[]))
+      .catch(console.error)
+      .finally(() => setLoadingPlans(false));
   }, []);
 
   // Use Firestore plans if loaded & non-empty, otherwise static fallback

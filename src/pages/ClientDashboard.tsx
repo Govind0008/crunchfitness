@@ -1,11 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  collection, query, where, onSnapshot, orderBy,
-  addDoc, serverTimestamp,
-} from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
+import { client as clientApi, openChatSocket, apiLogout } from '../lib/api';
 import { useRole } from '../hooks/useRole';
 import {
   LogOut, Dumbbell, Calendar, Clock,
@@ -13,7 +8,7 @@ import {
   Layers, Activity, ChevronRight, Shield,
   LayoutDashboard, Plus, XCircle,
   Flame, Zap, Timer, ChevronDown, BookOpen, AlarmClock,
-  Menu, X,
+  Menu, X, Play, Square, History, ChevronUp,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -23,12 +18,23 @@ interface SessionRequest {
   requestedDate: string; requestedTime: string;
   duration: number; notes: string;
   status: 'pending' | 'confirmed' | 'rejected';
-  createdAt: { seconds: number } | null;
+  createdAt: string | null;
 }
 interface PTSession {
   id: string; clientId: string; date: string; time: string;
-  duration: number; status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
-  notes: string;
+  duration: number; status: 'scheduled' | 'active' | 'completed' | 'cancelled' | 'no-show';
+  notes: string; startedAt: string | null; endedAt: string | null;
+}
+interface WorkoutSet {
+  id: string; setNumber: number; reps: number | null; weight: number | null;
+  intensity: string | null; completed: boolean; notes: string | null;
+}
+interface WorkoutLog {
+  id: string; exerciseName: string; notes: string | null; sets: WorkoutSet[];
+}
+interface ConfirmationStatus {
+  start: { trainerConfirmed: boolean; clientConfirmed: boolean };
+  end:   { trainerConfirmed: boolean; clientConfirmed: boolean };
 }
 interface Exercise { name: string; sets: number; reps: string; notes: string; }
 interface WorkoutPlan {
@@ -42,15 +48,21 @@ interface ProgressLog {
 }
 interface ChatMessage {
   id: string; senderId: string; senderName: string;
-  text: string; createdAt: { seconds: number } | null;
+  text: string; createdAt: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SESSION_STATUS: Record<string, string> = {
   scheduled:  'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  active:     'bg-orange-500/15 text-orange-400 border-orange-500/30',
   completed:  'bg-green-500/15 text-green-400 border-green-500/30',
   cancelled:  'bg-zinc-700 text-gray-500 border-zinc-600',
   'no-show':  'bg-red-500/15 text-red-400 border-red-500/30',
+};
+const INTENSITY_COLORS: Record<string, string> = {
+  low:    'bg-green-500/15 text-green-400',
+  medium: 'bg-yellow-500/15 text-yellow-400',
+  high:   'bg-red-500/15 text-red-400',
 };
 const GOAL_COLORS: Record<string, string> = {
   'Fat Loss':        'bg-orange-500/15 text-orange-400',
@@ -105,6 +117,15 @@ const ClientDashboard = () => {
   const [newMsg, setNewMsg]         = useState('');
   const [msgSending, setMsgSending] = useState(false);
 
+  // Live session confirmations
+  const [confirmStatus, setConfirmStatus]   = useState<Record<string, ConfirmationStatus>>({});
+  const [confirmLoading, setConfirmLoading] = useState<string | null>(null);
+  const [liveWorkouts, setLiveWorkouts]     = useState<Record<string, WorkoutLog[]>>({});
+  const [workoutHistory, setWorkoutHistory]     = useState<any[]>([]);
+  const [historyExpanded, setHistoryExpanded]   = useState<string | null>(null);
+  const [showWorkoutHistory, setShowWorkoutHistory] = useState(false);
+  const [historyLoading, setHistoryLoading]         = useState(false);
+
   // Availability + booking requests
   const [trainerAvailability, setTrainerAvailability] = useState<Availability[]>([]);
   const [sessionRequests, setSessionRequests]         = useState<SessionRequest[]>([]);
@@ -125,81 +146,66 @@ const ClientDashboard = () => {
 
   const msgEndRef = useRef<HTMLDivElement>(null);
 
-  // ── Firestore Listeners ───────────────────────────────────────────────────
+  // ── WebSocket ref for chat ────────────────────────────────────────────────
+  const chatSocketRef = useRef<WebSocket | null>(null);
+
+  // ── API data fetchers ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!trainerId || !clientId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessions'), where('clientId', '==', clientId)),
-      (s) => setSessions(
-        s.docs
-          .map((d) => ({ id: d.id, ...d.data() } as PTSession))
-          .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
-      )
-    );
-  }, [trainerId, clientId]);
+    const todayStr = today();
+    clientApi.listSessions().then((s) => {
+      setSessions(s);
+      // Auto-load confirmation status for today's scheduled/active sessions
+      s.filter((sess: PTSession) =>
+        (sess.status === 'scheduled' || sess.status === 'active') && sess.date === todayStr
+      ).forEach((sess: PTSession) => {
+        clientApi.getConfirmationStatus(sess.id)
+          .then((status) => setConfirmStatus((prev) => ({ ...prev, [sess.id]: status })))
+          .catch(() => {});
+        if (sess.status === 'active') {
+          clientApi.getSessionWorkouts(sess.id)
+            .then((logs) => setLiveWorkouts((prev) => ({ ...prev, [sess.id]: logs })))
+            .catch(() => {});
+        }
+      });
+    }).catch(console.error);
+  }, []);
 
   useEffect(() => {
-    if (!trainerId || !clientId) return;
-    return onSnapshot(
-      collection(db, 'trainerData', trainerId, 'workoutPlans'),
-      (s) => {
-        const assigned = s.docs
-          .map((d) => ({ id: d.id, ...d.data() } as WorkoutPlan))
-          .find((p) => (p.assignedClientIds ?? []).includes(clientId));
-        setWorkoutPlan(assigned ?? null);
-      }
-    );
-  }, [trainerId, clientId]);
+    clientApi.getWorkoutPlan().then(setWorkoutPlan).catch(() => setWorkoutPlan(null));
+  }, []);
 
   useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      collection(db, 'trainerData', trainerId, 'availability'),
-      (s) => setTrainerAvailability(s.docs.map((d) => ({ id: d.id, ...d.data() } as Availability)))
-    );
-  }, [trainerId]);
+    clientApi.getTrainerAvailability().then(setTrainerAvailability).catch(console.error);
+  }, []);
 
   useEffect(() => {
-    if (!trainerId || !clientId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessionRequests'), where('clientId', '==', clientId)),
-      (s) => setSessionRequests(
-        s.docs
-          .map((d) => ({ id: d.id, ...d.data() } as SessionRequest))
-          .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
-      )
-    );
-  }, [trainerId, clientId]);
+    clientApi.listSessionRequests().then(setSessionRequests).catch(console.error);
+  }, []);
 
   useEffect(() => {
-    if (!trainerId || !clientId) return;
-    return onSnapshot(
-      collection(db, 'trainerData', trainerId, 'clients', clientId, 'progressLogs'),
-      (s) => setProgress(
-        s.docs
-          .map((d) => ({ id: d.id, ...d.data() } as ProgressLog))
-          .sort((a, b) => b.date.localeCompare(a.date))
-      )
-    );
-  }, [trainerId, clientId]);
+    clientApi.listProgress().then(setProgress).catch(console.error);
+  }, []);
 
+  // Chat messages via REST + WebSocket
   useEffect(() => {
     if (!convId) return;
-    return onSnapshot(
-      query(collection(db, 'conversations', convId, 'messages'), orderBy('createdAt', 'asc')),
-      (s) => {
-        const msgs = s.docs.map((d) => ({ id: d.id, ...d.data() } as ChatMessage));
-        setMessages(msgs);
-        // Count messages received after last read when not on messages tab
-        if (activeTab !== 'messages') {
-          const newFromTrainer = msgs.filter(
-            (m) => m.senderId !== user?.uid && (m.createdAt?.seconds ?? 0) * 1000 > lastReadAt.current
-          ).length;
-          setUnreadCount(newFromTrainer);
+    clientApi.getMessages(convId).then((msgs) => {
+      setMessages(msgs);
+    }).catch(console.error);
+
+    // Open WebSocket for live updates
+    chatSocketRef.current?.close();
+    const ws = openChatSocket(convId, (msg) => {
+      setMessages((prev) => [...prev, msg]);
+      if (activeTab !== 'messages') {
+        if (msg.senderId !== user?.id) {
+          setUnreadCount((n) => n + 1);
         }
       }
-    );
-  }, [convId, user?.uid]);
+    });
+    chatSocketRef.current = ws;
+    return () => { ws.close(); chatSocketRef.current = null; };
+  }, [convId]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -215,12 +221,7 @@ const ClientDashboard = () => {
     if (!newMsg.trim() || !convId) return;
     setMsgSending(true);
     try {
-      await addDoc(collection(db, 'conversations', convId, 'messages'), {
-        senderId: user?.uid,
-        senderName: clientName,
-        text: newMsg.trim(),
-        createdAt: serverTimestamp(),
-      });
+      await clientApi.sendMessage(convId, newMsg.trim());
       setNewMsg('');
     } catch (err) { console.error(err); }
     finally { setMsgSending(false); }
@@ -228,28 +229,25 @@ const ClientDashboard = () => {
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trainerId || !clientId || !requestForm.date || !requestForm.time) return;
+    if (!requestForm.date || !requestForm.time) return;
     setRequestSaving(true);
     try {
-      await addDoc(collection(db, 'trainerData', trainerId, 'sessionRequests'), {
-        clientId,
-        clientName,
+      await clientApi.createSessionRequest({
         requestedDate: requestForm.date,
         requestedTime: requestForm.time,
         duration: requestForm.duration,
         notes: requestForm.notes,
-        status: 'pending',
-        createdAt: serverTimestamp(),
       });
       setShowRequestForm(false);
       setRequestForm({ date: todayStr, time: '06:00', duration: 60, notes: '' });
+      const updated = await clientApi.listSessionRequests();
+      setSessionRequests(updated);
     } catch (err) { console.error(err); }
     finally { setRequestSaving(false); }
   };
 
   const handleProgressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trainerId || !clientId) return;
     setProgressSaving(true);
     try {
       const entry = {
@@ -260,19 +258,72 @@ const ClientDashboard = () => {
         ...(progressForm.chest   ? { chest:   Number(progressForm.chest)   } : {}),
         ...(progressForm.arms    ? { arms:    Number(progressForm.arms)    } : {}),
         ...(progressForm.thigh   ? { thigh:   Number(progressForm.thigh)   } : {}),
-        createdAt: serverTimestamp(),
       };
-      await addDoc(collection(db, 'trainerData', trainerId, 'clients', clientId, 'progressLogs'), entry);
+      await clientApi.addProgress(entry);
       setShowProgressForm(false);
       setProgressForm({ date: todayStr, weight: '', bodyFat: '', waist: '', chest: '', arms: '', thigh: '', notes: '' });
+      const updated = await clientApi.listProgress();
+      setProgress(updated);
     } catch (err) { console.error(err); }
     finally { setProgressSaving(false); }
   };
 
-  const handleLogout = async () => { await signOut(auth); navigate('/client/login'); };
+  // ── Live Session Handlers ─────────────────────────────────────────────────
+  const loadConfirmStatus = useCallback(async (sessionId: string) => {
+    try {
+      const status = await clientApi.getConfirmationStatus(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadSessionWorkouts = useCallback(async (sessionId: string) => {
+    try {
+      const logs = await clientApi.getSessionWorkouts(sessionId);
+      setLiveWorkouts((prev) => ({ ...prev, [sessionId]: logs }));
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleConfirmStart = async (sessionId: string) => {
+    setConfirmLoading(sessionId);
+    try {
+      const status = await clientApi.confirmStart(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+      if (status.start.trainerConfirmed && status.start.clientConfirmed) {
+        const updated = await clientApi.listSessions();
+        setSessions(updated);
+        await loadSessionWorkouts(sessionId);
+      }
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setConfirmLoading(null); }
+  };
+
+  const handleConfirmEnd = async (sessionId: string) => {
+    setConfirmLoading(sessionId);
+    try {
+      const status = await clientApi.confirmEnd(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+      if (status.end.trainerConfirmed && status.end.clientConfirmed) {
+        const updated = await clientApi.listSessions();
+        setSessions(updated);
+      }
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setConfirmLoading(null); }
+  };
+
+  const openWorkoutHistory = async () => {
+    setHistoryLoading(true); setShowWorkoutHistory(true);
+    try {
+      const h = await clientApi.getWorkoutHistory();
+      setWorkoutHistory(h);
+    } catch { /* ignore */ }
+    finally { setHistoryLoading(false); }
+  };
+
+  const handleLogout = async () => { await apiLogout(); navigate('/client/login'); };
 
   // ── Derived ──────────────────────────────────────────────────────────────
-  const upcomingSessions = sessions.filter((s) => s.status === 'scheduled' && s.date >= todayStr);
+  const upcomingSessions = sessions.filter((s) => (s.status === 'scheduled' || s.status === 'active') && s.date >= todayStr);
+  const activeSessions = sessions.filter((s) => s.status === 'active');
   const completedSessions = sessions.filter((s) => s.status === 'completed');
   const completionRate = sessions.length > 0 ? Math.round((completedSessions.length / sessions.length) * 100) : null;
   const lastProgress = progress[0];
@@ -288,7 +339,7 @@ const ClientDashboard = () => {
     : null;
 
   const totalMinutesTrained = completedSessions.reduce((sum, s) => sum + (s.duration ?? 0), 0);
-  const todaySession = sessions.find((s) => s.date === todayStr && s.status === 'scheduled');
+  const todaySession = sessions.find((s) => s.date === todayStr && (s.status === 'scheduled' || s.status === 'active'));
 
   // Streak: count consecutive weeks (mon-sun) that have at least one completed session
   const weekStreak = (() => {
@@ -751,6 +802,14 @@ const ClientDashboard = () => {
               </div>
             )}
 
+            {/* Workout History button */}
+            <div className="flex justify-end">
+              <button onClick={openWorkoutHistory}
+                className="flex items-center gap-1.5 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-300 font-semibold rounded-xl text-sm transition-all">
+                <History size={13} /> Workout History
+              </button>
+            </div>
+
             {sessions.length === 0 ? (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
                 <Calendar size={36} className="text-gray-700 mx-auto mb-3" />
@@ -765,36 +824,106 @@ const ClientDashboard = () => {
               <>
                 {upcomingSessions.length > 0 && (
                   <div>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Upcoming</p>
-                    <div className="space-y-2">
-                      {upcomingSessions.map((s) => (
-                        <div key={s.id} className={`bg-zinc-900 border rounded-2xl px-4 py-3 ${s.date === todayStr ? 'border-green-500/30' : 'border-blue-500/20'}`}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2 text-sm font-semibold text-white flex-wrap">
-                                {s.date === todayStr && (
-                                  <span className="text-xs font-bold text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded-full">Today</span>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Upcoming & Active</p>
+                    <div className="space-y-3">
+                      {upcomingSessions.map((s) => {
+                        const conf = confirmStatus[s.id];
+                        const sWorkouts = liveWorkouts[s.id] ?? [];
+                        return (
+                          <div key={s.id} className={`bg-zinc-900 border rounded-2xl overflow-hidden ${
+                            s.status === 'active' ? 'border-orange-500/40' :
+                            s.date === todayStr   ? 'border-blue-500/20' : 'border-zinc-800'
+                          }`}>
+                            {/* Session info row */}
+                            <div className="px-4 py-3 flex items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-white flex-wrap">
+                                  {s.status === 'active' && (
+                                    <span className="flex items-center gap-1 text-xs font-bold text-orange-400 bg-orange-400/10 border border-orange-400/30 px-2 py-0.5 rounded-full animate-pulse">
+                                      <Zap size={10} /> LIVE
+                                    </span>
+                                  )}
+                                  {s.date === todayStr && s.status !== 'active' && (
+                                    <span className="text-xs font-bold text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded-full">Today</span>
+                                  )}
+                                  <Calendar size={13} className="text-blue-400" /> {s.date}
+                                  <Clock size={12} className="text-gray-500 ml-1" />
+                                  <span className="text-gray-400 font-normal">{fmt(s.time)} · {s.duration}min</span>
+                                </div>
+                                {s.notes && <p className="text-xs text-gray-500 mt-1 italic">{s.notes}</p>}
+
+                                {/* Confirmation status info */}
+                                {conf && s.status === 'scheduled' && conf.start.trainerConfirmed && !conf.start.clientConfirmed && (
+                                  <p className="text-xs text-orange-400 mt-1.5 font-semibold">⚡ Your trainer is ready — confirm to start!</p>
                                 )}
-                                <Calendar size={13} className="text-blue-400" /> {s.date}
-                                <Clock size={12} className="text-gray-500 ml-1" />
-                                <span className="text-gray-400 font-normal">{fmt(s.time)} · {s.duration}min</span>
+                                {conf && s.status === 'active' && conf.end.trainerConfirmed && !conf.end.clientConfirmed && (
+                                  <p className="text-xs text-yellow-400 mt-1.5 font-semibold">Trainer wants to end the session. Confirm?</p>
+                                )}
                               </div>
-                              {s.notes && <p className="text-xs text-gray-500 mt-1 italic">{s.notes}</p>}
+                              <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                                <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${SESSION_STATUS[s.status]}`}>{s.status}</span>
+                                {/* Confirm Start button */}
+                                {s.status === 'scheduled' && conf?.start.trainerConfirmed && !conf?.start.clientConfirmed && (
+                                  <button onClick={() => handleConfirmStart(s.id)} disabled={confirmLoading === s.id}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-xl text-xs transition-all">
+                                    <Play size={11} /> Confirm Start
+                                  </button>
+                                )}
+                                {/* Confirm End button */}
+                                {s.status === 'active' && conf?.end.trainerConfirmed && !conf?.end.clientConfirmed && (
+                                  <button onClick={() => handleConfirmEnd(s.id)} disabled={confirmLoading === s.id}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 font-bold rounded-xl text-xs transition-all">
+                                    <Square size={11} /> Confirm End
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${SESSION_STATUS[s.status]}`}>{s.status}</span>
+
+                            {/* Live workout view for active sessions */}
+                            {s.status === 'active' && sWorkouts.length > 0 && (
+                              <div className="border-t border-orange-500/20 bg-zinc-950 px-4 py-3 space-y-2">
+                                <p className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Dumbbell size={12} /> Today's Workout
+                                </p>
+                                {sWorkouts.map((log) => (
+                                  <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                                    <div className="px-3 py-2 bg-zinc-800/50 flex items-center justify-between">
+                                      <p className="text-sm font-bold text-white">{log.exerciseName}</p>
+                                      <span className="text-xs text-gray-500">{log.sets.length} set{log.sets.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    {log.notes && <p className="text-xs text-gray-500 px-3 py-1.5 italic">{log.notes}</p>}
+                                    {log.sets.length > 0 && (
+                                      <div>
+                                        <div className="grid grid-cols-4 px-3 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                                          <span>Set</span><span>Reps</span><span>Weight</span><span>Intensity</span>
+                                        </div>
+                                        {log.sets.map((set) => (
+                                          <div key={set.id} className="grid grid-cols-4 px-3 py-1.5 border-t border-zinc-800">
+                                            <span className="text-xs text-gray-400">#{set.setNumber}</span>
+                                            <span className="text-xs text-white font-semibold">{set.reps ?? '—'}</span>
+                                            <span className="text-xs text-white font-semibold">{set.weight ? `${set.weight}kg` : '—'}</span>
+                                            <span>{set.intensity ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${INTENSITY_COLORS[set.intensity]}`}>{set.intensity}</span> : <span className="text-gray-600 text-xs">—</span>}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                {sessions.filter((s) => s.status !== 'scheduled' || s.date < todayStr).length > 0 && (
+                {sessions.filter((s) => (s.status !== 'scheduled' && s.status !== 'active') || s.date < todayStr).length > 0 && (
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">History</p>
                     <div className="space-y-2">
                       {sessions
-                        .filter((s) => s.status !== 'scheduled' || s.date < todayStr)
+                        .filter((s) => (s.status !== 'scheduled' && s.status !== 'active') || s.date < todayStr)
                         .map((s) => (
                           <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3">
                             <div className="flex items-center justify-between gap-3">
@@ -939,7 +1068,7 @@ const ClientDashboard = () => {
                 </div>
               ) : (
                 messages.map((msg) => {
-                  const isMe = msg.senderId === user?.uid;
+                  const isMe = msg.senderId === user?.id;
                   return (
                     <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
@@ -953,7 +1082,7 @@ const ClientDashboard = () => {
                         </div>
                         {msg.createdAt && (
                           <p className="text-[10px] text-gray-600 mx-1">
-                            {new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </p>
                         )}
                       </div>
@@ -1147,6 +1276,86 @@ const ClientDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ WORKOUT HISTORY MODAL ═══ */}
+      {showWorkoutHistory && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col">
+          <div className="bg-zinc-900 border-b border-zinc-800 px-4 h-16 flex items-center gap-3 flex-shrink-0">
+            <button onClick={() => setShowWorkoutHistory(false)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-all">
+              <X size={18} />
+            </button>
+            <div>
+              <p className="font-bold text-white">My Workout History</p>
+              <p className="text-xs text-gray-500">All logged workout sessions</p>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <div className="max-w-xl mx-auto space-y-3">
+              {historyLoading ? (
+                <p className="text-center text-gray-500 text-sm py-10">Loading…</p>
+              ) : workoutHistory.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <History size={32} className="text-gray-700 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm">No workout history yet.</p>
+                  <p className="text-gray-600 text-xs mt-1">Workouts logged by your trainer during live sessions will appear here.</p>
+                </div>
+              ) : workoutHistory.map((entry: any) => (
+                <div key={entry.sessionId} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => setHistoryExpanded(historyExpanded === entry.sessionId ? null : entry.sessionId)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/50 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-400/10 border border-blue-400/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Dumbbell size={14} className="text-blue-400" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-white">{entry.date}</p>
+                        <p className="text-xs text-gray-500">{fmt(entry.time)} · {entry.duration}min · {entry.workouts.length} exercise{entry.workouts.length !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${SESSION_STATUS[entry.status] ?? 'bg-zinc-700 text-gray-400 border-zinc-600'}`}>{entry.status}</span>
+                      {historyExpanded === entry.sessionId ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                    </div>
+                  </button>
+
+                  {historyExpanded === entry.sessionId && (
+                    <div className="border-t border-zinc-800 divide-y divide-zinc-800/50">
+                      {entry.workouts.length === 0 ? (
+                        <p className="text-xs text-gray-600 text-center py-4">No exercises logged for this session.</p>
+                      ) : entry.workouts.map((log: any) => (
+                        <div key={log.id} className="px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-bold text-white">{log.exerciseName}</p>
+                            <span className="text-xs text-gray-600">{log.sets.length} set{log.sets.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {log.notes && <p className="text-xs text-gray-500 italic mb-2">{log.notes}</p>}
+                          {log.sets.length > 0 && (
+                            <div className="bg-zinc-800/50 rounded-xl overflow-hidden">
+                              <div className="grid grid-cols-4 px-3 py-1.5 text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                                <span>Set</span><span>Reps</span><span>Weight</span><span>Intensity</span>
+                              </div>
+                              {log.sets.map((set: any) => (
+                                <div key={set.id} className="grid grid-cols-4 px-3 py-1.5 border-t border-zinc-800">
+                                  <span className="text-xs text-gray-400">#{set.setNumber}</span>
+                                  <span className="text-xs text-white font-semibold">{set.reps ?? '—'}</span>
+                                  <span className="text-xs text-white font-semibold">{set.weight ? `${set.weight}kg` : '—'}</span>
+                                  <span>{set.intensity ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${INTENSITY_COLORS[set.intensity]}`}>{set.intensity}</span> : <span className="text-gray-600 text-xs">—</span>}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

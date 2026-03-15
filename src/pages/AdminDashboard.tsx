@@ -1,12 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  collection, addDoc, deleteDoc, updateDoc, where, getDocs,
-  doc, onSnapshot, orderBy, query, serverTimestamp, setDoc,
-} from 'firebase/firestore';
-import { createUserWithEmailAndPassword, signOut, getAuth } from 'firebase/auth';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { db, auth, firebaseConfig } from '../lib/firebase';
+import { admin, trainer as trainerApi, apiLogout } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import {
   Plus, Trash2, LogOut, Eye, EyeOff, Upload,
@@ -26,7 +20,7 @@ interface BlogPost {
 
   category: string;
   author: string;
-  publishedAt: { seconds: number } | null;
+  publishedAt: string | null;
   readTime: number;
   tags: string[];
   published: boolean;
@@ -105,7 +99,7 @@ interface Enquiry {
   phone: string;
   plan: string;
   message: string;
-  submittedAt: { seconds: number } | null;
+  submittedAt: string | null;
   status: EnquiryStatus;
   read: boolean;
 }
@@ -195,7 +189,7 @@ interface ClassSession {
 }
 
 interface TrainerAccount {
-  id: string;       // Firestore doc id = Firebase Auth uid
+  id: string;
   email: string;
   name: string;
   trainerId: string;
@@ -319,64 +313,24 @@ const AdminDashboard = () => {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // ── Firestore listeners ──
-  useEffect(() => {
-    const q = query(collection(db, 'posts'), orderBy('publishedAt', 'desc'));
-    return onSnapshot(q, (snap) =>
-      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost)))
-    );
-  }, []);
+  // ── API data fetchers ──
+  const loadPosts    = () => admin.listPosts().then(setPosts).catch(console.error);
+  const loadMembers  = () => admin.listTeam().then(setMembers).catch(console.error);
+  const loadOffers   = () => admin.listOffers().then(setOffers).catch(console.error);
+  const loadPlans    = () => admin.listPlans().then(setPlans).catch(console.error);
+  const loadEnquiries = () => admin.listEnquiries().then(setEnquiries).catch(console.error);
+  const loadDuties   = (week: string) => admin.listDuties(week).then(setDuties).catch(console.error);
+  const loadSessions = (date: string) => admin.listClassSessions({ date }).then(setSessions).catch(console.error);
+  const loadTrainerAccounts = () => admin.listTrainerAccounts().then(setTrainerAccounts).catch(console.error);
 
-  useEffect(() => {
-    const q = query(collection(db, 'teamMembers'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) =>
-      setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamMember)))
-    );
-  }, []);
-
-  useEffect(() => {
-    return onSnapshot(collection(db, 'offers'), (snap) =>
-      setOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Offer)))
-    );
-  }, []);
-
-  useEffect(() => {
-    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) =>
-      setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Plan)))
-    );
-  }, []);
-
-  useEffect(() => {
-    const q = query(collection(db, 'enquiries'), orderBy('submittedAt', 'desc'));
-    return onSnapshot(q, (snap) =>
-      setEnquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Enquiry)))
-    );
-  }, []);
-
-  useEffect(() => {
-    const q = query(collection(db, 'duties'), where('weekStart', '==', rosterWeek));
-    return onSnapshot(q, (snap) =>
-      setDuties(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Duty)))
-    );
-  }, [rosterWeek]);
-
-  useEffect(() => {
-    const q = query(collection(db, 'classSessions'), where('date', '==', sessionDate), orderBy('startTime', 'asc'));
-    return onSnapshot(q, (snap) =>
-      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession)))
-    );
-  }, [sessionDate]);
-
-  useEffect(() => {
-    return onSnapshot(collection(db, 'userRoles'), (snap) =>
-      setTrainerAccounts(
-        snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as TrainerAccount))
-          .filter((r) => r.role === 'trainer')
-      )
-    );
-  }, []);
+  useEffect(() => { loadPosts(); }, []);
+  useEffect(() => { loadMembers(); }, []);
+  useEffect(() => { loadOffers(); }, []);
+  useEffect(() => { loadPlans(); }, []);
+  useEffect(() => { loadEnquiries(); }, []);
+  useEffect(() => { loadDuties(rosterWeek); }, [rosterWeek]);
+  useEffect(() => { loadSessions(sessionDate); }, [sessionDate]);
+  useEffect(() => { loadTrainerAccounts(); }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Blog handlers
@@ -400,19 +354,6 @@ const AdminDashboard = () => {
     }));
   };
 
-  const uploadToCloudinary = (file: File, onProgress: (p: number) => void): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('upload_preset', 'crunchfitness_upload');
-      const xhr = new XMLHttpRequest();
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
-      xhr.onload = () => { const d = JSON.parse(xhr.responseText); d.secure_url ? resolve(d.secure_url) : reject(new Error('Upload failed')); };
-      xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dkvlsn98d/image/upload');
-      xhr.send(fd);
-    });
-
   const handlePostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!postForm.title || !postForm.content || !postForm.excerpt) {
@@ -420,33 +361,37 @@ const AdminDashboard = () => {
     }
     setPostSaving(true);
     try {
-      let coverImage = '';
-      if (postImageFile) {
-        coverImage = await uploadToCloudinary(postImageFile, setPostProgress);
-      }
-      await addDoc(collection(db, 'posts'), {
+      const newPost = await admin.createPost({
         title: postForm.title, slug: postForm.slug || slugify(postForm.title),
-        excerpt: postForm.excerpt, content: postForm.content, coverImage,
+        excerpt: postForm.excerpt, content: postForm.content,
         category: postForm.category, author: postForm.author || 'Crunch Fitness Club',
         tags: postForm.tags.split(',').map((t) => t.trim()).filter(Boolean),
         readTime: calcReadTime(postForm.content), published: postForm.published,
-        publishedAt: serverTimestamp(),
       });
+      if (postImageFile) {
+        setPostProgress(50);
+        await admin.uploadPostCover(newPost.id, postImageFile);
+        setPostProgress(100);
+      }
       setPostForm(EMPTY_POST); setPostImageFile(null); setPostPreview(''); setPostProgress(0);
       setShowPostForm(false); showToast('Post published successfully!');
+      await loadPosts();
     } catch (err) { console.error(err); showToast('Error saving post. Try again.'); }
     finally { setPostSaving(false); }
   };
 
   const handleDeletePost = async (post: BlogPost) => {
     try {
-      await deleteDoc(doc(db, 'posts', post.id));
+      await admin.deletePost(post.id);
       setDeletePostConfirm(null); showToast('Post deleted.');
+      await loadPosts();
     } catch { showToast('Error deleting post.'); }
   };
 
-  const togglePublished = async (post: BlogPost) =>
-    updateDoc(doc(db, 'posts', post.id), { published: !post.published });
+  const togglePublished = async (post: BlogPost) => {
+    await admin.updatePost(post.id, { published: !post.published });
+    await loadPosts();
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Team handlers
@@ -493,55 +438,51 @@ const AdminDashboard = () => {
     if (!memberForm.name || !memberForm.role) { showToast('Name and role are required.'); return; }
     setMemberSaving(true);
     try {
-      let image = memberImagePreview;
-
-      if (memberImageFile) {
-        image = await uploadToCloudinary(memberImageFile, setMemberProgress);
-      }
-
       const data = {
         name: memberForm.name, role: memberForm.role,
         specialization: memberForm.specialization, experience: memberForm.experience,
         bio: memberForm.bio, instagram: memberForm.instagram,
         isOwner: memberForm.isOwner, objectPosition: memberForm.objectPosition,
         order: memberForm.order, visible: memberForm.visible,
-        image,
       };
 
       if (editingMemberId) {
-        await updateDoc(doc(db, 'teamMembers', editingMemberId), data);
+        await admin.updateTeamMember(editingMemberId, data);
+        if (memberImageFile) {
+          setMemberProgress(50);
+          await admin.uploadTeamImage(editingMemberId, memberImageFile);
+          setMemberProgress(100);
+        }
         showToast('Member updated!');
       } else {
-        await addDoc(collection(db, 'teamMembers'), data);
+        const newMember = await admin.createTeamMember(data);
+        if (memberImageFile) {
+          setMemberProgress(50);
+          await admin.uploadTeamImage(newMember.id, memberImageFile);
+          setMemberProgress(100);
+        }
         showToast('Member added!');
       }
 
-      setShowMemberForm(false); setMemberImageFile(null); setMemberPreview('');
+      setShowMemberForm(false); setMemberImageFile(null); setMemberPreview(''); setMemberProgress(0);
+      await loadMembers();
     } catch (err) { console.error(err); showToast('Error saving member. Try again.'); }
     finally { setMemberSaving(false); }
   };
 
   const handleDeleteMember = async (member: TeamMember) => {
     try {
-      // Cascade: delete duties, class sessions, and trainer account linked to this member
-      const [dutiesSnap, sessionsSnap, rolesSnap] = await Promise.all([
-        getDocs(query(collection(db, 'duties'),       where('trainerId', '==', member.id))),
-        getDocs(query(collection(db, 'classSessions'), where('trainerId', '==', member.id))),
-        getDocs(query(collection(db, 'userRoles'),    where('trainerId', '==', member.id))),
-      ]);
-      await Promise.all([
-        ...dutiesSnap.docs.map((d)   => deleteDoc(d.ref)),
-        ...sessionsSnap.docs.map((d) => deleteDoc(d.ref)),
-        ...rolesSnap.docs.map((d)    => deleteDoc(d.ref)),
-        deleteDoc(doc(db, 'teamMembers', member.id)),
-      ]);
+      await admin.deleteTeamMember(member.id);
       setDeleteMemberConfirm(null);
       showToast('Member and all associated data removed.');
+      await loadMembers();
     } catch { showToast('Error deleting member.'); }
   };
 
-  const toggleMemberVisible = async (member: TeamMember) =>
-    updateDoc(doc(db, 'teamMembers', member.id), { visible: !member.visible });
+  const toggleMemberVisible = async (member: TeamMember) => {
+    await admin.updateTeamMember(member.id, { visible: !member.visible });
+    await loadMembers();
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Offer handlers
@@ -563,21 +504,28 @@ const AdminDashboard = () => {
     setOfferSaving(true);
     try {
       if (editingOfferId) {
-        await updateDoc(doc(db, 'offers', editingOfferId), { ...offerForm });
+        await admin.updateOffer(editingOfferId, { ...offerForm });
         showToast('Offer updated!');
       } else {
-        await addDoc(collection(db, 'offers'), { ...offerForm });
+        await admin.createOffer({ ...offerForm });
         showToast('Offer created!');
       }
       setShowOfferForm(false);
+      await loadOffers();
     } catch (err) { console.error(err); showToast('Error saving offer.'); }
     finally { setOfferSaving(false); }
   };
   const handleDeleteOffer = async (id: string) => {
-    try { await deleteDoc(doc(db, 'offers', id)); setDeleteOfferConfirm(null); showToast('Offer deleted.'); }
+    try {
+      await admin.deleteOffer(id); setDeleteOfferConfirm(null); showToast('Offer deleted.');
+      await loadOffers();
+    }
     catch { showToast('Error deleting offer.'); }
   };
-  const toggleOfferActive = (o: Offer) => updateDoc(doc(db, 'offers', o.id), { active: !o.active });
+  const toggleOfferActive = async (o: Offer) => {
+    await admin.updateOffer(o.id, { active: !o.active });
+    await loadOffers();
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Plan handlers
@@ -604,25 +552,30 @@ const AdminDashboard = () => {
     try {
       const data = { ...planForm, features: planForm.features.split('\n').map((f) => f.trim()).filter(Boolean) };
       if (editingPlanId) {
-        await updateDoc(doc(db, 'plans', editingPlanId), data);
+        await admin.updatePlan(editingPlanId, data);
         showToast('Plan updated!');
       } else {
-        await addDoc(collection(db, 'plans'), data);
+        await admin.createPlan(data);
         showToast('Plan added!');
       }
       setShowPlanForm(false);
+      await loadPlans();
     } catch (err) { console.error(err); showToast('Error saving plan.'); }
     finally { setPlanSaving(false); }
   };
   const handleDeletePlan = async (id: string) => {
-    try { await deleteDoc(doc(db, 'plans', id)); setDeletePlanConfirm(null); showToast('Plan deleted.'); }
+    try {
+      await admin.deletePlan(id); setDeletePlanConfirm(null); showToast('Plan deleted.');
+      await loadPlans();
+    }
     catch { showToast('Error deleting plan.'); }
   };
   const seedDefaultPlans = async () => {
     setSeedingPlans(true);
     try {
-      await Promise.all(DEFAULT_PLANS.map((p) => addDoc(collection(db, 'plans'), p)));
+      await Promise.all(DEFAULT_PLANS.map((p) => admin.createPlan(p)));
       showToast('Default plans loaded!');
+      await loadPlans();
     } catch { showToast('Error seeding plans.'); }
     finally { setSeedingPlans(false); }
   };
@@ -630,22 +583,28 @@ const AdminDashboard = () => {
   // ─────────────────────────────────────────────────────────────────────────
   // Enquiry handlers
   // ─────────────────────────────────────────────────────────────────────────
-  const markEnquiryRead = (id: string) =>
-    updateDoc(doc(db, 'enquiries', id), { read: true });
+  const markEnquiryRead = async (id: string) => {
+    await admin.updateEnquiry(id, { read: true });
+    await loadEnquiries();
+  };
 
   const cycleEnquiryStatus = async (e: Enquiry) => {
-    await updateDoc(doc(db, 'enquiries', e.id), {
+    await admin.updateEnquiry(e.id, {
       status: ENQUIRY_STATUS_NEXT[e.status],
       read: true,
     });
+    await loadEnquiries();
   };
 
   const handleDeleteEnquiry = async (id: string) => {
-    try { await deleteDoc(doc(db, 'enquiries', id)); setDeleteEnquiryConfirm(null); showToast('Enquiry deleted.'); }
+    try {
+      await admin.deleteEnquiry(id); setDeleteEnquiryConfirm(null); showToast('Enquiry deleted.');
+      await loadEnquiries();
+    }
     catch { showToast('Error deleting enquiry.'); }
   };
 
-  const handleLogout = async () => { await signOut(auth); navigate('/admin/login'); };
+  const handleLogout = async () => { await apiLogout(); navigate('/admin/login'); };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Duty Roster handlers
@@ -655,30 +614,34 @@ const AdminDashboard = () => {
     if (!dutyForm.trainerId || dutyForm.days.length === 0) { showToast('Select trainer and at least one day.'); return; }
     setDutySaving(true);
     try {
-      const trainer = members.find((m) => m.id === dutyForm.trainerId);
+      const trainerMember = members.find((m) => m.id === dutyForm.trainerId);
       const data = {
         ...dutyForm,
-        trainerName: trainer?.name ?? '',
-        trainerImage: trainer?.image ?? '',
+        trainerName: trainerMember?.name ?? '',
+        trainerImage: trainerMember?.image ?? '',
         weekStart: rosterWeek,
         weekEnd: getWeekEnd(rosterWeek),
       };
       if (editingDutyId) {
-        await updateDoc(doc(db, 'duties', editingDutyId), data);
+        await admin.updateDuty(editingDutyId, data);
         showToast('Duty updated!');
       } else {
-        await addDoc(collection(db, 'duties'), data);
+        await admin.createDuty(data);
         showToast('Duty assigned!');
       }
       setShowDutyForm(false);
       setEditingDutyId(null);
       setDutyForm({ ...EMPTY_DUTY });
+      await loadDuties(rosterWeek);
     } catch (err) { console.error(err); showToast('Error saving duty.'); }
     finally { setDutySaving(false); }
   };
 
   const handleDeleteDuty = async (id: string) => {
-    try { await deleteDoc(doc(db, 'duties', id)); showToast('Duty removed.'); }
+    try {
+      await admin.deleteDuty(id); showToast('Duty removed.');
+      await loadDuties(rosterWeek);
+    }
     catch { showToast('Error deleting duty.'); }
   };
 
@@ -690,33 +653,34 @@ const AdminDashboard = () => {
     if (!sessionForm.trainerId || !sessionForm.title) { showToast('Title and trainer are required.'); return; }
     setSessionSaving(true);
     try {
-      const trainer = members.find((m) => m.id === sessionForm.trainerId);
+      const trainerMember = members.find((m) => m.id === sessionForm.trainerId);
       const { pinValidFrom, pinValidTo } = pinWindow(sessionForm.date, sessionForm.startTime, sessionForm.duration);
       const data = {
         ...sessionForm,
-        trainerName: trainer?.name ?? '',
-        pin: editingSessionId ? undefined : generatePin(),
+        trainerName: trainerMember?.name ?? '',
         pinValidFrom,
         pinValidTo,
       };
       if (editingSessionId) {
-        // Don't overwrite pin on edit
-        const { pin: _p, ...rest } = data as typeof data & { pin?: string };
-        await updateDoc(doc(db, 'classSessions', editingSessionId), rest);
+        await trainerApi.updateClassSession(editingSessionId, data);
         showToast('Session updated!');
       } else {
-        await addDoc(collection(db, 'classSessions'), data);
+        await trainerApi.createClassSession({ ...data, pin: generatePin() });
         showToast('Class session created!');
       }
       setShowSessionForm(false);
       setEditingSessionId(null);
       setSessionForm({ ...EMPTY_SESSION, date: sessionDate });
+      await loadSessions(sessionDate);
     } catch (err) { console.error(err); showToast('Error saving session.'); }
     finally { setSessionSaving(false); }
   };
 
   const handleDeleteSession = async (id: string) => {
-    try { await deleteDoc(doc(db, 'classSessions', id)); showToast('Session deleted.'); }
+    try {
+      await trainerApi.deleteClassSession(id); showToast('Session deleted.');
+      await loadSessions(sessionDate);
+    }
     catch { showToast('Error deleting session.'); }
   };
 
@@ -729,46 +693,31 @@ const AdminDashboard = () => {
       showToast('Email, password and trainer are required.'); return;
     }
     setAccountSaving(true);
-    // Use a secondary app instance so the admin session is NOT replaced
-    const secondaryApp = initializeApp(firebaseConfig, `trainer-create-${Date.now()}`);
-    const secondaryAuth = getAuth(secondaryApp);
     try {
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, accountForm.email, accountForm.password);
-      const trainer = members.find((m) => m.id === accountForm.trainerId);
-      await setDoc(doc(db, 'userRoles', cred.user.uid), {
-        role: 'trainer',
-        trainerId: accountForm.trainerId,
-        name: trainer?.name ?? accountForm.name,
+      const trainerMember = members.find((m) => m.id === accountForm.trainerId);
+      await admin.createTrainerAccount({
         email: accountForm.email,
+        password: accountForm.password,
+        name: trainerMember?.name ?? accountForm.name,
+        trainerId: accountForm.trainerId,
       });
       showToast('Trainer account created!');
       setShowAccountForm(false);
       setAccountForm({ email: '', password: '', name: '', trainerId: '' });
+      await loadTrainerAccounts();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error creating account.';
-      showToast(msg.includes('email-already-in-use') ? 'Email already in use.' : msg);
+      showToast(msg.includes('already') ? 'Email already in use.' : msg);
     } finally {
       setAccountSaving(false);
-      // Always clean up the secondary app so it doesn't linger
-      await deleteApp(secondaryApp);
     }
   };
 
   const handleDeleteTrainerAccount = async (uid: string) => {
     try {
-      const roleDoc = trainerAccounts.find((a) => a.id === uid);
-      const trainerId = roleDoc?.trainerId;
-      const deletes: Promise<void>[] = [deleteDoc(doc(db, 'userRoles', uid))];
-      if (trainerId) {
-        const [dutiesSnap, sessionsSnap] = await Promise.all([
-          getDocs(query(collection(db, 'duties'),        where('trainerId', '==', trainerId))),
-          getDocs(query(collection(db, 'classSessions'), where('trainerId', '==', trainerId))),
-        ]);
-        dutiesSnap.docs.forEach((d)   => deletes.push(deleteDoc(d.ref)));
-        sessionsSnap.docs.forEach((d) => deletes.push(deleteDoc(d.ref)));
-      }
-      await Promise.all(deletes);
+      await admin.deleteTrainerAccount(uid);
       showToast('Trainer account and schedule data removed.');
+      await loadTrainerAccounts();
     } catch { showToast('Error removing account.'); }
   };
 
@@ -1132,7 +1081,7 @@ const AdminDashboard = () => {
             {plans.length === 0 ? (
               <div className="text-center py-16">
                 <Sparkles size={32} className="text-gray-700 mx-auto mb-3" />
-                <p className="text-gray-500 mb-4">No plans in Firestore yet.</p>
+                <p className="text-gray-500 mb-4">No plans yet.</p>
                 <button onClick={seedDefaultPlans} disabled={seedingPlans}
                   className="px-6 py-3 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-xl text-sm transition-all flex items-center gap-2 mx-auto">
                   {seedingPlans ? <Loader size={15} className="animate-spin" /> : <CheckCircle size={15} />}
@@ -1225,7 +1174,7 @@ const AdminDashboard = () => {
                   {filtered.map((enq) => {
                     const isExpanded = expandedEnquiry === enq.id;
                     const date = enq.submittedAt
-                      ? new Date(enq.submittedAt.seconds * 1000).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      ? new Date(enq.submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                       : '—';
                     return (
                       <div

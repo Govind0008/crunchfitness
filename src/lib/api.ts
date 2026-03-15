@@ -277,6 +277,23 @@ export const trainer = {
   updateSession: (id: string, data: any) => apiFetch<any>(`/trainer/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSession: (id: string) => apiFetch(`/trainer/sessions/${id}`, { method: 'DELETE' }),
 
+  // Session confirmations
+  confirmStart: (id: string) => apiFetch<any>(`/trainer/sessions/${id}/confirm-start`, { method: 'POST' }),
+  confirmEnd:   (id: string) => apiFetch<any>(`/trainer/sessions/${id}/confirm-end`,   { method: 'POST' }),
+  getConfirmationStatus: (id: string) => apiFetch<any>(`/trainer/sessions/${id}/confirmation-status`),
+
+  // Session workout logs
+  getSessionWorkouts:   (sessionId: string) => apiFetch<any[]>(`/trainer/sessions/${sessionId}/workouts`),
+  addWorkoutLog:        (sessionId: string, data: any) => apiFetch<any>(`/trainer/sessions/${sessionId}/workouts`, { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkoutLog:     (sessionId: string, logId: string, data: any) => apiFetch<any>(`/trainer/sessions/${sessionId}/workouts/${logId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWorkoutLog:     (sessionId: string, logId: string) => apiFetch(`/trainer/sessions/${sessionId}/workouts/${logId}`, { method: 'DELETE' }),
+  addWorkoutSet:        (sessionId: string, logId: string, data: any) => apiFetch<any>(`/trainer/sessions/${sessionId}/workouts/${logId}/sets`, { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkoutSet:     (sessionId: string, logId: string, setId: string, data: any) => apiFetch<any>(`/trainer/sessions/${sessionId}/workouts/${logId}/sets/${setId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWorkoutSet:     (sessionId: string, logId: string, setId: string) => apiFetch(`/trainer/sessions/${sessionId}/workouts/${logId}/sets/${setId}`, { method: 'DELETE' }),
+
+  // Client workout history (trainer view)
+  getClientWorkoutHistory: (clientId: string) => apiFetch<any[]>(`/trainer/clients/${clientId}/workout-history`),
+
   // Workout plans
   listWorkoutPlans: () => apiFetch<any[]>('/trainer/workout-plans'),
   getWorkoutPlan: (id: string) => apiFetch<any>(`/trainer/workout-plans/${id}`),
@@ -310,6 +327,16 @@ export const trainer = {
 
 export const client = {
   listSessions: () => apiFetch<any[]>('/client/sessions'),
+
+  // Session confirmations (client side)
+  confirmStart: (id: string) => apiFetch<any>(`/client/sessions/${id}/confirm-start`, { method: 'POST' }),
+  confirmEnd:   (id: string) => apiFetch<any>(`/client/sessions/${id}/confirm-end`,   { method: 'POST' }),
+  getConfirmationStatus: (id: string) => apiFetch<any>(`/client/sessions/${id}/confirmation-status`),
+
+  // Session workouts (client read-only)
+  getSessionWorkouts: (sessionId: string) => apiFetch<any[]>(`/client/sessions/${sessionId}/workouts`),
+  getWorkoutHistory:  () => apiFetch<any[]>('/client/workout-history'),
+
   getWorkoutPlan: () => apiFetch<any>('/client/workout-plan'),
   listProgress: () => apiFetch<any[]>('/client/progress'),
   addProgress: (data: any) => apiFetch<any>('/client/progress', { method: 'POST', body: JSON.stringify(data) }),

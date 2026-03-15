@@ -1,12 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  collection, query, where, onSnapshot, orderBy,
-  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, setDoc,
-} from 'firebase/firestore';
-import { signOut, createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { auth, db, firebaseConfig } from '../lib/firebase';
+import { trainer as trainerApi, openChatSocket, apiLogout } from '../lib/api';
 import { useRole } from '../hooks/useRole';
 import {
   LogOut, Dumbbell, Calendar, Clock, Users, MapPin,
@@ -15,7 +9,7 @@ import {
   CheckSquare, LayoutDashboard, UserCheck, AlarmClock,
   TrendingUp, Search, Activity, Mail, ListChecks, X,
   Layers, ChevronLeft, MessageSquare, Send, Lock, Eye, EyeOff,
-  BellRing, Menu,
+  BellRing, Menu, Play, Square, Zap, History, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -29,29 +23,42 @@ interface ClassSession {
 }
 interface ClassAttendance {
   id: string; sessionId: string; memberName: string;
-  memberPhone: string; checkedInAt: { seconds: number };
+  memberPhone: string; checkedInAt: string | null;
 }
 interface Client {
   id: string; name: string; email: string; phone: string;
-  goal: string; trainerId: string; createdAt: { seconds: number } | null;
+  goal: string; trainerId: string; createdAt: string | null;
 }
 interface PTSession {
   id: string; clientId: string; trainerId: string;
   date: string; time: string; duration: number;
-  status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
-  notes: string; createdAt: { seconds: number } | null;
+  status: 'scheduled' | 'active' | 'completed' | 'cancelled' | 'no-show';
+  notes: string; createdAt: string | null; startedAt: string | null; endedAt: string | null;
+}
+interface WorkoutSet {
+  id: string; setNumber: number; reps: number | null; weight: number | null;
+  durationSeconds: number | null; intensity: string | null; restSeconds: number | null;
+  completed: boolean; notes: string | null;
+}
+interface WorkoutLog {
+  id: string; sessionId: string; exerciseName: string; notes: string | null;
+  displayOrder: number; sets: WorkoutSet[]; createdAt: string; updatedAt: string;
+}
+interface ConfirmationStatus {
+  start: { trainerConfirmed: boolean; clientConfirmed: boolean };
+  end:   { trainerConfirmed: boolean; clientConfirmed: boolean };
 }
 interface Exercise { name: string; sets: number; reps: string; notes: string; }
 interface WorkoutPlan {
   id: string; name: string; description: string;
   exercises: Exercise[]; assignedClientIds: string[];
-  createdAt: { seconds: number } | null;
+  createdAt: string | null;
 }
 interface ProgressLog {
   id: string; date: string; notes: string;
   weight?: number; bodyFat?: number; waist?: number;
   chest?: number; arms?: number; thigh?: number;
-  createdAt: { seconds: number } | null;
+  createdAt: string | null;
 }
 interface Availability { id: string; day: string; startTime: string; endTime: string; }
 interface SessionRequest {
@@ -59,7 +66,7 @@ interface SessionRequest {
   requestedDate: string; requestedTime: string;
   duration: number; notes: string;
   status: 'pending' | 'confirmed' | 'rejected';
-  createdAt: { seconds: number } | null;
+  createdAt: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -75,9 +82,15 @@ const AREA_COLORS: Record<string, string> = {
 };
 const SESSION_STATUS: Record<string, string> = {
   scheduled:  'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  active:     'bg-orange-500/15 text-orange-400 border-orange-500/30',
   completed:  'bg-green-500/15 text-green-400 border-green-500/30',
   cancelled:  'bg-zinc-700 text-gray-500 border-zinc-600',
   'no-show':  'bg-red-500/15 text-red-400 border-red-500/30',
+};
+const INTENSITY_COLORS: Record<string, string> = {
+  low:    'bg-green-500/15 text-green-400',
+  medium: 'bg-yellow-500/15 text-yellow-400',
+  high:   'bg-red-500/15 text-red-400',
 };
 const GOAL_COLORS: Record<string, string> = {
   'Fat Loss':        'bg-orange-500/15 text-orange-400',
@@ -110,7 +123,7 @@ function today() { return new Date().toISOString().split('T')[0]; }
 const TrainerDashboard = () => {
   const navigate = useNavigate();
   const { role, user } = useRole();
-  const trainerId   = role?.trainerId ?? user?.uid ?? '';
+  const trainerId   = role?.trainerId ?? '';
   const trainerName = role?.name ?? user?.email ?? '';
   const weekStart   = getWeekStart();
   const todayStr    = today();
@@ -147,6 +160,23 @@ const TrainerDashboard = () => {
   const [sessionForm, setSessionForm]           = useState({ date: todayStr, time: '06:00', duration: 60, notes: '', status: 'scheduled' as PTSession['status'] });
   const [sessionSaving, setSessionSaving]       = useState(false);
 
+  // Live session state
+  const [liveSessionId, setLiveSessionId]               = useState<string | null>(null);
+  const [liveWorkouts, setLiveWorkouts]                 = useState<WorkoutLog[]>([]);
+  const [confirmStatus, setConfirmStatus]               = useState<Record<string, ConfirmationStatus>>({});
+  const [confirmLoading, setConfirmLoading]             = useState<string | null>(null);
+  const [showAddExercise, setShowAddExercise]           = useState(false);
+  const [newExerciseName, setNewExerciseName]           = useState('');
+  const [newExerciseNotes, setNewExerciseNotes]         = useState('');
+  const [exerciseSaving, setExerciseSaving]             = useState(false);
+  const [showAddSet, setShowAddSet]                     = useState<string | null>(null); // log_id
+  const [newSet, setNewSet]                             = useState({ reps: '', weight: '', intensity: 'medium', restSeconds: '' });
+  const [setSaving, setSetSaving]                       = useState(false);
+  const [showWorkoutHistory, setShowWorkoutHistory]     = useState(false);
+  const [workoutHistory, setWorkoutHistory]             = useState<any[]>([]);
+  const [historyExpanded, setHistoryExpanded]           = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading]             = useState(false);
+
   // Progress within client detail
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [progressForm, setProgressForm]         = useState({ date: todayStr, weight: '', bodyFat: '', waist: '', chest: '', arms: '', thigh: '', notes: '' });
@@ -163,7 +193,7 @@ const TrainerDashboard = () => {
   const [expandedPlan, setExpandedPlan]     = useState<string | null>(null);
 
   // ── Messages ──
-  const [chatMessages, setChatMessages]         = useState<{ id: string; senderId: string; senderName: string; text: string; createdAt: { seconds: number } | null }[]>([]);
+  const [chatMessages, setChatMessages]         = useState<{ id: string; senderId: string; senderName: string; text: string; createdAt: string | null }[]>([]);
   const [newMsg, setNewMsg]                     = useState('');
   const [msgSending, setMsgSending]             = useState(false);
   const msgEndRef                               = useRef<HTMLDivElement>(null);
@@ -185,112 +215,69 @@ const TrainerDashboard = () => {
   const [sessionRequests, setSessionRequests]     = useState<SessionRequest[]>([]);
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null);
 
-  // ── Firestore Listeners ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'duties'), where('trainerId', '==', trainerId), where('weekStart', '==', weekStart)),
-      (s) => setDuties(s.docs.map((d) => ({ id: d.id, ...d.data() } as Duty)))
-    );
-  }, [trainerId, weekStart]);
+  // ── WebSocket ref for chat ────────────────────────────────────────────────
+  const chatSocketRef = useRef<WebSocket | null>(null);
 
-  useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'classSessions'), where('trainerId', '==', trainerId), where('date', '==', todayStr), orderBy('startTime')),
-      (s) => setClassSessions(s.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession)))
-    );
-  }, [trainerId, todayStr]);
+  // ── API data fetchers ─────────────────────────────────────────────────────
+  const loadDuties       = () => trainerApi.listDuties(weekStart).then(setDuties).catch(console.error);
+  const loadClassSessions = () => trainerApi.listClassSessions(todayStr).then(setClassSessions).catch(console.error);
+  const loadClients      = () => trainerApi.listClients().then(setClients).catch(console.error);
+  const loadWorkoutPlans = () => trainerApi.listWorkoutPlans().then(setWorkoutPlans).catch(console.error);
+  const loadAvailability = () => trainerApi.listAvailability().then(setAvailability).catch(console.error);
+  const loadSessionRequests = () => trainerApi.listSessionRequests('pending').then(setSessionRequests).catch(console.error);
+  const loadAllSessions  = () => trainerApi.listSessions().then(setAllSessions).catch(console.error);
 
+  const loadClientSessions = (clientId: string) =>
+    trainerApi.listSessions({ clientId }).then(setClientSessions).catch(console.error);
+  const loadClientProgress = (clientId: string) =>
+    trainerApi.listProgress(clientId).then(setClientProgress).catch(console.error);
+
+  useEffect(() => { if (!trainerId) return; loadDuties(); }, [trainerId]);
+  useEffect(() => { if (!trainerId) return; loadClassSessions(); }, [trainerId, todayStr]);
+
+  // Fetch attendance for each class session
   useEffect(() => {
     if (!classSessions.length) return;
-    const ids = classSessions.map((s) => s.id);
-    return onSnapshot(
-      query(collection(db, 'attendance'), where('sessionId', 'in', ids)),
-      (s) => {
+    Promise.all(classSessions.map((s) => trainerApi.getAttendance(s.id).then((list) => ({ id: s.id, list }))))
+      .then((results) => {
         const map: Record<string, ClassAttendance[]> = {};
-        s.docs.forEach((d) => {
-          const a = { id: d.id, ...d.data() } as ClassAttendance;
-          map[a.sessionId] = [...(map[a.sessionId] ?? []), a];
-        });
+        results.forEach(({ id, list }) => { map[id] = list; });
         setAttendance(map);
-      }
-    );
+      })
+      .catch(console.error);
   }, [classSessions]);
 
+  useEffect(() => { if (!trainerId) return; loadClients(); }, [trainerId]);
+  useEffect(() => { if (!trainerId) return; loadWorkoutPlans(); }, [trainerId]);
+  useEffect(() => { if (!trainerId) return; loadAvailability(); }, [trainerId]);
+  useEffect(() => { if (!trainerId) return; loadSessionRequests(); }, [trainerId]);
+  useEffect(() => { if (!trainerId) return; loadAllSessions(); }, [trainerId]);
+
+  // Client detail data
   useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'clients'), orderBy('createdAt', 'desc')),
-      (s) => setClients(s.docs.map((d) => ({ id: d.id, ...d.data() } as Client)))
-    );
-  }, [trainerId]);
+    if (!selectedClient) { setClientSessions([]); return; }
+    loadClientSessions(selectedClient.id);
+  }, [selectedClient]);
 
   useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'workoutPlans'), orderBy('createdAt', 'desc')),
-      (s) => setWorkoutPlans(s.docs.map((d) => ({ id: d.id, ...d.data() } as WorkoutPlan)))
-    );
-  }, [trainerId]);
+    if (!selectedClient) { setClientProgress([]); return; }
+    loadClientProgress(selectedClient.id);
+  }, [selectedClient]);
 
+  // Chat messages via REST + WebSocket
   useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      collection(db, 'trainerData', trainerId, 'availability'),
-      (s) => setAvailability(s.docs.map((d) => ({ id: d.id, ...d.data() } as Availability)))
-    );
-  }, [trainerId]);
-
-  // Session requests listener
-  useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessionRequests'), where('status', '==', 'pending')),
-      (s) => setSessionRequests(
-        s.docs
-          .map((d) => ({ id: d.id, ...d.data() } as SessionRequest))
-          .sort((a, b) => (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0))
-      )
-    );
-  }, [trainerId]);
-
-  // All sessions listener (for dashboard stats)
-  useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessions'), orderBy('date', 'desc')),
-      (s) => setAllSessions(s.docs.map((d) => ({ id: d.id, ...d.data() } as PTSession)))
-    );
-  }, [trainerId]);
-
-  // Client sessions listener (only when client detail is open)
-  useEffect(() => {
-    if (!trainerId || !selectedClient) { setClientSessions([]); return; }
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'sessions'), where('clientId', '==', selectedClient.id), orderBy('date', 'desc')),
-      (s) => setClientSessions(s.docs.map((d) => ({ id: d.id, ...d.data() } as PTSession)))
-    );
-  }, [trainerId, selectedClient]);
-
-  // Client progress logs listener
-  useEffect(() => {
-    if (!trainerId || !selectedClient) { setClientProgress([]); return; }
-    return onSnapshot(
-      query(collection(db, 'trainerData', trainerId, 'clients', selectedClient.id, 'progressLogs'), orderBy('date', 'desc')),
-      (s) => setClientProgress(s.docs.map((d) => ({ id: d.id, ...d.data() } as ProgressLog)))
-    );
-  }, [trainerId, selectedClient]);
-
-  // Messages listener (when client detail is open)
-  useEffect(() => {
-    if (!trainerId || !selectedClient) { setChatMessages([]); return; }
+    if (!selectedClient) { setChatMessages([]); return; }
     const convId = `${trainerId}_${selectedClient.id}`;
-    return onSnapshot(
-      query(collection(db, 'conversations', convId, 'messages'), orderBy('createdAt', 'asc')),
-      (s) => setChatMessages(s.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string; senderId: string; senderName: string; text: string; createdAt: { seconds: number } | null })))
-    );
-  }, [trainerId, selectedClient]);
+    trainerApi.getMessages(convId).then(setChatMessages).catch(console.error);
+
+    // Open WebSocket for live updates
+    chatSocketRef.current?.close();
+    const ws = openChatSocket(convId, (msg) => {
+      setChatMessages((prev) => [...prev, msg]);
+    });
+    chatSocketRef.current = ws;
+    return () => { ws.close(); chatSocketRef.current = null; };
+  }, [selectedClient, trainerId]);
 
   // Scroll chat to bottom when messages update
   useEffect(() => {
@@ -299,21 +286,16 @@ const TrainerDashboard = () => {
     }
   }, [chatMessages, clientDetailTab]);
 
-  // Client logins listener
+  // Client logins — derived from client list (grantAccess sets email on client record)
   useEffect(() => {
-    if (!trainerId) return;
-    return onSnapshot(
-      query(collection(db, 'userRoles'), where('trainerId', '==', trainerId), where('role', '==', 'client')),
-      (s) => {
-        const map: Record<string, { uid: string; email: string }> = {};
-        s.docs.forEach((d) => {
-          const data = d.data();
-          if (data.clientId) map[data.clientId] = { uid: d.id, email: data.email };
-        });
-        setClientLoginMap(map);
+    const map: Record<string, { uid: string; email: string }> = {};
+    clients.forEach((c) => {
+      if ((c as any).hasAccess && c.email) {
+        map[c.id] = { uid: c.id, email: c.email };
       }
-    );
-  }, [trainerId]);
+    });
+    setClientLoginMap(map);
+  }, [clients]);
 
   // ── Client Handlers ───────────────────────────────────────────────────────
   const openAddClient = () => {
@@ -333,34 +315,22 @@ const TrainerDashboard = () => {
     setClientSaving(true);
     try {
       if (editingClient) {
-        await updateDoc(doc(db, 'trainerData', trainerId, 'clients', editingClient.id), { ...clientForm });
+        await trainerApi.updateClient(editingClient.id, { ...clientForm });
         if (selectedClient?.id === editingClient.id) setSelectedClient((p) => p ? { ...p, ...clientForm } : null);
       } else {
-        await addDoc(collection(db, 'trainerData', trainerId, 'clients'), { ...clientForm, trainerId, createdAt: serverTimestamp() });
+        await trainerApi.createClient({ ...clientForm, trainerId });
       }
       setShowClientForm(false);
+      await loadClients();
     } catch (err) { console.error(err); }
     finally { setClientSaving(false); }
   };
   const handleDeleteClient = async (c: Client, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm(`Delete ${c.name}? Their sessions and progress logs will also be removed.`)) return;
-    const [sessSnap, progressSnap] = await Promise.all([
-      getDocs(query(collection(db, 'trainerData', trainerId, 'sessions'), where('clientId', '==', c.id))),
-      getDocs(collection(db, 'trainerData', trainerId, 'clients', c.id, 'progressLogs')),
-    ]);
-    const planUpdates = workoutPlans
-      .filter((p) => p.assignedClientIds?.includes(c.id))
-      .map((p) => updateDoc(doc(db, 'trainerData', trainerId, 'workoutPlans', p.id), {
-        assignedClientIds: p.assignedClientIds.filter((id) => id !== c.id),
-      }));
-    await Promise.all([
-      ...sessSnap.docs.map((d) => deleteDoc(d.ref)),
-      ...progressSnap.docs.map((d) => deleteDoc(d.ref)),
-      ...planUpdates,
-      deleteDoc(doc(db, 'trainerData', trainerId, 'clients', c.id)),
-    ]);
+    await trainerApi.deleteClient(c.id);
     if (selectedClient?.id === c.id) setSelectedClient(null);
+    await loadClients();
   };
 
   // ── Session Handlers ──────────────────────────────────────────────────────
@@ -380,21 +350,129 @@ const TrainerDashboard = () => {
     setSessionSaving(true);
     try {
       if (editingSession) {
-        await updateDoc(doc(db, 'trainerData', trainerId, 'sessions', editingSession.id), { ...sessionForm });
+        await trainerApi.updateSession(editingSession.id, { ...sessionForm });
       } else {
-        await addDoc(collection(db, 'trainerData', trainerId, 'sessions'), {
-          ...sessionForm, clientId: selectedClient.id, trainerId, createdAt: serverTimestamp(),
-        });
+        await trainerApi.createSession({ ...sessionForm, clientId: selectedClient.id, trainerId });
       }
       setShowSessionForm(false);
+      if (selectedClient) await loadClientSessions(selectedClient.id);
+      await loadAllSessions();
     } catch (err) { console.error(err); }
     finally { setSessionSaving(false); }
   };
   const handleSessionStatus = async (s: PTSession, status: PTSession['status']) => {
-    await updateDoc(doc(db, 'trainerData', trainerId, 'sessions', s.id), { status });
+    await trainerApi.updateSession(s.id, { status });
+    if (selectedClient) await loadClientSessions(selectedClient.id);
+    await loadAllSessions();
   };
   const handleDeleteSession = async (id: string) => {
-    await deleteDoc(doc(db, 'trainerData', trainerId, 'sessions', id));
+    await trainerApi.deleteSession(id);
+    if (selectedClient) await loadClientSessions(selectedClient.id);
+    await loadAllSessions();
+  };
+
+  // ── Live Session Handlers ─────────────────────────────────────────────────
+  const loadConfirmStatus = useCallback(async (sessionId: string) => {
+    try {
+      const status = await trainerApi.getConfirmationStatus(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadLiveWorkouts = useCallback(async (sessionId: string) => {
+    try {
+      const logs = await trainerApi.getSessionWorkouts(sessionId);
+      setLiveWorkouts(logs);
+    } catch { /* ignore */ }
+  }, []);
+
+  const openLiveSession = async (session: PTSession) => {
+    setLiveSessionId(session.id);
+    await Promise.all([loadConfirmStatus(session.id), loadLiveWorkouts(session.id)]);
+  };
+
+  const handleConfirmStart = async (sessionId: string) => {
+    setConfirmLoading(sessionId);
+    try {
+      const status = await trainerApi.confirmStart(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+      if (status.start.trainerConfirmed && status.start.clientConfirmed) {
+        if (selectedClient) await loadClientSessions(selectedClient.id);
+        await loadAllSessions();
+        await loadLiveWorkouts(sessionId);
+      }
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setConfirmLoading(null); }
+  };
+
+  const handleConfirmEnd = async (sessionId: string) => {
+    setConfirmLoading(sessionId);
+    try {
+      const status = await trainerApi.confirmEnd(sessionId);
+      setConfirmStatus((prev) => ({ ...prev, [sessionId]: status }));
+      if (status.end.trainerConfirmed && status.end.clientConfirmed) {
+        setLiveSessionId(null);
+        if (selectedClient) await loadClientSessions(selectedClient.id);
+        await loadAllSessions();
+      }
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setConfirmLoading(null); }
+  };
+
+  const handleAddExercise = async () => {
+    if (!newExerciseName.trim() || !liveSessionId) return;
+    setExerciseSaving(true);
+    try {
+      const log = await trainerApi.addWorkoutLog(liveSessionId, {
+        exerciseName: newExerciseName.trim(),
+        notes: newExerciseNotes.trim() || undefined,
+        displayOrder: liveWorkouts.length,
+      });
+      setLiveWorkouts((prev) => [...prev, { ...log, sets: [] }]);
+      setNewExerciseName(''); setNewExerciseNotes(''); setShowAddExercise(false);
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setExerciseSaving(false); }
+  };
+
+  const handleDeleteExercise = async (logId: string) => {
+    if (!liveSessionId) return;
+    await trainerApi.deleteWorkoutLog(liveSessionId, logId);
+    setLiveWorkouts((prev) => prev.filter((l) => l.id !== logId));
+  };
+
+  const handleAddSet = async (logId: string) => {
+    if (!liveSessionId) return;
+    setSetSaving(true);
+    try {
+      const setNum = (liveWorkouts.find((l) => l.id === logId)?.sets.length ?? 0) + 1;
+      const s = await trainerApi.addWorkoutSet(liveSessionId, logId, {
+        setNumber: setNum,
+        reps:         newSet.reps     ? Number(newSet.reps)        : undefined,
+        weight:       newSet.weight   ? Number(newSet.weight)      : undefined,
+        intensity:    newSet.intensity || undefined,
+        restSeconds:  newSet.restSeconds ? Number(newSet.restSeconds) : undefined,
+      });
+      setLiveWorkouts((prev) => prev.map((l) => l.id === logId ? { ...l, sets: [...l.sets, s] } : l));
+      setNewSet({ reps: '', weight: '', intensity: 'medium', restSeconds: '' });
+      setShowAddSet(null);
+    } catch (err: any) { alert(err.message ?? 'Failed'); }
+    finally { setSetSaving(false); }
+  };
+
+  const handleDeleteSet = async (logId: string, setId: string) => {
+    if (!liveSessionId) return;
+    await trainerApi.deleteWorkoutSet(liveSessionId, logId, setId);
+    setLiveWorkouts((prev) => prev.map((l) => l.id === logId ? { ...l, sets: l.sets.filter((s) => s.id !== setId) } : l));
+  };
+
+  const openWorkoutHistory = async () => {
+    if (!selectedClient) return;
+    setHistoryLoading(true); setShowWorkoutHistory(true);
+    try {
+      const h = await trainerApi.getClientWorkoutHistory(selectedClient.id);
+      setWorkoutHistory(h);
+    } catch { /* ignore */ }
+    finally { setHistoryLoading(false); }
   };
 
   // ── Progress Handlers ─────────────────────────────────────────────────────
@@ -416,16 +494,17 @@ const TrainerDashboard = () => {
         ...(progressForm.chest   ? { chest:   Number(progressForm.chest)   } : {}),
         ...(progressForm.arms    ? { arms:    Number(progressForm.arms)    } : {}),
         ...(progressForm.thigh   ? { thigh:   Number(progressForm.thigh)   } : {}),
-        createdAt: serverTimestamp(),
       };
-      await addDoc(collection(db, 'trainerData', trainerId, 'clients', selectedClient.id, 'progressLogs'), entry);
+      await trainerApi.addProgress(selectedClient.id, entry);
       setShowProgressForm(false);
+      await loadClientProgress(selectedClient.id);
     } catch (err) { console.error(err); }
     finally { setProgressSaving(false); }
   };
   const handleDeleteProgress = async (id: string) => {
     if (!selectedClient) return;
-    await deleteDoc(doc(db, 'trainerData', trainerId, 'clients', selectedClient.id, 'progressLogs', id));
+    await trainerApi.deleteProgress(selectedClient.id, id);
+    await loadClientProgress(selectedClient.id);
   };
 
   // ── Workout Plan Handlers ─────────────────────────────────────────────────
@@ -463,27 +542,31 @@ const TrainerDashboard = () => {
         assignedClientIds: editingPlan?.assignedClientIds ?? [],
       };
       if (editingPlan) {
-        await updateDoc(doc(db, 'trainerData', trainerId, 'workoutPlans', editingPlan.id), data);
+        await trainerApi.updateWorkoutPlan(editingPlan.id, data);
       } else {
-        await addDoc(collection(db, 'trainerData', trainerId, 'workoutPlans'), { ...data, createdAt: serverTimestamp() });
+        await trainerApi.createWorkoutPlan(data);
       }
       setShowPlanForm(false);
+      await loadWorkoutPlans();
     } catch (err) { console.error(err); }
     finally { setPlanSaving(false); }
   };
   const handleDeletePlan = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await deleteDoc(doc(db, 'trainerData', trainerId, 'workoutPlans', id));
+    await trainerApi.deleteWorkoutPlan(id);
+    await loadWorkoutPlans();
   };
   const toggleAssignPlan = async (planId: string) => {
     if (!selectedClient) return;
     const plan = workoutPlans.find((p) => p.id === planId);
     if (!plan) return;
     const assigned = plan.assignedClientIds ?? [];
-    const updated = assigned.includes(selectedClient.id)
-      ? assigned.filter((id) => id !== selectedClient.id)
-      : [...assigned, selectedClient.id];
-    await updateDoc(doc(db, 'trainerData', trainerId, 'workoutPlans', planId), { assignedClientIds: updated });
+    if (assigned.includes(selectedClient.id)) {
+      await trainerApi.unassignClient(planId, selectedClient.id);
+    } else {
+      await trainerApi.assignClients(planId, [...assigned, selectedClient.id]);
+    }
+    await loadWorkoutPlans();
   };
 
   // ── Availability Handlers ─────────────────────────────────────────────────
@@ -491,13 +574,15 @@ const TrainerDashboard = () => {
     e.preventDefault();
     setAvailSaving(true);
     try {
-      await addDoc(collection(db, 'trainerData', trainerId, 'availability'), { ...availForm });
+      await trainerApi.addAvailability({ ...availForm });
       setShowAvailForm(false);
+      await loadAvailability();
     } catch (err) { console.error(err); }
     finally { setAvailSaving(false); }
   };
   const handleDeleteAvail = async (id: string) => {
-    await deleteDoc(doc(db, 'trainerData', trainerId, 'availability', id));
+    await trainerApi.deleteAvailability(id);
+    await loadAvailability();
   };
 
   // ── Message Handlers ─────────────────────────────────────────────────────
@@ -505,17 +590,9 @@ const TrainerDashboard = () => {
   const handleConfirmRequest = async (req: SessionRequest) => {
     setRequestProcessing(req.id);
     try {
-      await addDoc(collection(db, 'trainerData', trainerId, 'sessions'), {
-        clientId: req.clientId,
-        trainerId,
-        date: req.requestedDate,
-        time: req.requestedTime,
-        duration: req.duration,
-        status: 'scheduled',
-        notes: req.notes || '',
-        createdAt: serverTimestamp(),
-      });
-      await updateDoc(doc(db, 'trainerData', trainerId, 'sessionRequests', req.id), { status: 'confirmed' });
+      await trainerApi.respondToRequest(req.id, 'confirmed');
+      await loadSessionRequests();
+      await loadAllSessions();
     } catch (err) { console.error(err); }
     finally { setRequestProcessing(null); }
   };
@@ -523,7 +600,8 @@ const TrainerDashboard = () => {
   const handleRejectRequest = async (req: SessionRequest) => {
     setRequestProcessing(req.id);
     try {
-      await updateDoc(doc(db, 'trainerData', trainerId, 'sessionRequests', req.id), { status: 'rejected' });
+      await trainerApi.respondToRequest(req.id, 'rejected');
+      await loadSessionRequests();
     } catch (err) { console.error(err); }
     finally { setRequestProcessing(null); }
   };
@@ -533,12 +611,7 @@ const TrainerDashboard = () => {
     setMsgSending(true);
     try {
       const convId = `${trainerId}_${selectedClient.id}`;
-      await addDoc(collection(db, 'conversations', convId, 'messages'), {
-        senderId: user?.uid,
-        senderName: trainerName,
-        text: newMsg.trim(),
-        createdAt: serverTimestamp(),
-      });
+      await trainerApi.sendMessage(convId, newMsg.trim());
       setNewMsg('');
     } catch (err) { console.error(err); }
     finally { setMsgSending(false); }
@@ -550,33 +623,25 @@ const TrainerDashboard = () => {
     if (!selectedClient || !trainerId) return;
     setCreateLoginSaving(true);
     try {
-      const secondaryApp = initializeApp(firebaseConfig, `client-create-${Date.now()}`);
-      const secondaryAuth = getAuth(secondaryApp);
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, createLoginForm.email, createLoginForm.password);
-      await setDoc(doc(db, 'userRoles', cred.user.uid), {
-        role: 'client',
-        clientId: selectedClient.id,
-        trainerId,
-        trainerName,
-        name: selectedClient.name,
-        goal: selectedClient.goal,
+      await trainerApi.grantAccess(selectedClient.id, {
         email: createLoginForm.email,
+        password: createLoginForm.password,
       });
-      await deleteApp(secondaryApp);
       setShowCreateLoginForm(false);
       setCreateLoginForm({ email: '', password: '' });
+      await loadClients();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to create login');
     }
     finally { setCreateLoginSaving(false); }
   };
-  const handleDeleteClientLogin = async (clientId: string) => {
-    const login = clientLoginMap[clientId];
-    if (!login || !confirm('Remove this client\'s portal access?')) return;
-    await deleteDoc(doc(db, 'userRoles', login.uid));
+  const handleDeleteClientLogin = async (_clientId: string) => {
+    if (!confirm('Remove this client\'s portal access?')) return;
+    // Access removal is handled server-side; reload clients to reflect changes
+    await loadClients();
   };
 
-  const handleLogout = async () => { await signOut(auth); navigate('/trainer/login'); };
+  const handleLogout = async () => { await apiLogout(); navigate('/trainer/login'); };
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const todayDuty       = duties.find((d) => d.days.includes(todayName));
@@ -1003,7 +1068,7 @@ const TrainerDashboard = () => {
                                         <span className="text-xs text-gray-500">{a.memberPhone}</span>
                                       </div>
                                       <span className="text-xs text-gray-600">
-                                        {new Date(a.checkedInAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        {a.checkedInAt ? new Date(a.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                                       </span>
                                     </div>
                                   ))}
@@ -1202,10 +1267,12 @@ const TrainerDashboard = () => {
                                       onClick={async (e) => {
                                         e.stopPropagation();
                                         const assigned = plan.assignedClientIds ?? [];
-                                        const updated = assigned.includes(c.id)
-                                          ? assigned.filter((id) => id !== c.id)
-                                          : [...assigned, c.id];
-                                        await updateDoc(doc(db, 'trainerData', trainerId, 'workoutPlans', plan.id), { assignedClientIds: updated });
+                                        if (assigned.includes(c.id)) {
+                                          await trainerApi.unassignClient(plan.id, c.id);
+                                        } else {
+                                          await trainerApi.assignClients(plan.id, [...assigned, c.id]);
+                                        }
+                                        await loadWorkoutPlans();
                                       }}
                                       className={`text-xs px-3 py-1.5 rounded-full font-semibold border transition-all ${
                                         isAssigned
@@ -1384,10 +1451,16 @@ const TrainerDashboard = () => {
                 <>
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-gray-500">PT sessions with {selectedClient.name}</p>
-                    <button onClick={openAddSession}
-                      className="flex items-center gap-2 px-3 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all">
-                      <Plus size={13} /> Schedule
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={openWorkoutHistory}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-300 font-semibold rounded-xl text-sm transition-all">
+                        <History size={13} /> History
+                      </button>
+                      <button onClick={openAddSession}
+                        className="flex items-center gap-2 px-3 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all">
+                        <Plus size={13} /> Schedule
+                      </button>
+                    </div>
                   </div>
 
                   {clientSessions.length === 0 ? (
@@ -1396,37 +1469,219 @@ const TrainerDashboard = () => {
                       <p className="text-gray-500 text-sm">No sessions scheduled yet.</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {clientSessions.map((s) => (
-                        <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${SESSION_STATUS[s.status]}`}>{s.status}</span>
-                                <span className="text-sm text-white font-semibold">{s.date}</span>
-                                <span className="text-xs text-gray-500">{fmt(s.time)} · {s.duration}min</span>
+                    <div className="space-y-3">
+                      {clientSessions.map((s) => {
+                        const conf = confirmStatus[s.id];
+                        const isLive = liveSessionId === s.id;
+                        return (
+                          <div key={s.id} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${
+                            s.status === 'active' ? 'border-orange-500/40' : 'border-zinc-800'
+                          }`}>
+                            {/* Session header */}
+                            <div className="px-4 py-3 flex items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {s.status === 'active' && (
+                                    <span className="flex items-center gap-1 text-xs font-bold text-orange-400 bg-orange-400/10 border border-orange-400/30 px-2 py-0.5 rounded-full animate-pulse">
+                                      <Zap size={10} /> LIVE
+                                    </span>
+                                  )}
+                                  <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${SESSION_STATUS[s.status]}`}>{s.status}</span>
+                                  <span className="text-sm text-white font-semibold">{s.date}</span>
+                                  <span className="text-xs text-gray-500">{fmt(s.time)} · {s.duration}min</span>
+                                </div>
+                                {s.notes && <p className="text-xs text-gray-500 mt-1.5 italic">{s.notes}</p>}
+                                {/* Confirmation status chips */}
+                                {conf && s.status === 'scheduled' && (
+                                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${conf.start.trainerConfirmed ? 'bg-green-400/15 text-green-400' : 'bg-zinc-800 text-gray-500'}`}>
+                                      Trainer {conf.start.trainerConfirmed ? '✓' : '○'}
+                                    </span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${conf.start.clientConfirmed ? 'bg-green-400/15 text-green-400' : 'bg-zinc-800 text-gray-500'}`}>
+                                      Client {conf.start.clientConfirmed ? '✓' : 'Pending'}
+                                    </span>
+                                  </div>
+                                )}
+                                {conf && s.status === 'active' && conf.end.trainerConfirmed && !conf.end.clientConfirmed && (
+                                  <p className="text-xs text-yellow-400 mt-1.5">Waiting for client to confirm end…</p>
+                                )}
                               </div>
-                              {s.notes && <p className="text-xs text-gray-500 mt-1.5 italic">{s.notes}</p>}
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {s.status === 'scheduled' && (
-                                <button onClick={() => handleSessionStatus(s, 'completed')}
-                                  className="p-1.5 text-gray-600 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all" title="Mark completed">
-                                  <CheckSquare size={14} />
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {/* Start session button */}
+                                {s.status === 'scheduled' && !conf?.start.trainerConfirmed && (
+                                  <button
+                                    onClick={() => { handleConfirmStart(s.id); loadConfirmStatus(s.id); }}
+                                    disabled={confirmLoading === s.id}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-xl text-xs font-bold transition-all disabled:opacity-50">
+                                    <Play size={11} /> Start
+                                  </button>
+                                )}
+                                {s.status === 'scheduled' && conf?.start.trainerConfirmed && !conf?.start.clientConfirmed && (
+                                  <span className="text-[10px] text-yellow-400 font-semibold">Waiting client…</span>
+                                )}
+                                {/* Open live panel */}
+                                {s.status === 'active' && (
+                                  <button onClick={() => isLive ? setLiveSessionId(null) : openLiveSession(s)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-xl text-xs font-bold transition-all">
+                                    <Dumbbell size={11} /> {isLive ? 'Close' : 'Log'}
+                                  </button>
+                                )}
+                                {/* End session button */}
+                                {s.status === 'active' && !conf?.end.trainerConfirmed && (
+                                  <button onClick={() => handleConfirmEnd(s.id)} disabled={confirmLoading === s.id}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold transition-all disabled:opacity-50">
+                                    <Square size={11} /> End
+                                  </button>
+                                )}
+                                <button onClick={() => openEditSession(s)}
+                                  className="p-1.5 text-gray-600 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all">
+                                  <Edit2 size={14} />
                                 </button>
-                              )}
-                              <button onClick={() => openEditSession(s)}
-                                className="p-1.5 text-gray-600 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all">
-                                <Edit2 size={14} />
-                              </button>
-                              <button onClick={() => handleDeleteSession(s.id)}
-                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
-                                <Trash2 size={14} />
-                              </button>
+                                {s.status !== 'active' && (
+                                  <button onClick={() => handleDeleteSession(s.id)}
+                                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
+
+                            {/* Live workout panel */}
+                            {isLive && s.status === 'active' && (
+                              <div className="border-t border-orange-500/20 bg-zinc-950 px-4 py-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Dumbbell size={12} /> Live Workout Log
+                                  </p>
+                                  <button onClick={() => setShowAddExercise(true)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-400/15 hover:bg-green-400/25 text-green-400 border border-green-400/30 rounded-xl text-xs font-bold transition-all">
+                                    <Plus size={11} /> Add Exercise
+                                  </button>
+                                </div>
+
+                                {/* Add exercise inline form */}
+                                {showAddExercise && (
+                                  <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 space-y-2">
+                                    <input
+                                      placeholder="Exercise name (e.g. Bench Press)"
+                                      value={newExerciseName}
+                                      onChange={(e) => setNewExerciseName(e.target.value)}
+                                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-400"
+                                    />
+                                    <input
+                                      placeholder="Notes (optional)"
+                                      value={newExerciseNotes}
+                                      onChange={(e) => setNewExerciseNotes(e.target.value)}
+                                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-400"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button onClick={() => { setShowAddExercise(false); setNewExerciseName(''); setNewExerciseNotes(''); }}
+                                        className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-gray-400 rounded-lg text-xs font-semibold transition-all">Cancel</button>
+                                      <button onClick={handleAddExercise} disabled={exerciseSaving}
+                                        className="flex-1 py-2 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-lg text-xs transition-all">
+                                        {exerciseSaving ? 'Saving…' : 'Add'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {liveWorkouts.length === 0 && !showAddExercise && (
+                                  <p className="text-xs text-gray-600 text-center py-3">No exercises logged yet. Add the first one!</p>
+                                )}
+
+                                {/* Exercise cards */}
+                                {liveWorkouts.map((log) => (
+                                  <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                                    <div className="flex items-center justify-between px-3 py-2.5 bg-zinc-800/50">
+                                      <div>
+                                        <p className="text-sm font-bold text-white">{log.exerciseName}</p>
+                                        {log.notes && <p className="text-xs text-gray-500">{log.notes}</p>}
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <button onClick={() => setShowAddSet(showAddSet === log.id ? null : log.id)}
+                                          className="p-1.5 text-gray-500 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all" title="Add set">
+                                          <Plus size={13} />
+                                        </button>
+                                        <button onClick={() => handleDeleteExercise(log.id)}
+                                          className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Sets table */}
+                                    {log.sets.length > 0 && (
+                                      <div className="divide-y divide-zinc-800/50">
+                                        <div className="grid grid-cols-5 px-3 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                                          <span>Set</span><span>Reps</span><span>kg</span><span>Intensity</span><span></span>
+                                        </div>
+                                        {log.sets.map((set) => (
+                                          <div key={set.id} className="grid grid-cols-5 items-center px-3 py-2">
+                                            <span className="text-xs text-gray-400 font-semibold">#{set.setNumber}</span>
+                                            <span className="text-xs text-white font-bold">{set.reps ?? '—'}</span>
+                                            <span className="text-xs text-white font-bold">{set.weight ?? '—'}</span>
+                                            <span>{set.intensity ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${INTENSITY_COLORS[set.intensity]}`}>{set.intensity}</span> : <span className="text-gray-600 text-xs">—</span>}</span>
+                                            <button onClick={() => handleDeleteSet(log.id, set.id)}
+                                              className="justify-self-end p-1 text-gray-700 hover:text-red-400 rounded transition-all">
+                                              <X size={11} />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Add set form */}
+                                    {showAddSet === log.id && (
+                                      <div className="px-3 py-3 bg-zinc-800/30 border-t border-zinc-800 space-y-2">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Reps</label>
+                                            <input type="number" placeholder="12" value={newSet.reps}
+                                              onChange={(e) => setNewSet((p) => ({ ...p, reps: e.target.value }))}
+                                              className="w-full mt-0.5 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-green-400"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Weight (kg)</label>
+                                            <input type="number" placeholder="60" value={newSet.weight}
+                                              onChange={(e) => setNewSet((p) => ({ ...p, weight: e.target.value }))}
+                                              className="w-full mt-0.5 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-green-400"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Intensity</label>
+                                            <select value={newSet.intensity} onChange={(e) => setNewSet((p) => ({ ...p, intensity: e.target.value }))}
+                                              className="w-full mt-0.5 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-green-400">
+                                              <option value="low">Low</option>
+                                              <option value="medium">Medium</option>
+                                              <option value="high">High</option>
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Rest (sec)</label>
+                                            <input type="number" placeholder="90" value={newSet.restSeconds}
+                                              onChange={(e) => setNewSet((p) => ({ ...p, restSeconds: e.target.value }))}
+                                              className="w-full mt-0.5 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-green-400"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <button onClick={() => setShowAddSet(null)}
+                                            className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-gray-400 rounded-lg text-xs font-semibold">Cancel</button>
+                                          <button onClick={() => handleAddSet(log.id)} disabled={setSaving}
+                                            className="flex-1 py-1.5 bg-green-400 hover:bg-green-300 disabled:bg-zinc-700 text-black font-bold rounded-lg text-xs">
+                                            {setSaving ? 'Saving…' : '+ Add Set'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -1573,7 +1828,7 @@ const TrainerDashboard = () => {
                       </div>
                     ) : (
                       chatMessages.map((msg) => {
-                        const isMe = msg.senderId === user?.uid;
+                        const isMe = msg.senderId === user?.id;
                         return (
                           <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[75%] flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
@@ -1583,7 +1838,7 @@ const TrainerDashboard = () => {
                               </div>
                               {msg.createdAt && (
                                 <p className="text-[10px] text-gray-600 mx-1">
-                                  {new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                                 </p>
                               )}
                             </div>
@@ -1904,6 +2159,86 @@ const TrainerDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ WORKOUT HISTORY MODAL ═══ */}
+      {showWorkoutHistory && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col">
+          <div className="bg-zinc-900 border-b border-zinc-800 px-4 h-16 flex items-center gap-3 flex-shrink-0">
+            <button onClick={() => setShowWorkoutHistory(false)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-all">
+              <ChevronLeft size={18} />
+            </button>
+            <div>
+              <p className="font-bold text-white">Workout History</p>
+              <p className="text-xs text-gray-500">{selectedClient?.name}</p>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <div className="max-w-xl mx-auto space-y-3">
+              {historyLoading ? (
+                <p className="text-center text-gray-500 text-sm py-10">Loading…</p>
+              ) : workoutHistory.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <History size={32} className="text-gray-700 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm">No workout history yet.</p>
+                  <p className="text-gray-600 text-xs mt-1">Workouts logged during live sessions will appear here.</p>
+                </div>
+              ) : workoutHistory.map((entry: any) => (
+                <div key={entry.sessionId} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => setHistoryExpanded(historyExpanded === entry.sessionId ? null : entry.sessionId)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/50 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-orange-400/10 border border-orange-400/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Dumbbell size={14} className="text-orange-400" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-white">{entry.date}</p>
+                        <p className="text-xs text-gray-500">{fmt(entry.time)} · {entry.duration}min · {entry.workouts.length} exercise{entry.workouts.length !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${SESSION_STATUS[entry.status]}`}>{entry.status}</span>
+                      {historyExpanded === entry.sessionId ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                    </div>
+                  </button>
+
+                  {historyExpanded === entry.sessionId && (
+                    <div className="border-t border-zinc-800 divide-y divide-zinc-800/50">
+                      {entry.workouts.length === 0 ? (
+                        <p className="text-xs text-gray-600 text-center py-4">No exercises logged for this session.</p>
+                      ) : entry.workouts.map((log: any) => (
+                        <div key={log.id} className="px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-bold text-white">{log.exerciseName}</p>
+                            <span className="text-xs text-gray-600">{log.sets.length} set{log.sets.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {log.notes && <p className="text-xs text-gray-500 italic mb-2">{log.notes}</p>}
+                          {log.sets.length > 0 && (
+                            <div className="bg-zinc-800/50 rounded-xl overflow-hidden">
+                              <div className="grid grid-cols-4 px-3 py-1.5 text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                                <span>Set</span><span>Reps</span><span>Weight</span><span>Intensity</span>
+                              </div>
+                              {log.sets.map((set: any) => (
+                                <div key={set.id} className="grid grid-cols-4 px-3 py-1.5 border-t border-zinc-800">
+                                  <span className="text-xs text-gray-400">#{set.setNumber}</span>
+                                  <span className="text-xs text-white font-semibold">{set.reps ?? '—'}</span>
+                                  <span className="text-xs text-white font-semibold">{set.weight ? `${set.weight}kg` : '—'}</span>
+                                  <span>{set.intensity ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${INTENSITY_COLORS[set.intensity]}`}>{set.intensity}</span> : <span className="text-gray-600 text-xs">—</span>}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

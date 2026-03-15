@@ -4,45 +4,6 @@ import { MapPin, Phone, Mail, Clock, Send, CheckCircle } from 'lucide-react';
 import Footer from '../components/Footer';
 import { submitEnquiry } from '../lib/api';
 
-// ─── Google Sheets integration via Google Apps Script ─────────────────────────
-//
-// SETUP STEPS:
-// 1. Create a new Google Sheet (sheets.google.com)
-// 2. Click Extensions → Apps Script
-// 3. Paste this code and click Save:
-//
-//   function doPost(e) {
-//     try {
-//       var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-//       var data = JSON.parse(e.postData.contents);
-//       if (sheet.getLastRow() === 0) {
-//         sheet.appendRow(['Timestamp', 'Name', 'Email', 'Phone', 'Plan', 'Message']);
-//       }
-//       sheet.appendRow([
-//         new Date().toLocaleString('en-IN'),
-//         data.name || '',
-//         data.email || '',
-//         data.phone || '',
-//         data.plan || '',
-//         data.message || ''
-//       ]);
-//       return ContentService
-//         .createTextOutput(JSON.stringify({ success: true }))
-//         .setMimeType(ContentService.MimeType.JSON);
-//     } catch(err) {
-//       return ContentService
-//         .createTextOutput(JSON.stringify({ success: false, error: err.message }))
-//         .setMimeType(ContentService.MimeType.JSON);
-//     }
-//   }
-//
-// 4. Click Deploy → New deployment → Web App
-//    - Execute as: Me
-//    - Who has access: Anyone
-// 5. Copy the Web App URL and paste it below
-//
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxeHEI7dmWyZ-oP9JDoKAUAM4hPi8BylyRBEjkuAMo4-CDqbd-PYTwXLY7RlrCg3xEYjw/exec';
-// ─────────────────────────────────────────────────────────────────────────────
 
 const Contact = () => {
   const location = useLocation();
@@ -68,14 +29,6 @@ const Contact = () => {
     e.preventDefault();
     setStatus('submitting');
     try {
-      // Google Apps Script requires no-cors mode (response is opaque but data is received)
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      // Save to backend so admin can view enquiries in dashboard
       await submitEnquiry(formData);
       setStatus('success');
       setFormData({ name: '', email: '', phone: '', plan: '', message: '' });
