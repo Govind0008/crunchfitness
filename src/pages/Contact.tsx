@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MapPin, Phone, Mail, Clock, Send, CheckCircle } from 'lucide-react';
+import { MapPin, Phone, Mail, Clock, Send, CheckCircle, FileText, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -115,7 +115,34 @@ const Contact = () => {
         </div>
       </section>
 
-      {/* Main content */}
+      {/* Health Assessment Form CTA */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-green-500/5 to-green-400/5 border-y border-gray-800">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between flex-col md:flex-row gap-6">
+            <div>
+              <h3 className="text-2xl md:text-3xl font-heading font-bold mb-3">
+                <span className="text-white">Detailed Health </span>
+                <span className="neon-text">Assessment Form</span>
+              </h3>
+              <p className="text-gray-400 font-body max-w-2xl">
+                Fill out our comprehensive health screening and fitness goals assessment. This helps us create the perfect personalized training plan for you.
+              </p>
+            </div>
+            <a
+              href="https://docs.google.com/forms/d/e/1FAIpQLSe0mU3RWhMHacMtwOQzwzhcMuwguXvkYJFBaK2Ig_ZyhmHHEA/viewform?pli=1"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-shrink-0 px-8 py-4 bg-gradient-to-r from-green-400 to-green-600 text-black font-bold rounded-xl hover:from-green-300 hover:to-green-500 transition-all duration-300 hover:scale-[1.05] active:scale-[0.95] font-heading flex items-center gap-2 whitespace-nowrap"
+            >
+              <FileText size={20} />
+              Fill Form Now
+              <ArrowRight size={18} />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      
       <section className="pb-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-16">
