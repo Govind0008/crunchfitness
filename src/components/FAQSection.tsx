@@ -102,7 +102,7 @@ const FAQSection: React.FC = () => {
           <p className="text-gray-500 text-sm">
             Still have questions?{' '}
             <a
-              href="https://wa.me/919762904097?text=Hi!%20I%20have%20a%20question%20about%20Crunch%20Fitness."
+              href="https://wa.me/918483048363?text=Hi!%20I%20have%20a%20question%20about%20Crunch%20Fitness."
               target="_blank"
               rel="noopener noreferrer"
               className="text-green-400 hover:text-green-300 font-semibold transition-colors"

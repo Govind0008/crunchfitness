@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 
 // Replace with your actual WhatsApp business number (international format, no + or spaces)
-const WHATSAPP_NUMBER = '919762904097';
+const WHATSAPP_NUMBER = '918483048363';
 const PRE_FILLED_MESSAGE = 'Hi! I want to know more about Crunch Fitness memberships and offers.';
 
 const WhatsAppButton: React.FC = () => {
