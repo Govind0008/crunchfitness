@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Users, Target, Award, Zap } from 'lucide-react';
 import Footer from '../components/Footer';
 
+
 // Animates a number from 0 → target when `active` becomes true
 const useCounter = (target: number, duration = 1400, active = false) => {
   const [count, setCount] = useState(0);
