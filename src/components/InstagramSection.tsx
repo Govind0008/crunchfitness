@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Instagram, ExternalLink, Users, ImageIcon } from 'lucide-react';
 
 const INSTAGRAM_HANDLE = 'crunchfitnessclub';
 const INSTAGRAM_URL = `https://www.instagram.com/${INSTAGRAM_HANDLE}`;
 
-const previewImages = [
+const fallbackImages = [
   '/lovable-uploads/gym 1.jpeg',
   '/lovable-uploads/training-main-1.jpeg',
   '/lovable-uploads/cardio-1.jpeg',
@@ -13,7 +13,46 @@ const previewImages = [
   '/lovable-uploads/training-2.jpeg',
 ];
 
+interface InstagramPost {
+  id: string;
+  caption: string;
+  imageUrl: string;
+  permalink: string;
+  isVideo: boolean;
+}
+
+interface MosaicTile {
+  key: string;
+  href: string;
+  imageUrl: string;
+}
+
 const InstagramSection: React.FC = () => {
+  const [posts, setPosts] = useState<InstagramPost[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/instagram')
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.posts) && data.posts.length > 0) {
+          setPosts(data.posts);
+        }
+      })
+      .catch(() => {
+        // Live feed unavailable — the fallback mosaic below covers this.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const tiles: MosaicTile[] = posts
+    ? posts.map((post) => ({ key: post.id, href: post.permalink, imageUrl: post.imageUrl }))
+    : fallbackImages.map((src, i) => ({ key: String(i), href: INSTAGRAM_URL, imageUrl: src }));
+
   return (
     <section className="py-20 bg-black relative overflow-hidden">
       {/* Background glow */}
@@ -103,19 +142,19 @@ const InstagramSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Image mosaic — all images link to real Instagram profile */}
+          {/* Image mosaic — live posts when available, each linking to its own permalink */}
           <div className="flex-1 w-full">
             <div className="grid grid-cols-3 gap-2">
-              {previewImages.map((src, i) => (
+              {tiles.map((tile) => (
                 <a
-                  key={i}
-                  href={INSTAGRAM_URL}
+                  key={tile.key}
+                  href={tile.href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="relative block rounded-xl overflow-hidden aspect-square group"
                 >
                   <img
-                    src={src}
+                    src={tile.imageUrl}
                     alt={`Crunch Fitness Club`}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     loading="lazy"
