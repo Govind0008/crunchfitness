@@ -80,8 +80,12 @@ test.describe('membership → enquiry', () => {
   test('choosing a plan on the home page pre-selects it on the contact form', async ({ page }) => {
     await page.goto('/');
     const card = page.locator('#membership article').first();
-    await card.scrollIntoViewIfNeeded();
-    await card.getByRole('button').click();
+    // Live Firestore plans can replace the fallback cards mid-action — retry until data settles
+    await expect(async () => {
+      await card.scrollIntoViewIfNeeded({ timeout: 2000 });
+      await card.getByRole('button').click({ timeout: 2000 });
+      await expect(page).toHaveURL('/contact', { timeout: 2000 });
+    }).toPass({ timeout: 15000 });
 
     // Plans can swap from fallback to live Firestore data mid-test, so assert on the wiring:
     // the selected plan is non-empty and the prefilled message references the same plan.
@@ -234,5 +238,56 @@ test.describe('motion system', () => {
       driven: [...document.querySelectorAll('.parallax')].filter((el) => (el as HTMLElement).style.getPropertyValue('--sp')).length,
     }));
     expect(state).toEqual({ hidden: 0, driven: 0 });
+  });
+});
+
+test.describe('cinematic chapters', () => {
+  test('training journey advances with scroll', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#hero-heading')).toBeVisible();
+    for (const i of [0, 1, 2]) {
+      await page.evaluate((i) => {
+        const s = document.querySelector(`[data-step="${i}"]`)!; const r = s.getBoundingClientRect();
+        window.scrollTo(0, scrollY + r.top + r.height / 2 - innerHeight / 2);
+      }, i);
+      await expect(page.locator('[aria-current="step"]')).toHaveAttribute('data-step', String(i));
+    }
+    if (!isMobile(page)) {
+      // Desktop: the image stage is pinned and shows the active set
+      await expect(page.locator('.journey-frame[data-state="active"]')).toHaveCount(1);
+      const top = await page.locator('.journey-frame').first().evaluate((el) => el.closest('.sticky')!.getBoundingClientRect().top);
+      expect(top).toBeGreaterThan(0);
+    }
+  });
+
+  test('facility frame opens to full-bleed at the centre of the screen', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#hero-heading')).toBeVisible();
+    const frame = page.locator('.facility-open');
+    await frame.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight * 0.15));
+    await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).clipPath)).toMatch(/inset\((0px|[0-5](\.\d+)?px)/);
+  });
+
+  test('final set panel completes and its CTA works', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#hero-heading')).toBeVisible();
+    const heading = page.locator('#cta-heading');
+    await heading.scrollIntoViewIfNeeded();
+    await expect.poll(() => page.locator('.final-set').evaluate((el) => getComputedStyle(el).clipPath), { timeout: 6000 })
+      .toMatch(/inset\(0(%|px)? 0px round 24px\)|inset\(0px\)|none/);
+    await page.locator('.final-set').getByRole('link', { name: /Book a free tour/ }).click();
+    await expect(page).toHaveURL('/contact');
+  });
+
+  test('reduced motion shows every chapter immediately', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/');
+    await expect(page.locator('#hero-heading')).toBeVisible();
+    const state = await page.evaluate(() => ({
+      finalSet: getComputedStyle(document.querySelector('.final-set')!).clipPath,
+      hiddenFrames: [...document.querySelectorAll('.hero-lift, .m-wipe-up')].filter((el) => getComputedStyle(el).clipPath.includes('100%')).length,
+      dimmedJourney: [...document.querySelectorAll('.journey-copy')].filter((el) => getComputedStyle(el).transform !== 'none').length,
+    }));
+    expect(state).toEqual({ finalSet: 'none', hiddenFrames: 0, dimmedJourney: 0 });
   });
 });
