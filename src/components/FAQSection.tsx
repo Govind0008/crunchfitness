@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { useScrollReveal } from '../hooks/useScrollReveal';
+import React from 'react';
+import { MessageCircle } from 'lucide-react';
+import { Section } from '@/components/site/Section';
+import { TickRail } from '@/components/motion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { whatsappLink } from '@/lib/site';
 
 const faqs = [
   {
@@ -13,107 +17,53 @@ const faqs = [
   },
   {
     q: 'Are there separate batches for beginners?',
-    a: 'No, we do not have separate batches for beginners. However, our certified trainers are always available to provide personalized guidance and support to help you get started on your fitness journey, regardless of your experience level.',
+    a: 'No, we do not have separate batches for beginners. However, our certified trainers are always available to provide personalised guidance and support to help you get started, regardless of your experience level.',
   },
   {
     q: 'What is the policy for membership cancellation?',
-    a: 'Can-not cancel membership. However, you can freeze your membership for up to 1 months in a calendar year with a nominal fee. Please contact our support team for assistance with freezing your membership.',
+    a: "Memberships can't be cancelled. However, you can freeze your membership for up to 1 month in a calendar year for a nominal fee. Contact our team for help with freezing your membership.",
   },
 ];
 
-interface FAQItemProps {
-  faq: { q: string; a: string };
-  index: number;
-  isOpen: boolean;
-  onToggle: () => void;
-}
-
-const FAQItem: React.FC<FAQItemProps> = ({ faq, index, isOpen, onToggle }) => {
-  const ref = useScrollReveal<HTMLDivElement>();
-
-  return (
-    <div
-      ref={ref}
-      className="reveal border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-900/60 hover:border-zinc-700 transition-colors duration-200"
-      style={{ transitionDelay: `${index * 60}ms` }}
-    >
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left"
-        aria-expanded={isOpen}
-      >
-        <span className="text-white font-semibold text-sm sm:text-base">{faq.q}</span>
-        <ChevronDown
-          size={18}
-          className={`text-green-400 flex-shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isOpen ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
-        }`}
-      >
-        <p className="px-5 pb-5 text-gray-400 text-sm leading-relaxed">{faq.a}</p>
+const FAQSection: React.FC = () => (
+  <Section aria-labelledby="faq-heading">
+    <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
+      <div className="lg:col-span-4">
+        <p className="eyebrow mb-4">
+          <TickRail className="w-8" />
+          <span className="m-rise" style={{ '--d': 120 } as React.CSSProperties}>FAQ</span>
+        </p>
+        <h2 id="faq-heading" className="font-display text-display-md font-bold uppercase text-white text-balance">
+          <span className="m-line"><span style={{ '--d': 80 } as React.CSSProperties}>Good questions</span></span>
+        </h2>
+        <p className="m-rise mt-4 text-ink-300" style={{ '--d': 220 } as React.CSSProperties}>Memberships, facilities and how things work at Crunch.</p>
+        <div className="m-rise mt-8" style={{ '--d': 300 } as React.CSSProperties}>
+        <Button asChild variant="outline">
+          <a
+            href={whatsappLink('Hi! I have a question about Crunch Fitness.')}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <MessageCircle /> Ask us on WhatsApp
+          </a>
+        </Button>
+        </div>
       </div>
+
+      <Accordion type="single" collapsible className="lg:col-span-8 border-t border-white/[0.08]">
+        {faqs.map((faq, i) => (
+          <AccordionItem key={faq.q} value={`faq-${i}`} className="stagger border-white/[0.08]" style={{ '--i': i } as React.CSSProperties}>
+            <AccordionTrigger className="gap-6 py-6 text-left text-base font-semibold text-white hover:no-underline hover:text-brand-400 md:text-lg [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-ink-400">
+              {faq.q}
+            </AccordionTrigger>
+            <AccordionContent className="max-w-2xl pb-6 text-base leading-relaxed text-ink-300">
+              {faq.a}
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
-  );
-};
-
-const FAQSection: React.FC = () => {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const headingRef = useScrollReveal<HTMLDivElement>();
-
-  return (
-    <section className="py-20 bg-gradient-to-b from-black via-zinc-950 to-black relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 right-0 w-[400px] h-[400px] bg-green-500/4 rounded-full blur-3xl" />
-      </div>
-
-      <div className="max-w-3xl mx-auto px-4 relative">
-        {/* Header */}
-        <div ref={headingRef} className="reveal text-center mb-12">
-          <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-full px-4 py-2 mb-4">
-            <span className="text-green-400 text-sm font-medium tracking-wider uppercase">Got Questions?</span>
-          </div>
-          <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-3">
-            Frequently Asked <span className="neon-text">Questions</span>
-          </h2>
-          <p className="text-gray-400 text-sm max-w-md mx-auto">
-            Everything you need to know about memberships, facilities, and more.
-          </p>
-        </div>
-
-        {/* Accordion */}
-        <div className="space-y-3">
-          {faqs.map((faq, i) => (
-            <FAQItem
-              key={i}
-              faq={faq}
-              index={i}
-              isOpen={openIndex === i}
-              onToggle={() => setOpenIndex(openIndex === i ? null : i)}
-            />
-          ))}
-        </div>
-
-        {/* Bottom CTA */}
-        <div className="mt-10 text-center">
-          <p className="text-gray-500 text-sm">
-            Still have questions?{' '}
-            <a
-              href="https://wa.me/918483048363?text=Hi!%20I%20have%20a%20question%20about%20Crunch%20Fitness."
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-green-400 hover:text-green-300 font-semibold transition-colors"
-            >
-              Chat with us on WhatsApp →
-            </a>
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-};
+  </Section>
+);
 
 export default FAQSection;

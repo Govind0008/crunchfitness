@@ -1,333 +1,193 @@
-import { useState, useEffect } from 'react';
-import { ZoomIn, X, Trophy, Target, Users, ArrowRight } from 'lucide-react';
+import { useState } from 'react';
+import { Trophy, Target, Users, Maximize2 } from 'lucide-react';
 import Footer from '../components/Footer';
-import { useScrollReveal } from '../hooks/useScrollReveal';
+import { PageHeader, Section, SectionHeader } from '@/components/site/Section';
+import Lightbox, { type LightboxImage } from '@/components/site/Lightbox';
+import CtaBand from '@/components/site/CtaBand';
+import { cn } from '@/lib/utils';
+import { TickRail } from '@/components/motion';
 
-// ── Sub-component so useScrollReveal can be called per card ──────────────────
-interface GalleryCardProps {
-  image: { id: number; title: string; category: string; src: string };
-  index: number;
-  onSelect: (id: number) => void;
+type Category = 'Equipment' | 'Facilities' | 'Training' | 'Powerlifting';
+
+interface GalleryImage extends LightboxImage {
+  thumb: string;
+  category: Category;
 }
 
-const GalleryCard: React.FC<GalleryCardProps> = ({ image, index, onSelect }) => {
-  const ref = useScrollReveal<HTMLDivElement>();
-  const [loaded, setLoaded] = useState(false);
+const img = (name: string, small: number, large: number, title: string, category: Category): GalleryImage => ({
+  thumb: `/images/${name}-${small}.webp`,
+  src: `/images/${name}-${large}.webp`,
+  title,
+  category,
+  caption: category,
+});
 
-  return (
-    <div
-      ref={ref}
-      className="reveal group relative h-64 rounded-2xl overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-500"
-      style={{ transitionDelay: `${(index % 4) * 60}ms` }}
-      onClick={() => onSelect(image.id)}
-    >
-      {/* Skeleton shown until image loads */}
-      {!loaded && (
-        <div className="absolute inset-0 bg-zinc-800 animate-pulse rounded-2xl" />
-      )}
+const GALLERY: GalleryImage[] = [
+  img('cardio', 800, 1600, 'Modern cardio zone at Crunch Fitness Wakad', 'Equipment'),
+  img('coach-mobility', 640, 1600, 'One-on-one personal training session', 'Training'),
+  img('machines', 800, 1600, 'Strength training area with free weights', 'Equipment'),
+  img('studio', 800, 1600, 'Spacious group fitness studio for classes', 'Facilities'),
+  img('coach-rahul', 600, 1200, 'One-on-one personal training session', 'Training'),
+  img('gym-wide-4', 800, 1600, 'Gym floor overview', 'Facilities'),
+  img('coach-maddy', 600, 1200, 'Personal training in action', 'Training'),
+  img('studio-2', 800, 1600, 'Zumba & group activities', 'Facilities'),
+  img('coach-bench', 640, 1600, 'Coach-guided dumbbell press', 'Training'),
+  img('cardio-2', 800, 1600, 'High-intensity cardio training', 'Equipment'),
+];
 
-      <img
-        src={image.src}
-        alt={image.title}
-        loading="lazy"
-        onLoad={() => setLoaded(true)}
-        className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-110 ${
-          loaded ? 'opacity-100' : 'opacity-0'
-        }`}
-      />
+const POWERLIFTING: GalleryImage[] = [
+  img('squat', 560, 1200, 'Professional powerlifting platform', 'Powerlifting'),
+  img('deadlift', 600, 1200, 'Olympic standard equipment setup', 'Powerlifting'),
+];
 
-      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center p-4">
-        <div className="text-center">
-          <ZoomIn className="w-8 h-8 text-white mb-2 mx-auto" />
-          <p className="text-white font-semibold font-body text-lg">{image.title}</p>
-          <p className="text-green-400 text-sm font-body">{image.category}</p>
-        </div>
-      </div>
+const FEATURES = [
+  { icon: Trophy, title: 'Competition standard', description: 'Olympic-grade platforms with calibrated plates and professional barbells.' },
+  { icon: Target, title: 'Expert coaching', description: 'Certified powerlifting coaches to perfect your squat, bench and deadlift.' },
+  { icon: Users, title: 'Community hub', description: 'Join our powerlifting community and train with like-minded athletes.' },
+];
 
-      <div className="absolute top-4 left-4">
-        <span className="px-3 py-1 bg-green-400/90 text-black text-xs font-semibold rounded-full">
-          {image.category}
-        </span>
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
+const CATEGORIES = ['All', 'Equipment', 'Facilities', 'Training'] as const;
 
 const Gallery = () => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<number | string | null>(null);
-  const [powerliftingHovered, setPowerliftingHovered] = useState(false);
-  const [activeFeature, setActiveFeature] = useState(0);
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory, setActiveCategory] = useState<(typeof CATEGORIES)[number]>('All');
+  const [lightbox, setLightbox] = useState<{ set: GalleryImage[]; index: number; origin: DOMRect | null } | null>(null);
 
-  useEffect(() => {
-    setIsVisible(true);
-    const interval = setInterval(() => {
-      setActiveFeature((prev) => (prev + 1) % 3);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+  // Remember where the photo was clicked so the lightbox can morph out of that tile
+  const openAt = (set: GalleryImage[], index: number, e: React.MouseEvent<HTMLElement>) =>
+    setLightbox({ set, index, origin: e.currentTarget.querySelector('img')?.getBoundingClientRect() ?? null });
 
-  const galleryImages = [
-    { id: 1,  title: 'Modern Cardio Zone at Crunch Fitness Wakad',   category: 'Equipment',  src: '/lovable-uploads/cardio-1.jpeg' },
-    { id: 2,  title: 'Strength Training Area with Free Weights',      category: 'Equipment',  src: '/lovable-uploads/training-3.jpeg' },
-    { id: 3,  title: 'Spacious Group Fitness Studio for Classes',     category: 'Facilities', src: '/lovable-uploads/activity-1.png' },
-    { id: 4,  title: 'Gym Floor Overview',                            category: 'Facilities', src: '/lovable-uploads/gym 4.jpeg' },
-    { id: 5,  title: 'One-on-one Personal Training Session',          category: 'Training',   src: '/lovable-uploads/rohit.JPG' },
-    { id: 6,  title: 'Zumba & Group Activities',                      category: 'Facilities', src: '/lovable-uploads/activity-2.jpeg' },
-    { id: 7,  title: 'High-Intensity Cardio Training',                category: 'Equipment',  src: '/lovable-uploads/cardio-2.jpeg' },
-    { id: 8,  title: 'One-on-one Personal Training Session',          category: 'Training',   src: '/lovable-uploads/ptrahul.jpeg' },
-    { id: 9,  title: 'One-on-one Personal Training Session',          category: 'Training',   src: '/lovable-uploads/rohit1.JPG' },
-    { id: 10, title: 'Personal Training in Action',                   category: 'Training',   src: '/lovable-uploads/maddypt.PNG' },
-  ];
-
-  const powerliftingImages = [
-    { id: 'pl1', title: 'Professional Powerlifting Platform', src: '/lovable-uploads/squat.PNG' },
-    { id: 'pl2', title: 'Olympic Standard Equipment Setup',   src: '/lovable-uploads/deadlift.PNG' },
-  ];
-
-  const powerliftingFeatures = [
-    {
-      icon: Trophy,
-      title: 'Competition Standard',
-      description: 'Olympic-grade platforms with calibrated plates and professional barbells',
-    },
-    {
-      icon: Target,
-      title: 'Expert Coaching',
-      description: 'Certified powerlifting coaches to perfect your squat, bench, and deadlift',
-    },
-    {
-      icon: Users,
-      title: 'Community Hub',
-      description: 'Join our powerlifting community and train with like-minded athletes',
-    },
-  ];
-
-  const categories = ['All', 'Equipment', 'Facilities', 'Training'];
-
-  const filteredImages =
-    activeCategory === 'All'
-      ? galleryImages
-      : galleryImages.filter((img) => img.category === activeCategory);
-
-  const allImages = [...galleryImages, ...powerliftingImages];
+  const filtered = activeCategory === 'All' ? GALLERY : GALLERY.filter((i) => i.category === activeCategory);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen">
+      <main>
+        <PageHeader
+          eyebrow="Gallery"
+          title={<>Inside <span className="text-brand-400">Crunch</span></>}
+          lede="Explore our facilities in Wakad, Pune — the strength floor, cardio zone, studio and the coaching that happens every day."
+          image={{ src: '/images/floor-3-1600.webp', srcSet: '/images/floor-3-800.webp 800w, /images/floor-3-1600.webp 1600w', alt: '' }}
+        />
 
-      {/* Hero */}
-      <section
-        className="pt-28 pb-28 relative overflow-hidden bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: 'url("/lovable-uploads/training-main.jpeg")' }}
-        aria-labelledby="gallery-hero-heading"
-      >
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/10 rounded-full blur-3xl animate-pulse" />
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-green-400/5 rounded-full blur-3xl animate-pulse" />
-          <div className="absolute inset-0 bg-black/60" />
-        </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className={`text-center transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-            <h1 id="gallery-hero-heading" className="text-5xl md:text-7xl font-bold font-heading mb-6">
-              <span className="text-white">GALLERY &</span>
-              <br />
-              <span className="bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent">EXPERIENCES</span>
-            </h1>
-            <p className="text-xl text-gray-300 font-body max-w-3xl mx-auto">
-              Explore our state-of-the-art facilities, view gym photos, and witness the amazing member transformations happening every day at Crunch Fitness Club Wakad, Pune.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Powerlifting Showcase */}
-      <section className="py-20 relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-0 left-1/3 w-72 h-72 bg-red-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-1/3 w-72 h-72 bg-orange-500/10 rounded-full blur-3xl" />
-        </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 bg-red-500/10 px-4 py-2 rounded-full mb-4">
-              <Trophy className="w-5 h-5 text-red-400" />
-              <span className="text-red-400 font-semibold font-heading text-sm">FEATURED AREA</span>
-            </div>
-            <h2 className="text-4xl md:text-6xl font-bold font-heading mb-6">
-              <span className="text-white">POWERLIFTING</span>
-              <br />
-              <span className="bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text text-transparent">PARADISE</span>
-            </h2>
-            <p className="text-xl text-gray-300 font-body max-w-2xl mx-auto">
-              Our crown jewel — a dedicated powerlifting area with competition-standard equipment
-            </p>
-          </div>
-
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="relative">
-              <div className="grid grid-cols-2 gap-4">
-                {powerliftingImages.map((image, index) => (
-                  <div
-                    key={image.id}
-                    className={`relative group cursor-pointer transition-all duration-700 ${
-                      index === 0 ? 'col-span-2 h-80' : 'h-48'
-                    } rounded-2xl overflow-hidden hover:scale-105`}
-                    onMouseEnter={() => setPowerliftingHovered(true)}
-                    onMouseLeave={() => setPowerliftingHovered(false)}
-                    onClick={() => setSelectedImage(image.id)}
-                  >
+        {/* Powerlifting feature */}
+        <Section aria-labelledby="powerlifting-heading">
+          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+            <div className="focus-grid grid grid-cols-2 gap-3">
+              {POWERLIFTING.map((image, i) => (
+                <button
+                  key={image.src}
+                  type="button"
+                  onClick={(e) => openAt(POWERLIFTING, i, e)}
+                  className={cn('focus-item group relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900', i === 1 && 'mt-10')}
+                  aria-label={`View larger: ${image.title}`}
+                >
+                  <div className={cn('h-full w-full', i === 0 ? 'm-wipe-up' : 'm-wipe-right')} style={{ '--d': 100 + i * 180 } as React.CSSProperties}>
                     <img
-                      src={image.src}
-                      alt={image.title}
+                      src={image.thumb}
+                      alt=""
                       loading="lazy"
-                      className="absolute inset-0 w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
+                      className="h-full w-full object-cover transition-transform duration-700 ease-out-expo group-hover:scale-[1.04]"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                    <div className="absolute inset-0 bg-red-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
-                      <div className="text-center">
-                        <ZoomIn className="w-8 h-8 text-white mb-2 mx-auto" />
-                        <p className="text-white font-semibold">{image.title}</p>
-                      </div>
-                    </div>
-                    <div className={`absolute inset-0 border-2 border-red-400 rounded-2xl transition-all duration-1000 ${
-                      powerliftingHovered ? 'animate-pulse opacity-50' : 'opacity-0'
-                    }`} />
                   </div>
+                  <Maximize2 className="absolute right-3 top-3 h-8 w-8 rounded-full bg-ink-950/70 p-2 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <p className="eyebrow mb-4">
+                <TickRail className="w-8" />
+                <span className="m-rise inline-flex items-center gap-2" style={{ '--d': 120 } as React.CSSProperties}>
+                  <Trophy className="h-3.5 w-3.5" aria-hidden /> Featured area
+                </span>
+              </p>
+              <h2 id="powerlifting-heading" className="font-display text-display-md font-bold uppercase text-white">
+                <span className="m-line"><span style={{ '--d': 80 } as React.CSSProperties}>The powerlifting platform</span></span>
+              </h2>
+              <p className="m-rise mt-4 text-ink-300 md:text-lg" style={{ '--d': 220 } as React.CSSProperties}>
+                Our crown jewel — a dedicated powerlifting area with competition-standard equipment. Most members
+                don&apos;t know it&apos;s here; come see the difference competition-grade kit makes.
+              </p>
+              <ul className="mt-10 space-y-6">
+                {FEATURES.map((f, i) => (
+                  <li key={f.title} className="m-rack flex gap-4" style={{ '--i': i, '--d': 300 } as React.CSSProperties}>
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-400/10">
+                      <f.icon className="h-5 w-5 text-brand-400" aria-hidden />
+                    </span>
+                    <div>
+                      <h3 className="font-semibold text-white">{f.title}</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-ink-400">{f.description}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Section>
+
+        {/* Photo grid */}
+        <Section tone="raised" aria-labelledby="photos-heading">
+          <SectionHeader
+            id="photos-heading"
+            eyebrow="Photos"
+            title="The facility"
+            action={
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Filter photos by category">
+                {CATEGORIES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setActiveCategory(c)}
+                    aria-pressed={activeCategory === c}
+                    className={cn(
+                      'h-10 rounded-full px-5 text-sm font-semibold transition-colors',
+                      activeCategory === c ? 'bg-white text-ink-950' : 'border border-white/10 text-ink-300 hover:border-white/30 hover:text-white',
+                    )}
+                  >
+                    {c}
+                  </button>
                 ))}
               </div>
-              <div className="absolute -top-6 -right-6 bg-red-500 text-black px-4 py-2 rounded-full font-bold text-sm animate-bounce">
-                🏆 Competition Ready
-              </div>
-            </div>
+            }
+          />
 
-            <div className="space-y-8">
-              {powerliftingFeatures.map((feature, index) => {
-                const Icon = feature.icon;
-                return (
-                  <div
-                    key={index}
-                    className={`group p-6 rounded-2xl border transition-all duration-500 cursor-pointer ${
-                      activeFeature === index
-                        ? 'bg-red-500/10 border-red-500/50 scale-105'
-                        : 'bg-gray-800/30 border-gray-700 hover:border-red-500/30'
-                    }`}
-                    onClick={() => setActiveFeature(index)}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={`p-3 rounded-xl transition-all duration-300 ${
-                        activeFeature === index ? 'bg-red-500 text-black' : 'bg-gray-700 text-red-400'
-                      }`}>
-                        <Icon className="w-6 h-6" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className={`text-xl font-bold font-heading mb-2 transition-colors duration-300 ${
-                          activeFeature === index ? 'text-red-400' : 'text-white'
-                        }`}>
-                          {feature.title}
-                        </h3>
-                        <p className="text-gray-300 font-body leading-relaxed">{feature.description}</p>
-                      </div>
-                      <ArrowRight className={`w-5 h-5 transition-all duration-300 ${
-                        activeFeature === index ? 'text-red-400 translate-x-1' : 'text-gray-500'
-                      }`} />
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="pt-6">
-                <div className="bg-gradient-to-r from-red-500/10 to-orange-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
-                  <h4 className="text-xl font-bold font-heading text-red-400 mb-2">Hidden Gem of Our Gym</h4>
-                  <p className="text-gray-300 font-body">
-                    Most members don't know about our professional powerlifting area. Come explore and discover the difference competition-grade equipment makes!
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Filter Tabs */}
-      <section className="pb-10" aria-label="Image Categories Filter">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap justify-center gap-4" role="tablist">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setActiveCategory(category)}
-                className={`px-6 py-3 rounded-full font-semibold font-heading transition-all duration-300 ${
-                  activeCategory === category
-                    ? 'bg-green-400 text-black'
-                    : 'bg-gray-800 text-white hover:bg-gray-700'
-                }`}
-                role="tab"
-                aria-selected={activeCategory === category}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Gallery Grid — each card reveals on scroll with skeleton loader */}
-      <section className="pb-20" aria-label="Image Gallery">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredImages.map((image, index) => (
-              <GalleryCard
-                key={image.id}
-                image={image}
-                index={index}
-                onSelect={setSelectedImage}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Lightbox Modal */}
-      {selectedImage !== null && (
-        <div
-          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="modal-image-title"
-          onClick={(e) => { if (e.target === e.currentTarget) setSelectedImage(null); }}
-        >
-          <div className="relative max-w-4xl w-full">
-            <button
-              onClick={() => setSelectedImage(null)}
-              className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors duration-300 z-10"
-              aria-label="Close image preview"
-            >
-              <X size={20} />
-            </button>
-            {(() => {
-              const current = allImages.find((img) => img.id === selectedImage);
-              return current ? (
-                <>
+          <ul className="focus-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((image, i) => (
+              <li key={image.src} className="animate-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
+                <button
+                  type="button"
+                  onClick={(e) => openAt(filtered, i, e)}
+                  className="focus-item group relative block w-full overflow-hidden rounded-2xl bg-ink-800"
+                  aria-label={`View larger: ${image.title}`}
+                >
                   <img
-                    src={current.src}
-                    alt={current.title}
-                    className="max-w-full max-h-[80vh] object-contain mx-auto rounded-2xl shadow-xl"
+                    src={image.thumb}
+                    alt=""
+                    loading="lazy"
+                    className="aspect-[4/3] w-full object-cover object-[center_30%] transition-transform duration-[900ms] ease-out-expo group-hover:scale-[1.05]"
                   />
-                  <div className="text-center mt-4">
-                    <h3 id="modal-image-title" className="text-2xl font-bold font-heading text-white mb-2">
-                      {current.title}
-                    </h3>
-                    <p className="text-green-400 font-body">Click outside to close</p>
-                  </div>
-                </>
-              ) : null;
-            })()}
-          </div>
-        </div>
-      )}
+                  {/* Metadata rises with a short rail as the photo comes forward */}
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink-950/90 to-transparent p-4 pt-12 text-left opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
+                    <span className="flex translate-y-2 items-center gap-2 transition-transform duration-500 ease-out-expo group-hover:translate-y-0 group-focus-visible:translate-y-0">
+                      <span className="h-px w-5 bg-brand-400" aria-hidden />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-brand-400">{image.category}</span>
+                    </span>
+                    <span className="mt-1 block translate-y-2 text-sm font-medium text-white transition-transform delay-75 duration-500 ease-out-expo group-hover:translate-y-0 group-focus-visible:translate-y-0">{image.title}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
 
+        <CtaBand title="See it in person" body="Photos only go so far. Book a free tour and walk the floor with one of our coaches." />
+      </main>
+
+      <Lightbox
+        images={lightbox?.set ?? []}
+        index={lightbox?.index ?? null}
+        onIndexChange={(i) => setLightbox(i === null ? null : { ...lightbox!, index: i })}
+        originRect={lightbox?.origin}
+      />
       <Footer />
     </div>
   );

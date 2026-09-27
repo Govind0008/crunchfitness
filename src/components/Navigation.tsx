@@ -1,135 +1,204 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { ArrowRight, Menu, Phone, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { SITE } from '@/lib/site';
+import { prefersReducedMotion } from '@/lib/motion';
+
+const NAV_ITEMS = [
+  { name: 'Home',    href: '/' },
+  { name: 'About',   href: '/about-us' },
+  { name: 'Team',    href: '/team' },
+  { name: 'Founder', href: '/founders' },
+  { name: 'Gallery', href: '/gallery' },
+  { name: 'Blog',    href: '/blog' },
+  { name: 'Plans',   href: '/plans' },
+  { name: 'Contact', href: '/contact' },
+];
 
 const Navigation = ({ bannerVisible = false }: { bannerVisible?: boolean }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  // 'closing' keeps the sheet mounted while its exit animation plays
+  const [menu, setMenu] = useState<'closed' | 'open' | 'closing'>('closed');
+  const isOpen = menu === 'open';
   const [scrolled, setScrolled] = useState(false);
+  const progressRef = useRef<HTMLSpanElement>(null);
   const location = useLocation();
-  const navigate = useNavigate();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+  const setIsOpen = useCallback((open: boolean) => {
+    setMenu((m) => {
+      if (open) return 'open';
+      if (m !== 'open') return m;
+      window.setTimeout(() => setMenu((cur) => (cur === 'closing' ? 'closed' : cur)), prefersReducedMotion() ? 0 : 320);
+      return 'closing';
+    });
   }, []);
 
-  // Close mobile menu on route change
+  // Scroll: tighten the bar, and load the progress hairline with page depth (rAF-throttled)
   useEffect(() => {
-    setIsOpen(false);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const y = window.scrollY;
+      setScrolled(y > 8);
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (progressRef.current) progressRef.current.style.transform = `scaleX(${max > 0 ? Math.min(1, y / max) : 0})`;
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    // Lazy images and live data change the page height without a scroll event
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(document.body);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
   }, [location.pathname]);
 
-  const navItems = [
-    { name: 'Home',    href: '/' },
-    { name: 'About',   href: '/about-us' },
-    { name: 'Team',    href: '/team' },
-    { name: 'Founder', href: '/founders' },
-    { name: 'Gallery', href: '/gallery' },
-    { name: 'Blog',    href: '/blog' },
-    { name: 'Plans',   href: '/plans' },
-    { name: 'Contact', href: '/contact' },
-  ];
+  // Close the mobile menu on route change
+  useEffect(() => { setIsOpen(false); }, [location.pathname, setIsOpen]);
 
-  const isActive = (href: string) => {
-    if (href === '/') return location.pathname === '/';
-    return location.pathname.startsWith(href);
-  };
+  // While the mobile menu is open: lock page scroll, close on Escape, move focus into the panel
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panelRef.current?.querySelector<HTMLElement>('a')?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setIsOpen(false); toggleRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, setIsOpen]);
 
   return (
-    <nav
-      className={`fixed left-0 right-0 z-50 transition-all duration-300 ${
-        bannerVisible ? 'top-9' : 'top-0'
-      } ${
-        scrolled
-          ? 'bg-black/95 backdrop-blur-xl border-b border-green-500/20 shadow-lg shadow-green-500/10'
-          : 'bg-black/60 backdrop-blur-md'
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-28">
-
-          {/* Logo — fixed proportional size, no overflow */}
-          <Link to="/" className="flex-shrink-0 flex items-center group">
+    <>
+      <header
+        className={cn(
+          'fixed inset-x-0 z-50 transition-[background-color,border-color] duration-300',
+          bannerVisible ? 'top-9' : 'top-0',
+          scrolled || isOpen
+            ? 'bg-ink-950/90 backdrop-blur-md border-b border-white/[0.06]'
+            : 'bg-ink-950/60 backdrop-blur-sm border-b border-transparent',
+        )}
+      >
+        <nav
+          aria-label="Main"
+          className={cn(
+            'container flex items-center justify-between gap-6 transition-[height] duration-300 ease-out-expo',
+            scrolled && !isOpen ? 'h-[calc(var(--nav-h)-0.5rem)]' : 'h-[var(--nav-h)]',
+          )}
+        >
+          <Link to="/" className="flex shrink-0 items-center rounded-md" aria-label={`${SITE.name} — home`}>
             <img
-              src="/lovable-uploads/crunch.png"
-              alt="Crunch Fitness Club"
-              className="h-24 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
+              src="/images/logo.webp"
+              alt=""
+              width={406}
+              height={286}
+              className={cn('h-10 w-auto origin-left transition-transform duration-300 ease-out-expo md:h-11', scrolled && 'scale-90')}
             />
           </Link>
-
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center space-x-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`relative px-4 py-2.5 rounded-lg text-sm font-semibold font-rajdhani transition-all duration-300 group ${
-                  isActive(item.href)
-                    ? 'text-green-400 bg-green-500/10'
-                    : 'text-white hover:text-green-400 hover:bg-green-500/5'
-                }`}
-              >
-                <span className="relative z-10">{item.name}</span>
-                {/* Active / hover underline */}
-                <span
-                  className={`absolute bottom-1 left-4 right-4 h-px bg-gradient-to-r from-green-400 to-green-500 transition-transform duration-300 origin-left ${
-                    isActive(item.href) ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
-                  }`}
-                />
-              </Link>
+  
+          {/* Desktop links */}
+          <ul className="hidden lg:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => (
+              <li key={item.href}>
+                <NavLink
+                  to={item.href}
+                  end={item.href === '/'}
+                  className={({ isActive }) => cn(
+                    'relative block rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200',
+                    'after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-brand-400 after:origin-left after:transition-transform after:duration-300 after:ease-out-expo',
+                    isActive ? 'text-white after:scale-x-100' : 'text-ink-300 hover:text-white after:scale-x-0',
+                  )}
+                >
+                  {item.name}
+                </NavLink>
+              </li>
             ))}
-
+          </ul>
+  
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" className="hidden sm:inline-flex">
+              <Link to="/plans">Join now</Link>
+            </Button>
             <button
-              onClick={() => navigate('/plans')}
-              className="ml-4 flex items-center gap-2 bg-gradient-to-r from-green-400 to-green-600 text-black px-6 py-2.5 rounded-full text-sm font-bold font-rajdhani hover:from-green-300 hover:to-green-500 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/30 active:scale-95"
+              ref={toggleRef}
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="lg:hidden -mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-white hover:bg-white/5"
+              aria-label={isOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={isOpen}
+              aria-controls="mobile-menu"
             >
-              JOIN NOW
-              <Sparkles className="w-3.5 h-3.5" />
+              {isOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
+        </nav>
+        {/* Page progress — the brand's progression line, loaded by scroll depth */}
+        <span
+          ref={progressRef}
+          data-nav-progress
+          className="absolute inset-x-0 -bottom-px h-px origin-left bg-brand-400"
+          style={{ transform: 'scaleX(0)' }}
+          aria-hidden
+        />
+      </header>
 
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden text-white hover:text-green-400 p-2 rounded-lg hover:bg-green-500/10 transition-all duration-300"
-            aria-label={isOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={isOpen}
-          >
-            {isOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile menu — max-h transition (no scale-y clipping) */}
+      {/* Mobile menu — full-height sheet below the bar. Rendered outside <header> because the
+          header's backdrop-filter would otherwise become the containing block for position:fixed. */}
       <div
-        className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-          isOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'
-        }`}
+        id="mobile-menu"
+        ref={panelRef}
+        hidden={menu === 'closed'}
+        data-state={menu}
+        className="menu-curtain lg:hidden fixed inset-x-0 bottom-0 z-50 overflow-y-auto bg-ink-950"
+        style={{ top: `calc(var(--nav-h) + ${bannerVisible ? '2.25rem' : '0px'})` }}
       >
-        <div className="bg-black/98 backdrop-blur-xl border-t border-green-500/20 px-4 pt-4 pb-6 space-y-1">
-          {navItems.map((item, index) => (
-            <Link
-              key={item.name}
-              to={item.href}
-              className={`block px-4 py-3 rounded-lg text-base font-semibold font-rajdhani transition-all duration-200 ${
-                isActive(item.href)
-                  ? 'text-green-400 bg-green-500/10'
-                  : 'text-white hover:text-green-400 hover:bg-green-500/5 hover:translate-x-1'
-              }`}
-              style={{ transitionDelay: isOpen ? `${index * 30}ms` : '0ms' }}
-            >
-              {item.name}
-            </Link>
-          ))}
-          <button
-            onClick={() => { navigate('/plans'); setIsOpen(false); }}
-            className="w-full mt-3 bg-gradient-to-r from-green-400 to-green-600 text-black px-6 py-3 rounded-full font-bold font-rajdhani hover:from-green-300 hover:to-green-500 transition-all duration-300 active:scale-95"
-          >
-            JOIN NOW
-          </button>
+        <div className="container flex min-h-full flex-col pb-10 pt-6">
+          <ul className="flex flex-col">
+            {NAV_ITEMS.map((item, i) => (
+              <li key={item.href} className="menu-link border-b border-white/[0.06]" style={{ '--i': i } as React.CSSProperties}>
+                <NavLink
+                  to={item.href}
+                  end={item.href === '/'}
+                  className={({ isActive }) => cn(
+                    'flex items-center justify-between py-4 font-display text-3xl font-bold uppercase tracking-wide transition-colors',
+                    isActive ? 'text-brand-400' : 'text-white active:text-brand-300',
+                  )}
+                >
+                  <span className="flex items-baseline gap-4">
+                    <span className="w-6 font-sans text-xs font-semibold tabular-nums text-ink-500" aria-hidden>
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    {item.name}
+                  </span>
+                  <ArrowRight className="h-5 w-5 text-ink-500" aria-hidden />
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-auto flex flex-col gap-3 pt-10">
+            <Button asChild size="lg" className="w-full">
+              <Link to="/plans">View membership plans</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="w-full">
+              <a href={SITE.phoneHref}><Phone /> Call {SITE.phone}</a>
+            </Button>
+          </div>
         </div>
       </div>
-    </nav>
+    </>
   );
 };
 

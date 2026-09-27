@@ -3,6 +3,8 @@ import { Instagram, Crown } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Footer from '../components/Footer';
+import { PageHeader, Section } from '@/components/site/Section';
+import CtaBand from '@/components/site/CtaBand';
 import { Helmet } from 'react-helmet';
 
 interface Member {
@@ -156,13 +158,30 @@ const FALLBACK_MEMBERS: Member[] = [
   },
 ];
 
+const MemberPhoto = ({ member }: { member: Member }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed || !member.image) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-ink-800 font-display text-6xl font-bold text-ink-600" aria-hidden>
+        {member.name.split(' ').map((n) => n[0]).slice(0, 2).join('')}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={member.image}
+      alt={`${member.name}, ${member.role} at Crunch Fitness Club`}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="h-full w-full object-cover"
+      style={{ objectPosition: member.objectPosition || 'center' }}
+    />
+  );
+};
+
 const Team = () => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [hoveredMember, setHoveredMember] = useState<number | null>(null);
   const [firestoreMembers, setFirestoreMembers] = useState<Member[]>([]);
   const [loadingFirestore, setLoadingFirestore] = useState(true);
-
-  useEffect(() => { setIsVisible(true); }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'teamMembers'), orderBy('order', 'asc'));
@@ -172,7 +191,7 @@ const Team = () => {
         .filter((m) => m.visible !== false);
       setFirestoreMembers(data);
       setLoadingFirestore(false);
-    });
+    }, () => setLoadingFirestore(false));
     return unsub;
   }, []);
 
@@ -182,113 +201,115 @@ const Team = () => {
     : FALLBACK_MEMBERS;
 
   return (
-    <div className="min-h-screen bg-black text-white pt-20">
+    <div className="min-h-screen">
       <Helmet>
         <title>Our Team | Crunch Fitness Club</title>
       </Helmet>
 
-      {/* Hero */}
-      <section className="relative min-h-[60vh] flex items-center justify-center overflow-hidden" aria-labelledby="team-hero-heading">
-        <div className="absolute inset-0">
-          <img
-            src="/lovable-uploads/team-1.jpeg"
-            alt="Crunch Fitness expert team training in a modern gym setting"
-            className="w-full h-full object-cover object-[center_40%] brightness-75"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-transparent to-black/70"></div>
-        </div>
-      </section>
+      <main>
+        <PageHeader
+          eyebrow="The team"
+          title={<>Coaches in <span className="text-brand-400">your corner</span></>}
+          lede="Certified trainers covering strength, fat loss, functional training, nutrition and women's fitness — on the floor every day to guide your sessions."
+          image={{ src: '/images/team-1920.webp', srcSet: '/images/team-960.webp 960w, /images/team-1920.webp 1920w', alt: 'The Crunch Fitness coaching team', position: 'center 35%' }}
+        />
 
-      {/* Team grid */}
-      <section className="py-20 relative bg-gradient-to-b from-black to-gray-900" aria-labelledby="our-trainers-heading">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 id="our-trainers-heading" className="text-4xl md:text-5xl font-orbitron font-bold text-center mb-12">
-            <span className="text-white">OUR CERTIFIED</span> <span className="neon-text">TRAINERS</span>
-          </h2>
+        <Section aria-labelledby="our-trainers-heading">
+          <h2 id="our-trainers-heading" className="sr-only">Our certified trainers</h2>
 
           {loadingFirestore ? (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
-            </div>
+            <ul className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading trainers">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <li key={i} className="animate-pulse">
+                  <div className="aspect-[4/5] rounded-2xl bg-ink-900" />
+                  <div className="mt-5 h-5 w-2/3 rounded bg-ink-900" />
+                  <div className="mt-2 h-4 w-1/2 rounded bg-ink-900" />
+                </li>
+              ))}
+            </ul>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-2 gap-8">
-              {displayMembers.map((member, index) => (
-                <div
-                  key={member.id ?? index}
-                  className={`relative group transition-all duration-700 transform hover:scale-105 ${
-                    isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                  }`}
-                  style={{ transitionDelay: `${index * 100}ms` }}
-                  onMouseEnter={() => setHoveredMember(index)}
-                  onMouseLeave={() => setHoveredMember(null)}
-                >
-                  <div className={`relative h-[500px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl overflow-hidden border-2 transition-all duration-500 shadow-xl ${
-                    member.isOwner ? 'border-yellow-500 hover:border-yellow-400' : 'border-gray-700 hover:border-green-500'
-                  }`}>
-                    {member.isOwner && (
-                      <div className="absolute top-4 right-4 z-20 bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-3 py-1 rounded-full flex items-center space-x-1 text-sm font-bold">
-                        <Crown size={16} />
-                        <span>GYM OWNER</span>
-                      </div>
-                    )}
-
-                    <div className="relative h-3/5 overflow-hidden">
-                      <img
-                        src={member.image}
-                        alt={`${member.name}, ${member.role} at Crunch Fitness Club`}
-                        className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
-                        style={{ objectPosition: member.objectPosition }}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                    </div>
-
-                    <div className="absolute bottom-0 left-0 right-0 h-2/5 p-6 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col justify-end">
-                      <div className="text-center space-y-2">
-                        <h3 className={`text-2xl font-orbitron font-bold mb-2 ${member.isOwner ? 'text-yellow-400' : 'text-white'}`}>
-                          {member.name}
-                        </h3>
-                        <p className={`font-rajdhani font-semibold mb-2 ${member.isOwner ? 'text-yellow-300' : 'text-green-500'}`}>
-                          {member.role}
-                        </p>
-                        {member.specialization && (
-                          <p className="text-gray-400 font-rajdhani text-sm mb-2">
-                            Specialization: {member.specialization}
-                          </p>
-                        )}
-                        {member.experience && (
-                          <p className={`font-rajdhani text-sm mb-3 font-bold ${member.isOwner ? 'text-yellow-500' : 'text-orange-500'}`}>
-                            Experience: {member.experience}
-                          </p>
-                        )}
-                        <div className={`transition-all duration-500 ${hoveredMember === index ? 'opacity-100 translate-y-0 max-h-16' : 'opacity-0 translate-y-4 max-h-0'} overflow-hidden`}>
-                          {member.bio && (
-                            <p className="text-gray-400 font-rajdhani text-sm mb-3">{member.bio}</p>
-                          )}
+            <ul className="grid gap-x-5 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {displayMembers.map((member, index) => {
+                const hasInstagram = member.instagram && member.instagram !== '#';
+                return (
+                  <li
+                    key={member.id ?? index}
+                    className="m-rise"
+                    style={{ '--i': Math.min(index, 8) } as React.CSSProperties}
+                  >
+                    <article className="group flex h-full flex-col transition-transform duration-500 ease-out-expo [@media(hover:hover)]:hover:-translate-y-1">
+                      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900 shadow-[0_0_0_rgba(0,0,0,0)] transition-shadow duration-500 group-hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.9)]">
+                        {/* Photo drifts up and in, like a coach stepping forward */}
+                        <div className="h-full w-full transition-transform duration-[900ms] ease-out-expo [@media(hover:hover)]:group-hover:-translate-y-2 [@media(hover:hover)]:group-hover:scale-[1.06]">
+                          <MemberPhoto member={member} />
                         </div>
-                        {member.instagram && member.instagram !== '#' && (
-                          <div className="flex justify-center">
+                        {member.isOwner && (
+                          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-brand-400 px-3 py-1 text-xs font-semibold text-ink-950">
+                            <Crown className="h-3.5 w-3.5" aria-hidden /> Gym owner
+                          </span>
+                        )}
+
+                        {/* Pointer devices: bio + action rise over the photo on hover / focus */}
+                        <div className="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-gradient-to-t from-ink-950 via-ink-950/70 to-transparent p-5 opacity-0 transition-opacity duration-500 [@media(hover:hover)]:flex group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                          <span className="block h-px w-8 origin-left scale-x-0 bg-brand-400 transition-transform delay-100 duration-500 ease-out-expo group-hover:scale-x-100 group-focus-within:scale-x-100" aria-hidden />
+                          {member.bio && (
+                            <p className="mt-3 translate-y-3 text-sm leading-relaxed text-ink-200 transition-transform duration-500 ease-out-expo line-clamp-5 group-hover:translate-y-0 group-focus-within:translate-y-0">
+                              {member.bio}
+                            </p>
+                          )}
+                          {hasInstagram && (
                             <a
                               href={member.instagram}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className={`w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white transition-all duration-300 ${
-                                member.isOwner ? 'hover:bg-yellow-500 hover:text-black' : 'hover:bg-green-500 hover:text-black'
-                              }`}
+                              className="link-drive mt-4 inline-flex w-fit translate-y-3 items-center gap-2 text-sm font-semibold text-white transition-transform delay-75 duration-500 ease-out-expo hover:text-brand-400 group-hover:translate-y-0 group-focus-within:translate-y-0"
                               aria-label={`Instagram profile of ${member.name}`}
                             >
-                              <Instagram size={16} />
+                              <Instagram className="h-4 w-4" aria-hidden /> Follow on Instagram
                             </a>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+
+                      <div className="mt-5">
+                        <h3 className="font-display text-2xl font-bold uppercase leading-tight text-white">{member.name}</h3>
+                        <p className="mt-1 text-sm font-medium text-brand-400">{member.role}</p>
+                        {(member.specialization || member.experience) && (
+                          <dl className="mt-4 space-y-1 text-sm">
+                            {member.specialization && (
+                              <div className="flex gap-2"><dt className="text-ink-500">Focus</dt><dd className="text-ink-200">{member.specialization}</dd></div>
+                            )}
+                            {member.experience && (
+                              <div className="flex gap-2"><dt className="text-ink-500">Experience</dt><dd className="text-ink-200">{member.experience}</dd></div>
+                            )}
+                          </dl>
+                        )}
+                        {/* Touch devices: bio and Instagram stay visible below the photo */}
+                        <div className="[@media(hover:hover)]:hidden">
+                          {member.bio && <p className="mt-3 text-sm leading-relaxed text-ink-400 line-clamp-4">{member.bio}</p>}
+                          {hasInstagram && (
+                            <a
+                              href={member.instagram}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-white"
+                              aria-label={`Instagram profile of ${member.name}`}
+                            >
+                              <Instagram className="h-4 w-4" aria-hidden /> Instagram
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
-      </section>
+        </Section>
+
+        <CtaBand title="Train with our coaches" body="Book a free tour and we'll introduce you to the trainer best suited to your goal." />
+      </main>
 
       <Footer />
     </div>

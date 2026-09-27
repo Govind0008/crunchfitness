@@ -11,7 +11,6 @@ import TrainerRoute from "@/components/TrainerRoute";
 import ClientRoute from "@/components/ClientRoute";
 import Navigation from "@/components/Navigation";
 import OfferBanner from "@/components/OfferBanner";
-import Chatbot from "@/components/Chatbot";
 import WhatsAppButton from "@/components/WhatsAppButton";
 
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
@@ -20,29 +19,29 @@ const GlobalUI = () => {
   const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/trainer') || pathname.startsWith('/client') || pathname === '/checkin';
   const [bannerVisible, setBannerVisible] = useState(false);
 
-  // Zero out the page-top offset on admin pages so the layout isn't pushed down
+  // Admin/portal pages render without the public navbar, so they need no top offset.
+  // Public pages offset by navbar height (CSS var) plus the offer banner when shown.
   useEffect(() => {
-    document.documentElement.style.setProperty('--page-top', isAdmin ? '0px' : (bannerVisible ? '9.25rem' : '7rem'));
+    const root = document.documentElement.style;
+    root.setProperty('--banner-h', bannerVisible ? '2.25rem' : '0rem');
+    root.setProperty('--page-top', isAdmin ? '0px' : 'calc(var(--nav-h) + var(--banner-h))');
   }, [isAdmin, bannerVisible]);
 
-  const handleBannerVisibility = useCallback((v: boolean) => {
-    setBannerVisible(v);
-    // navbar h-28 = 7rem; banner h-9 = 2.25rem
-    document.documentElement.style.setProperty(
-      '--page-top',
-      v ? '9.25rem' : '7rem'
-    );
-  }, []);
+  const handleBannerVisibility = useCallback((v: boolean) => setBannerVisible(v), []);
 
   return (
     <>
       {!isAdmin && <Navigation bannerVisible={bannerVisible} />}
       {!isAdmin && <OfferBanner onVisibilityChange={handleBannerVisibility} />}
-      {!isAdmin && <Chatbot />}
-      {!isAdmin && <WhatsAppButton />}
+      {!isAdmin && <Suspense fallback={null}><Chatbot /></Suspense>}
+      {/* Contact already offers WhatsApp inline; avoid a floating button over its form */}
+      {!isAdmin && pathname !== '/contact' && <WhatsAppButton />}
     </>
   );
 };
+
+// The chat assistant is large and not needed for first paint
+const Chatbot = lazy(() => import("@/components/Chatbot"));
 
 // Code-split every page — only the current route's bundle is loaded
 const Index          = lazy(() => import("./pages/Index"));
@@ -65,8 +64,8 @@ const NotFound         = lazy(() => import("./pages/NotFound"));
 
 // Minimal dark spinner shown while a lazy chunk is loading
 const PageLoader = () => (
-  <div className="min-h-screen bg-black flex items-center justify-center">
-    <div className="w-10 h-10 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+  <div className="min-h-screen bg-background flex items-center justify-center" role="status" aria-label="Loading">
+    <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
   </div>
 );
 

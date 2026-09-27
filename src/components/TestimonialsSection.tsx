@@ -1,26 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Star, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useGoogleReviews } from '@/hooks/useGoogleReviews';
+import { Section } from '@/components/site/Section';
+import { TickRail } from '@/components/motion';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const GOOGLE_MAPS_URL =
   'https://www.google.com/maps/place/Crunch+Fitness+Club/@18.599946,73.770242,20z/data=!4m6!3m5!1s0x3bc2b979fd8fdac5:0xd27c5a7f4bc4a76e!8m2!3d18.5999023!4d73.7700584!16s%2Fg%2F11m_h10q89';
 
-// Animates integer 0 → target when active becomes true
-const useCounter = (target: number, duration = 1400, active = false) => {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    let start = 0;
-    const step = target / (duration / 16);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= target) { setCount(target); clearInterval(timer); }
-      else setCount(Math.floor(start));
-    }, 16);
-    return () => clearInterval(timer);
-  }, [target, duration, active]);
-  return count;
-};
+const ROTATE_MS = 7000;
 
 const GoogleLogo = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
@@ -31,278 +20,161 @@ const GoogleLogo = ({ className = 'w-4 h-4' }: { className?: string }) => (
   </svg>
 );
 
-const StarRow = ({ rating }: { rating: number }) => (
-  <div className="flex justify-center gap-1.5 mb-6">
-    {[...Array(5)].map((_, i) => (
-      <Star
-        key={i}
-        className={`w-5 h-5 ${i < rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'}`}
-        aria-hidden="true"
-      />
+const Stars = ({ rating, className }: { rating: number; className?: string }) => (
+  <div className={cn('flex gap-0.5', className)} role="img" aria-label={`${rating} out of 5 stars`}>
+    {[0, 1, 2, 3, 4].map((i) => (
+      <Star key={i} className={cn('h-4 w-4', i < Math.round(rating) ? 'fill-brand-400 text-brand-400' : 'text-ink-600')} aria-hidden />
     ))}
   </div>
 );
 
-const StatCard = ({ value, suffix, label, color, active }: {
-  value: number; suffix: string; label: string; color: string; active: boolean;
-}) => {
-  const count = useCounter(Math.round(value * 10), 1400, active);
-  const display = suffix === '★' ? (count / 10).toFixed(1) : Math.round(count / 10);
-  return (
-    <div className="text-center group cursor-default">
-      <div className={`text-3xl md:text-4xl font-bold mb-2 ${color}`}>{display}{suffix}</div>
-      <div className="text-gray-400 group-hover:text-white transition-colors duration-300 text-sm">{label}</div>
-    </div>
-  );
-};
-
-// Skeleton shown while fetching
-const ReviewSkeleton = () => (
-  <div className="max-w-4xl mx-auto">
-    <div className="bg-gray-800/50 rounded-2xl p-8 md:p-12 border border-gray-700 flex flex-col items-center gap-4 animate-pulse">
-      <div className="w-10 h-10 rounded-full bg-gray-700" />
-      <div className="h-4 bg-gray-700 rounded w-3/4" />
-      <div className="h-4 bg-gray-700 rounded w-2/3" />
-      <div className="h-4 bg-gray-700 rounded w-1/2" />
-      <div className="flex gap-1 mt-2">
-        {[...Array(5)].map((_, i) => <div key={i} className="w-5 h-5 rounded bg-gray-700" />)}
-      </div>
-      <div className="h-3 bg-gray-700 rounded w-32" />
-    </div>
-  </div>
-);
-
-// Shown if API fails or returns no reviews
-const ReviewsUnavailable = () => (
-  <div className="max-w-4xl mx-auto">
-    <div className="bg-gray-800/50 rounded-2xl p-8 md:p-12 border border-gray-700 flex flex-col items-center gap-4 text-center">
-      <GoogleLogo className="w-10 h-10" />
-      <p className="text-gray-300 text-lg">See what our members say about us on Google</p>
-      <a
-        href={GOOGLE_MAPS_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-400 text-black font-bold rounded-full transition-all duration-300 hover:scale-105"
-      >
-        View Google Reviews
-        <ExternalLink className="w-4 h-4" />
-      </a>
-    </div>
-  </div>
-);
-
 const TestimonialsSection = () => {
+  const { data, loading, error } = useGoogleReviews();
+  const reviews = (data?.reviews ?? []).filter((r) => r.text?.trim());
+  const rating = data?.rating ?? 0;
+  const total = data?.user_ratings_total ?? 0;
+
   const [current, setCurrent] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [statsVisible, setStatsVisible] = useState(false);
-  const sectionRef = useRef<HTMLElement>(null);
-  const statsRef = useRef<HTMLDivElement>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [paused, setPaused] = useState(false);
 
-  const { data: googleData, loading, error } = useGoogleReviews();
-
-  const reviews = googleData?.reviews ?? [];
-  const rating = googleData?.rating ?? 0;
-  const totalReviews = googleData?.user_ratings_total ?? 0;
-  const hasReviews = reviews.length > 0;
-
-  const startInterval = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!hasReviews) return;
-    intervalRef.current = setInterval(() => {
-      setCurrent((prev) => (prev + 1) % reviews.length);
-    }, 6000);
-  }, [reviews.length, hasReviews]);
+  const count = reviews.length;
+  const goTo = useCallback((i: number) => setCurrent(((i % count) + count) % count), [count]);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
-      { threshold: 0.2 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
-      { threshold: 0.3 }
-    );
-    if (statsRef.current) observer.observe(statsRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!isPaused) { startInterval(); }
-    else { if (intervalRef.current) clearInterval(intervalRef.current); }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isPaused, startInterval]);
-
-  const goTo = (index: number) => { setCurrent(index); startInterval(); };
-  const prev = () => goTo((current - 1 + reviews.length) % reviews.length);
-  const next = () => goTo((current + 1) % reviews.length);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (paused || count < 2 || reduce) return;
+    const id = setInterval(() => setCurrent((c) => (c + 1) % count), ROTATE_MS);
+    return () => clearInterval(id);
+  }, [paused, count]);
 
   const review = reviews[current];
 
-  const stats = [
-    { value: rating || 4.9,        suffix: '★', label: 'Google Rating',    color: 'text-yellow-400' },
-    { value: totalReviews || 200,   suffix: '+', label: 'Google Reviews',   color: 'text-orange-500' },
-    { value: 98,                    suffix: '%', label: 'Satisfaction Rate', color: 'text-green-500'  },
-    { value: 100,                   suffix: '%', label: 'Recommended',       color: 'text-green-500'  },
-  ];
-
   return (
-    <section ref={sectionRef} className="py-20 bg-gradient-to-br from-gray-900 to-black relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-orange-500/8 rounded-full blur-3xl" />
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-
-        {/* Header */}
-        <div className={`text-center mb-16 transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <h2 className="text-4xl md:text-6xl font-bold mb-4">
-            <span className="text-white">WHAT OUR</span>
-            <br />
-            <span className="text-green-500">MEMBERS SAY</span>
-          </h2>
-          <p className="text-xl text-gray-400 max-w-3xl mx-auto mb-6">
-            Real reviews from real members at{' '}
-            <strong className="text-white">Crunch Fitness Club, Wakad, Pune</strong>.
+    <Section aria-labelledby="reviews-heading" tone="raised">
+      <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
+        {/* Summary */}
+        <div className="lg:col-span-4">
+          <p className="eyebrow mb-4">
+          <TickRail className="w-8" />
+          <span className="m-rise" style={{ '--d': 120 } as React.CSSProperties}>Member reviews</span>
           </p>
+          <h2 id="reviews-heading" className="font-display text-display-md font-bold uppercase text-white text-balance">
+            <span className="m-line"><span style={{ '--d': 80 } as React.CSSProperties}>Heard on the gym floor</span></span>
+          </h2>
+          <p className="m-rise mt-4 text-ink-300" style={{ '--d': 220 } as React.CSSProperties}>Unedited reviews from members, pulled live from Google.</p>
 
-          {/* Google badge */}
           <a
             href={GOOGLE_MAPS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-700 hover:border-yellow-400/50 bg-gray-800/60 hover:bg-gray-700/60 transition-all duration-300 text-sm text-gray-300 hover:text-white group"
+            className="group mt-8 flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-ink-950 p-5 transition-colors hover:border-white/20"
           >
-            <GoogleLogo />
-            <div className="flex gap-0.5">
-              {[...Array(5)].map((_, i) => <Star key={i} className="w-3 h-3 fill-yellow-400 text-yellow-400" />)}
+            <GoogleLogo className="h-9 w-9 shrink-0" />
+            <div className="min-w-0 flex-1">
+              {rating > 0 ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-3xl font-bold text-white">{rating.toFixed(1)}</span>
+                    <Stars rating={rating} />
+                  </div>
+                  <p className="text-sm text-ink-400">{total} reviews on Google</p>
+                </>
+              ) : (
+                <p className="font-semibold text-white">Read our reviews on Google</p>
+              )}
             </div>
-            {rating > 0 && <span className="font-medium">{rating.toFixed(1)}</span>}
-            {totalReviews > 0 && (
-              <>
-                <span className="text-gray-500">·</span>
-                <span>{totalReviews}+ reviews on Google</span>
-              </>
-            )}
-            <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ExternalLink className="h-4 w-4 text-ink-500 transition-colors group-hover:text-white" aria-hidden />
+            <span className="sr-only">(opens in a new tab)</span>
           </a>
         </div>
 
-        {/* Reviews area */}
-        <div className={`transition-all duration-700 delay-200 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-
+        {/* Review carousel */}
+        <div className="m-rise lg:col-span-8" style={{ '--d': 200 } as React.CSSProperties}>
           {loading && (
-            <div className="flex flex-col items-center gap-4 mb-8">
-              <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
-              <p className="text-gray-500 text-sm">Loading real reviews from Google…</p>
-              <ReviewSkeleton />
+            <div className="rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12 animate-pulse" aria-label="Loading reviews">
+              <div className="h-4 w-24 rounded bg-ink-800" />
+              <div className="mt-8 space-y-3">
+                <div className="h-5 w-full rounded bg-ink-800" />
+                <div className="h-5 w-11/12 rounded bg-ink-800" />
+                <div className="h-5 w-2/3 rounded bg-ink-800" />
+              </div>
+              <div className="mt-10 h-10 w-48 rounded bg-ink-800" />
             </div>
           )}
 
-          {!loading && (error || !hasReviews) && <ReviewsUnavailable />}
-
-          {!loading && hasReviews && (
-            <>
-              <div className="max-w-4xl mx-auto">
-                <div
-                  className="relative bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 md:p-12 border border-gray-700 shadow-2xl hover:border-green-500/30 transition-all duration-500"
-                  onMouseEnter={() => setIsPaused(true)}
-                  onMouseLeave={() => setIsPaused(false)}
-                  role="region"
-                  aria-label="Google member reviews"
-                  aria-live="polite"
-                >
-                  <button onClick={prev} className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-green-500/20 hover:bg-green-500/40 text-green-400 hover:text-white transition-all duration-300 hover:scale-110 z-10" aria-label="Previous">
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button onClick={next} className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-green-500/20 hover:bg-green-500/40 text-green-400 hover:text-white transition-all duration-300 hover:scale-110 z-10" aria-label="Next">
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-
-                  <div className="flex justify-center mb-6">
-                    <Quote className="w-10 h-10 text-green-500" />
-                  </div>
-
-                  <div className="text-center">
-                    <p className="text-xl md:text-2xl text-gray-200 italic mb-8 leading-relaxed">
-                      "{review.text}"
-                    </p>
-
-                    <StarRow rating={review.rating} />
-
-                    <div className="flex flex-col items-center gap-1">
-                      {review.profile_photo_url ? (
-                        <img
-                          src={review.profile_photo_url}
-                          alt={review.author_name}
-                          className="w-10 h-10 rounded-full mb-2 border-2 border-green-500/30 object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full mb-2 bg-green-500/20 flex items-center justify-center text-green-400 font-bold text-sm border-2 border-green-500/30">
-                          {review.author_name.charAt(0)}
-                        </div>
-                      )}
-                      <h4 className="text-lg font-bold text-white">{review.author_name}</h4>
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
-                        <GoogleLogo className="w-3.5 h-3.5" />
-                        <span className="text-green-400">Verified Google Review</span>
-                        <span className="text-gray-600">·</span>
-                        <span>{review.relative_time_description}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {isPaused && <span className="absolute bottom-3 right-4 text-[10px] text-gray-600 select-none">paused</span>}
-                </div>
-              </div>
-
-              {/* Dots */}
-              <div className="flex justify-center mt-6 gap-2">
-                {reviews.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => goTo(i)}
-                    className={`rounded-full transition-all duration-300 ${i === current ? 'bg-green-500 w-7 h-3' : 'bg-gray-600 hover:bg-gray-500 w-3 h-3'}`}
-                    aria-label={`Review ${i + 1}`}
-                  />
-                ))}
-              </div>
-            </>
+          {!loading && (error || count === 0) && (
+            <div className="flex h-full flex-col items-start justify-center rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12">
+              <p className="font-display text-display-sm font-bold uppercase text-white">See what members say</p>
+              <p className="mt-3 max-w-md text-ink-400">Reviews couldn&apos;t load here right now — they&apos;re always available on our Google listing.</p>
+              <Button asChild variant="outline" className="mt-8">
+                <a href={GOOGLE_MAPS_URL} target="_blank" rel="noopener noreferrer">
+                  Open Google reviews <ExternalLink />
+                </a>
+              </Button>
+            </div>
           )}
 
-          {/* View all link */}
-          <div className="flex justify-center mt-6">
-            <a
-              href={GOOGLE_MAPS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors duration-300 underline underline-offset-4 decoration-gray-600 hover:decoration-green-500"
+          {!loading && review && (
+            <figure
+              className="flex h-full flex-col rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12"
+              onMouseEnter={() => setPaused(true)}
+              onMouseLeave={() => setPaused(false)}
+              onFocus={() => setPaused(true)}
+              onBlur={() => setPaused(false)}
+              aria-roledescription="carousel"
+              aria-label="Google member reviews"
             >
-              View all reviews on Google Maps
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-        </div>
+              <Stars rating={review.rating} />
+              <blockquote
+                key={current}
+                className="mt-6 flex-1 animate-fade-in"
+                aria-live={paused ? 'polite' : 'off'}
+              >
+                <p className="text-lg leading-relaxed text-white md:text-2xl md:leading-snug line-clamp-[8]">
+                  &ldquo;{review.text}&rdquo;
+                </p>
+              </blockquote>
 
-        {/* Stats */}
-        <div
-          ref={statsRef}
-          className={`mt-16 grid grid-cols-2 md:grid-cols-4 gap-8 transition-all duration-700 delay-400 ${statsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
-        >
-          {stats.map((stat, i) => (
-            <StatCard key={i} {...stat} active={statsVisible} />
-          ))}
+              <figcaption className="mt-10 flex flex-wrap items-center justify-between gap-6 border-t border-white/[0.08] pt-6">
+                <div className="flex items-center gap-3">
+                  {review.profile_photo_url ? (
+                    <img
+                      src={review.profile_photo_url}
+                      alt=""
+                      className="h-11 w-11 rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink-800 font-semibold text-white" aria-hidden>
+                      {review.author_name.charAt(0)}
+                    </span>
+                  )}
+                  <div>
+                    <p className="font-semibold text-white">{review.author_name}</p>
+                    <p className="text-sm text-ink-400">Google review · {review.relative_time_description}</p>
+                  </div>
+                </div>
+
+                {count > 1 && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm tabular-nums text-ink-400" aria-hidden>
+                      {current + 1} / {count}
+                    </span>
+                    <Button variant="secondary" size="icon" onClick={() => goTo(current - 1)} aria-label="Previous review">
+                      <ChevronLeft />
+                    </Button>
+                    <Button variant="secondary" size="icon" onClick={() => goTo(current + 1)} aria-label="Next review">
+                      <ChevronRight />
+                    </Button>
+                  </div>
+                )}
+              </figcaption>
+            </figure>
+          )}
         </div>
       </div>
-    </section>
+    </Section>
   );
 };
 
