@@ -73,3 +73,23 @@ export const CountUp = ({ value, suffix = '', duration = 1400, className, delay 
     </span>
   );
 };
+
+/**
+ * Editorial chapter opener for the homepage's signature sections (Training Journey).
+ * Decorative: the section's real heading follows it. The large word drifts a little
+ * against the scroll, like a title card sliding past the camera.
+ */
+export const ChapterMark = ({ index, word, className }: { index: string; word: string; className?: string }) => {
+  const ref = useScrollVar<HTMLDivElement>();
+  return (
+    <div ref={ref} className={cn('mb-10 md:mb-14', className)} aria-hidden>
+      <div className="flex items-center gap-4">
+        <span className="m-rise font-display text-sm font-bold tabular-nums tracking-[0.2em] text-brand-400">{index}</span>
+        <TickRail className="w-24 md:w-40" />
+      </div>
+      <div className="chapter-word mt-3">
+        <span className="m-line"><span className="text-outline" style={{ '--d': 120 } as CSSProperties}>{word}</span></span>
+      </div>
+    </div>
+  );
+};

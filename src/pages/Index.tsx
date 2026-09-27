@@ -12,7 +12,7 @@ import Footer from '../components/Footer';
 // Order follows the visitor's decision path: what it is → why here → cost →
 // proof (space, reviews) → engagement (tools, community) → objections → act.
 const Index = () => (
-  <div className="min-h-screen overflow-x-hidden">
+  <div className="min-h-screen overflow-x-clip">
     <main>
       <HeroSection />
       <WhyCrunchSection />
@@ -22,7 +22,7 @@ const Index = () => (
       <FreeToolsSection />
       <InstagramSection />
       <FAQSection />
-      <CtaBand />
+      <CtaBand chapter />
     </main>
     <Footer />
   </div>

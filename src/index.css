@@ -118,7 +118,10 @@
   --t-drive: 800ms;
   --t-settle: 1400ms;
   --stagger: 70ms;
+  /* Motion hierarchy — scroll-linked distances shrink on small screens */
+  --depth-scale: 1;
 }
+@media (max-width: 767px) { :root { --depth-scale: 0.5; } }
 
 /* Section trigger — the container itself does not move */
 .reveal { }
@@ -175,15 +178,64 @@
   background-image: repeating-linear-gradient(to right, theme('colors.brand.400') 0 2px, transparent 2px 6px);
 }
 
+/* Training journey — pinned stage frames and set emphasis */
+.journey-frame { clip-path: inset(0 0 0 0); transition: clip-path 1s var(--ease-drive); }
+.journey-frame[data-state='next'] { clip-path: inset(100% 0 0 0); }
+.journey-frame img { transform: scale(1.1); transition: transform 1.8s var(--ease-settle); }
+.journey-frame[data-state='active'] img, .journey-frame[data-state='past'] img { transform: none; }
+.journey-dot { border-color: rgb(255 255 255 / 0.15); color: theme('colors.ink.500'); transition: color 400ms, border-color 400ms, background-color 400ms; }
+.journey-step[data-state='active'] .journey-dot { border-color: theme('colors.brand.400'); color: theme('colors.brand.400'); }
+.journey-step[data-state='past'] .journey-dot { border-color: theme('colors.brand.400'); background: theme('colors.brand.400'); color: theme('colors.ink.950'); }
+@media (min-width: 1024px) {
+  .journey-copy { transition: opacity 600ms var(--ease-snap), transform 800ms var(--ease-drive); }
+  .journey-step[data-state='next'] .journey-copy { opacity: 0.5; transform: translate3d(16px, 0, 0); }
+  .journey-step[data-state='past'] .journey-copy { opacity: 0.6; }
+}
+
+/* Facility chapter — frame opens from content width to full-bleed as it reaches centre */
+.facility-open {
+  --gutter: max(1.25rem, calc((100vw - 1280px) / 2 + 2rem));
+  --open: clamp(0, (0.52 - var(--sp, 0.52)) * 3.2, 1);   /* 1 = framed, 0 = fully open */
+  clip-path: inset(calc(var(--open) * 1.5rem) calc(var(--open) * var(--gutter)) round calc(var(--open) * 24px + 0px));
+}
+@media (max-width: 1023px) {
+  .facility-open { --gutter: 1.25rem; }
+}
+
+/* Final set — a lime line draws across, then the panel expands out of it */
+@keyframes final-set {
+  0%   { clip-path: inset(calc(50% - 1px) 100% calc(50% - 1px) 0 round 2px); }
+  45%  { clip-path: inset(calc(50% - 1px) 0 calc(50% - 1px) 0 round 2px); }
+  100% { clip-path: inset(0 0 0 0 round 24px); }
+}
+.final-set { clip-path: inset(calc(50% - 1px) 100% calc(50% - 1px) 0 round 2px); }
+.revealed .final-set { animation: final-set 1.35s var(--ease-drive) 0.1s both; }
+
+/* Chapter openers — large outlined word, drifting sideways with scroll (--sp) */
+.chapter-word {
+  font-family: theme('fontFamily.display');
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: clamp(3.75rem, 1rem + 11vw, 10rem);
+  line-height: 0.82;
+  letter-spacing: -0.01em;
+}
+.chapter-word .m-line { transform: translate3d(calc((0.5 - var(--sp, 0.5)) * 120px * var(--depth-scale)), 0, 0); }
+.text-outline { color: transparent; -webkit-text-stroke: 1px rgb(255 255 255 / 0.28); }
+
 /* ── Scroll-linked motion ─────────────────────────────────────────────────────
    The shared scroll engine writes --sp (0 → 1 as an element travels through the
    viewport). Depth is capped small so motion reads as weight, not parallax. */
-.parallax { transform: translate3d(0, calc((var(--sp, 0.5) - 0.5) * var(--depth, 0) * 1px), 0); will-change: transform; }
+.parallax { transform: translate3d(0, calc((var(--sp, 0.5) - 0.5) * var(--depth, 0) * var(--depth-scale) * 1px), 0); will-change: transform; }
 .scroll-fill-y { transform: scaleY(clamp(0, calc((var(--sp, 0) - 0.25) * 2.2), 1)); transform-origin: top; }
 .scroll-zoom { transform: scale(calc(1.12 - var(--sp, 0.5) * 0.12)); will-change: transform; }
 
 /* ── Hero entrance ("The Lift") — runs once on load ─────────────────────────── */
-@keyframes lift-reveal { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+/* The bar leaves the floor: the frame opens upward while the whole plate rises a few percent */
+@keyframes lift-reveal { from { clip-path: inset(100% 0 0 0); transform: translate3d(0, 7%, 0); } to { clip-path: inset(0 0 0 0); transform: none; } }
+@keyframes floor-draw  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wipe-x      { from { clip-path: inset(0 100% 0 0); transform: translate3d(-0.12em, 0, 0); } to { clip-path: inset(0 -0.1em 0 0); transform: none; } }
+@keyframes fade-in-slow { from { opacity: 0; } to { opacity: 1; } }
 @keyframes lift-settle { from { transform: scale(1.2); } to { transform: scale(1); } }
 @keyframes line-drive  { from { transform: translate3d(0, 108%, 0); } to { transform: none; } }
 @keyframes rise-in     { from { opacity: 0; transform: translate3d(0, 24px, 0); } to { opacity: 1; transform: none; } }
@@ -192,14 +244,36 @@
 @keyframes drift       { from { transform: scale(1.08); } to { transform: scale(1); } }
 @keyframes drop-in     { from { opacity: 0; transform: translate3d(0, -12px, 0); } to { opacity: 1; transform: none; } }
 
-.hero-lift     { animation: lift-reveal 1.15s var(--ease-drive) 0.05s both; }
+.hero-lift     { animation: lift-reveal 1.25s var(--ease-drive) both; animation-delay: calc(var(--d, 180) * var(--hero-tempo, 1) * 1ms); }
+.hero-floor    { transform-origin: left; animation: floor-draw 0.7s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+.hero-wipe-x   { display: inline-block; animation: wipe-x 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+.hero-fade     { animation: fade-in-slow 1.6s var(--ease-settle) both; }
+
+
+/* Scroll-out "camera": as the hero leaves, the photo pushes in and the copy lifts away */
+.hero-camera-in  { transform: scale(calc(1 + clamp(0, (var(--sp, 0.5) - 0.5) * 0.16, 0.06))); transform-origin: 50% 60%; will-change: transform; }
+.hero-camera-out { transform: translate3d(0, calc(clamp(0, var(--sp, 0.5) - 0.5, 0.5) * -90px * var(--depth-scale)), 0); opacity: calc(1 - clamp(0, (var(--sp, 0.5) - 0.5) * 1.2, 0.5)); }
 .hero-settle   { animation: lift-settle 2.2s var(--ease-settle) both; }
-.hero-line > * { animation: line-drive 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
-.hero-rise     { animation: rise-in 0.8s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
-.hero-bar      { transform-origin: left; animation: bar-load 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
-.hero-wipe     { animation: wipe-in-right 1s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-line > * { animation: line-drive 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+.hero-rise     { animation: rise-in 0.8s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+.hero-bar      { transform-origin: left; animation: bar-load 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+.hero-wipe     { animation: wipe-in-right 1s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
 .hero-drift    { animation: drift 9s var(--ease-settle) both; }
-.hero-drop     { animation: drop-in 0.6s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-drop     { animation: drop-in 0.6s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
+
+/* Below lg the photo sits under the copy, often below the fold: the copy leads at a faster
+   tempo, and the lift from the floor plays when the photo is actually reached (scroll-triggered). */
+@media (max-width: 1023px) {
+  :root { --hero-tempo: 0.45; }
+  .hero-lift  { animation: none; clip-path: inset(100% 0 0 0); transform: translate3d(0, 7%, 0);
+                transition: clip-path 1.2s var(--ease-drive) 120ms, transform 1.2s var(--ease-drive) 120ms; }
+  .hero-settle { animation: none; transform: scale(1.2); transition: transform 2s var(--ease-settle) 120ms; }
+  .hero-floor  { animation: none; transform: scaleX(0); transition: transform 0.7s var(--ease-drive); }
+  .hero-wipe   { animation: none; clip-path: inset(0 100% 0 0); transition: clip-path 1s var(--ease-drive) 700ms; }
+  .revealed .hero-lift, .revealed .hero-settle { clip-path: inset(0 0 0 0); transform: none; }
+  .revealed .hero-floor { transform: scaleX(1); }
+  .revealed .hero-wipe  { clip-path: inset(0 0 0 0); }
+}
 
 /* ── Interaction language ─────────────────────────────────────────────────────
    Primary buttons: one light sweep on hover (energy), compression on press (load). */
@@ -243,7 +317,7 @@
   60%  { transform: scaleX(1); opacity: 1; }
   100% { transform: scaleX(1); opacity: 0; }
 }
-.route-bar { transform-origin: left; animation: rep-bar 700ms var(--ease-drive) both; }
+.route-bar { transform-origin: left; animation: rep-bar 650ms cubic-bezier(0.65, 0, 0.25, 1) both; }  /* accelerates, then locks out */
 
 /* Mobile menu — a curtain drops from the bar; links drive in from the left */
 @keyframes curtain-in  { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
@@ -258,11 +332,11 @@
 
 /* ── Page transitions ──────────────────────────────────────────────────────── */
 @keyframes pageEnter {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: none; }
 }
 .page-transition {
-  animation: pageEnter 0.35s var(--ease-snap) both;
+  animation: pageEnter 0.4s var(--ease-drive) 60ms both;
   padding-top: var(--page-top);
 }
 
@@ -289,14 +363,21 @@
     scroll-behavior: auto !important;
   }
   .m-rise, .stagger, .m-line > *, .m-rack, .m-pop, .m-settle { opacity: 1 !important; transform: none !important; }
-  .m-wipe-up, .m-wipe-right, .m-wipe-left { clip-path: none !important; }
+  .m-wipe-up, .m-wipe-right, .m-wipe-left, .hero-lift, .hero-wipe { clip-path: none !important; }
+  .hero-settle, .hero-lift { transform: none !important; }
+  .hero-floor { transform: none !important; }
   .m-fill-x { transform: scaleX(var(--fill, 1)) !important; }
   .m-fill-y { transform: scaleY(var(--fill, 1)) !important; }
-  .parallax, .scroll-zoom { transform: none !important; }
+  .parallax, .scroll-zoom, .hero-camera-in, .hero-camera-out, .chapter-word .m-line { transform: none !important; opacity: 1 !important; }
   .scroll-fill-y { transform: none !important; }
   .focus-grid .focus-item { opacity: 1 !important; transform: none !important; }
+  .journey-frame img { transform: none !important; }
+  .facility-open { clip-path: inset(0 var(--gutter) round 16px) !important; }
+  .final-set { clip-path: none !important; animation: none !important; }
+  .journey-copy { transform: none !important; }
   /* Entrance keyframes are removed outright so nothing flashes from its start state */
   .hero-lift, .hero-settle, .hero-line > *, .hero-rise, .hero-bar, .hero-wipe, .hero-drift, .hero-drop,
+  .hero-floor, .hero-wipe-x, .hero-fade,
   .menu-curtain, .menu-curtain .menu-link, .page-transition { animation: none !important; }
   .route-bar { display: none; }
   .animate-marquee { animation: none; }

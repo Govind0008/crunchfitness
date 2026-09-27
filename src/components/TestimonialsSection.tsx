@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Star, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useGoogleReviews } from '@/hooks/useGoogleReviews';
 import { Section } from '@/components/site/Section';
-import { TickRail } from '@/components/motion';
+import { ChapterMark, TickRail } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +51,7 @@ const TestimonialsSection = () => {
 
   return (
     <Section aria-labelledby="reviews-heading" tone="raised">
+      <ChapterMark index="03" word="Transform" />
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         {/* Summary */}
         <div className="lg:col-span-4">

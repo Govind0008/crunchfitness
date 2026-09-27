@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { Section, SectionHeader } from '@/components/site/Section';
 import PlanCard from '@/components/site/PlanCard';
 import { usePlans } from '@/hooks/usePlans';
+import { cn } from '@/lib/utils';
 
 const MembershipSection = () => {
   const { plans } = usePlans();
@@ -23,6 +24,23 @@ const MembershipSection = () => {
           </Link>
         }
       />
+
+      {/* The bar: one plate per plan racks on in step with its card (taller = longer plan) */}
+      <div className="mb-6 flex h-10 items-center" aria-hidden>
+        <span className="h-4 w-1 rounded-sm bg-white/30" />
+        <span className="m-fill-x h-1 w-6 bg-white/25" style={{ '--d': 100 } as React.CSSProperties} />
+        <span className="flex items-center gap-1">
+          {plans.map((plan, i) => (
+            <span
+              key={plan.id}
+              className={cn('m-rack w-2 rounded-[3px]', plan.isPopular ? 'bg-brand-400' : 'bg-white/45')}
+              style={{ height: `${14 + (i / Math.max(1, plans.length - 1)) * 26}px`, '--i': i, '--d': 200 } as React.CSSProperties}
+            />
+          ))}
+        </span>
+        <span className="h-3 w-1.5 bg-white/30" />
+        <span className="m-fill-x h-1 flex-1 bg-gradient-to-r from-white/25 to-white/5" style={{ '--d': 150 } as React.CSSProperties} />
+      </div>
 
       {/* Horizontal snap row below xl; five-column grid on wide screens */}
       <div
