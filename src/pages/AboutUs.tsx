@@ -1,169 +1,109 @@
-import { useState, useEffect, useRef } from 'react';
-import { Users, Target, Award, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
+import { PageHeader, Section } from '@/components/site/Section';
+import CtaBand from '@/components/site/CtaBand';
+import { CountUp } from '@/components/motion';
 
-
-// Animates a number from 0 → target when `active` becomes true
-const useCounter = (target: number, duration = 1400, active = false) => {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    let start = 0;
-    const step = target / (duration / 16);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= target) { setCount(target); clearInterval(timer); }
-      else setCount(Math.floor(start));
-    }, 16);
-    return () => clearInterval(timer);
-  }, [target, duration, active]);
-  return count;
-};
-
-const statDefs = [
-  { icon: <Users className="w-8 h-8" />, target: 500, suffix: '+', label: 'Active Members' },
-  { icon: <Target className="w-8 h-8" />, target: 5,   suffix: '',  label: 'Years Experience' },
-  { icon: <Award className="w-8 h-8" />, target: 10,  suffix: '+', label: 'Certified Trainers' },
-  { icon: <Zap className="w-8 h-8" />,   target: 24,  suffix: '/7',label: 'Access Available' },
+const STATS = [
+  { value: 500, suffix: '+', label: 'Active members' },
+  { value: 5,   suffix: '',  label: 'Years in Wakad' },
+  { value: 10,  suffix: '+', label: 'Certified trainers' },
+  { value: 7,   suffix: '',  label: 'Days a week' },
 ];
 
-const AboutStatCard = ({ def, active, index }: { def: typeof statDefs[0]; active: boolean; index: number }) => {
-  const count = useCounter(def.target, 1400, active);
-  return (
-    <div
-      className={`text-center transform transition-all duration-700 ${
-        active ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-      }`}
-      style={{ transitionDelay: `${index * 100}ms` }}
-    >
-      <div className="inline-flex p-4 rounded-xl bg-green-400/10 text-green-400 mb-4 neon-glow">
-        {def.icon}
-      </div>
-      <h3 className="text-3xl md:text-4xl font-heading font-bold text-white mb-2">
-        {count}{def.suffix}
-      </h3>
-      <p className="text-gray-400 font-body text-lg">{def.label}</p>
-    </div>
-  );
-};
-
 const AboutUs = () => {
-  const [isVisible, setIsVisible] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const [statsVisible, setStatsVisible] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const statsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setIsVisible(true);
-  }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
-      { threshold: 0.3 }
-    );
-    if (statsRef.current) observer.observe(statsRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen">
+      <main>
+        {/* SEO: primary H1 with brand + location keywords */}
+        <PageHeader
+          eyebrow="About us"
+          title={<>About Crunch Fitness Club <span className="text-brand-400">Pune</span></>}
+          lede="At Crunch Fitness Club in Wakad, Pune, we are more than just a gym. We're a vibrant community dedicated to transforming lives through modern equipment, expert coaching and personalised training programmes."
+          image={{ src: '/images/gym-wide-3-1600.webp', srcSet: '/images/gym-wide-3-800.webp 800w, /images/gym-wide-3-1600.webp 1600w', alt: '' }}
+        />
 
-      {/* Hero Section */}
-      <section className="pt-32 pb-20 relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-green-400/5 rounded-full blur-3xl animate-pulse"></div>
-        </div>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className={`text-center transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-            {/* SEO: Primary H1 for the page, including brand and location keywords */}
-            <h1 className="text-5xl md:text-7xl font-heading font-black mb-6"> {/* Changed font-orbitron to font-heading */}
-              <span className="text-white">ABOUT</span>
-              <br />
-              <span className="neon-text">CRUNCH FITNESS CLUB PUNE</span> {/* More explicit name + location */}
-            </h1>
-            {/* SEO: Detailed description with keywords */}
-            <p className="text-xl text-gray-400 font-body max-w-3xl mx-auto leading-relaxed"> {/* Changed font-rajdhani to font-body */}
-              At Crunch Fitness Club in Wakad, Pune, we are more than just a gym. We're a vibrant community dedicated to transforming lives through
-              cutting-edge fitness technology, state-of-the-art gym equipment, and personalized training programs. Discover why we are the best gym in Maharashtra for achieving your health goals.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="py-20 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div
-            ref={statsRef}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8"
-          >
-            {statDefs.map((def, index) => (
-              <AboutStatCard key={index} def={def} active={statsVisible} index={index} />
+        {/* Stats */}
+        <section aria-label="Crunch Fitness in numbers" className="border-b border-white/[0.06]">
+          <dl className="container grid grid-cols-2 md:grid-cols-4">
+            {STATS.map((s, i) => (
+              <div
+                key={s.label}
+                className="flex flex-col-reverse border-white/[0.06] py-10 pr-4 md:py-14 [&:nth-child(odd)]:border-r [&:nth-child(even)]:pl-6 md:border-r md:last:border-r-0 md:px-8 md:first:pl-0 animate-fade-up"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <dt className="mt-2 text-sm text-ink-400">{s.label}</dt>
+                <dd className="font-display text-5xl font-bold text-white md:text-6xl">
+                  <CountUp value={s.value} suffix={s.suffix} delay={i * 120} duration={s.value > 20 ? 1400 : 900} />
+                </dd>
+              </div>
             ))}
-          </div>
-        </div>
-      </section>
+          </dl>
+        </section>
 
-      {/* Mission Section */}
-      <section className="py-20 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div className={`transition-all duration-1000 delay-300 ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-10'}`}>
-              {/* SEO: H2 for the mission statement */}
-              <h2 className="text-4xl md:text-5xl font-heading font-bold mb-6"> {/* Changed font-orbitron to font-heading */}
-                <span className="text-white">OUR</span> <span className="neon-text">MISSION</span>
+        {/* Mission */}
+        <Section aria-labelledby="mission-heading">
+          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
+            <div>
+              <p className="eyebrow mb-4">Our mission</p>
+              <h2 id="mission-heading" className="font-display text-display-md font-bold uppercase text-white text-balance">
+                Strength that goes beyond the gym walls
               </h2>
-              {/* SEO: Elaboration on mission with potential keywords */}
-              <p className="text-gray-400 font-body text-lg leading-relaxed mb-6"> {/* Changed font-rajdhani to font-body */}
-                Our mission at Crunch Fitness Club is to revolutionize the fitness industry in Pune. We strive to provide state-of-the-art gym equipment,
-                expert guidance from certified personal trainers, and cultivate a supportive community that empowers individuals to achieve
-                their health and fitness goals, whether it's strength training, weight loss, or improved well-being.
-              </p>
-              <p className="text-gray-400 font-body text-lg leading-relaxed"> {/* Changed font-rajdhani to font-body */}
-                We passionately believe fitness is not just about physical transformation, but about building mental strength,
-                confidence, and fostering lasting healthy habits that extend far beyond the gym walls, enriching lives in Maharashtra.
-              </p>
+              <div className="mt-6 space-y-5 text-base leading-relaxed text-ink-300 md:text-lg">
+                <p>
+                  Our mission at Crunch Fitness Club is to raise the standard of fitness in Pune. We provide modern gym
+                  equipment, expert guidance from certified personal trainers, and a supportive community that empowers
+                  people to reach their goals — whether that&apos;s strength training, weight loss or better well-being.
+                </p>
+                <p>
+                  We believe fitness is not just about physical transformation, but about building mental strength,
+                  confidence and lasting healthy habits that enrich life well beyond the gym.
+                </p>
+              </div>
+              <div className="mt-10 flex flex-wrap gap-x-8 gap-y-4">
+                <Link to="/team" className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-brand-400 transition-colors">
+                  Meet the team <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+                <Link to="/founders" className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-brand-400 transition-colors">
+                  Our founder&apos;s story <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+              </div>
             </div>
 
-            {/* Video / Fallback Image */}
-            <div className={`relative transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10'}`}>
-              <div className="relative w-full h-80 rounded-2xl overflow-hidden border border-green-400/20">
-                {!videoError ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    onError={() => setVideoError(true)}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    aria-label="Promotional video for Crunch Fitness Club"
-                  >
-                    <source src="/lovable-uploads/crunch_info.mp4" type="video/mp4" />
-                  </video>
-                ) : (
-                  /* Fallback: gym image when video file is missing */
-                  <img
-                    src="/lovable-uploads/gym.JPG"
-                    alt="Crunch Fitness Club gym interior"
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                )}
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <p className="text-white font-heading font-bold text-xl text-center drop-shadow-lg">
-                    TRAIN HARD. LIVE STRONG.
-                  </p>
-                </div>
+            <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-ink-900">
+              {!videoError ? (
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  poster="/images/gym-wide-3-800.webp"
+                  onError={() => setVideoError(true)}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  aria-label="Promotional video for Crunch Fitness Club"
+                >
+                  <source src="/lovable-uploads/crunch_info.mp4" type="video/mp4" onError={() => setVideoError(true)} />
+                </video>
+              ) : (
+                <img
+                  src="/images/kettlebells-1000.webp"
+                  alt="Crunch Fitness Club gym interior"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink-950/90 to-transparent p-6 pt-16">
+                <p className="font-display text-2xl font-bold uppercase text-white">Train hard. Live strong.</p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </Section>
 
+        <CtaBand />
+      </main>
       <Footer />
     </div>
   );

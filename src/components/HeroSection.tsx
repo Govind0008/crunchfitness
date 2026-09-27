@@ -1,130 +1,158 @@
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, MapPin } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { CountUp, Parallax, TickRail } from '@/components/motion';
+import { cn } from '@/lib/utils';
+import { getOpenStatus, getTodayHours } from '@/lib/site';
 
-// Animates a number from 0 → target when `active` becomes true
-const useCounter = (target: number, duration = 1400, active = false) => {
-  const [count, setCount] = useState(0);
+const d = (ms: number) => ({ '--d': ms }) as CSSProperties;
+
+/**
+ * Today's opening window on a 24-hour measurement rail, with a live "now" marker.
+ * Real data from the posted hours — the one metric every visitor actually needs.
+ */
+const HoursTrack = () => {
+  const [status, setStatus] = useState(getOpenStatus);
   useEffect(() => {
-    if (!active) return;
-    let frame = 0;
-    const totalFrames = Math.round(duration / 16);
-    const timer = setInterval(() => {
-      frame++;
-      const progress = frame / totalFrames;
-      // Ease-out curve
-      setCount(Math.min(Math.round(target * (1 - Math.pow(1 - progress, 3))), target));
-      if (frame >= totalFrames) clearInterval(timer);
-    }, 16);
-    return () => clearInterval(timer);
-  }, [active, target, duration]);
-  return count;
-};
+    const id = setInterval(() => setStatus(getOpenStatus()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const { open, close, label } = getTodayHours();
+  const nowPct = (status.hourNow / 24) * 100;
 
-const stats = [
-  { suffix: '+',  target: 500, label: 'Happy Members',   color: 'text-green-400'  },
-  { suffix: '/7', target: 24,  label: 'Support',          color: 'text-orange-400' },
-  { suffix: '+',  target: 10,  label: 'Expert Trainers',  color: 'text-green-400'  },
-  { suffix: '★',  target: 5,   label: 'Top Rated Gym',    color: 'text-orange-400' },
-];
-
-const StatCard = ({ stat, active }: { stat: typeof stats[0]; active: boolean }) => {
-  const count = useCounter(stat.target, 1400, active);
   return (
-    <div className="text-center group cursor-default">
-      <div className={`text-3xl md:text-4xl font-heading font-bold mb-2 transition-colors duration-300 ${stat.color} group-hover:brightness-125`}>
-        {count}{stat.suffix}
+    <div className="hero-rise mt-8 max-w-lg" style={d(820)}>
+      <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+        <span className="inline-flex items-center gap-2 whitespace-nowrap font-medium text-white">
+          <span className={cn('h-2 w-2 rounded-full', status.open ? 'bg-brand-400' : 'bg-ink-500')} aria-hidden />
+          {status.label}
+        </span>
+        <span className="whitespace-nowrap text-ink-400">Today · {label}</span>
       </div>
-      <div className="text-gray-400 text-sm sm:text-base font-body group-hover:text-white transition-colors duration-300">
-        {stat.label}
+      <div className="relative mt-3" aria-hidden>
+        <span className="tick-rail block">
+          <span
+            className="tick-fill hero-bar"
+            style={{ left: `${(open / 24) * 100}%`, right: `${100 - (close / 24) * 100}%`, ...d(980) }}
+          />
+        </span>
+        <span
+          className="hero-drop absolute -top-1.5 h-[20px] w-0.5 -translate-x-1/2 rounded-full bg-white"
+          style={{ left: `${nowPct}%`, ...d(1300) }}
+        />
+        <div className="mt-2 flex justify-between text-[11px] tabular-nums text-ink-500">
+          <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>
+        </div>
       </div>
     </div>
   );
 };
 
-const HeroSection = () => {
-  const statsRef = useRef<HTMLDivElement>(null);
-  const [statsVisible, setStatsVisible] = useState(false);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
-      { threshold: 0.3 }
-    );
-    if (statsRef.current) observer.observe(statsRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-
-      {/* Background image */}
-      <div className="absolute inset-0">
+const HeroSection = () => (
+  <section id="home" aria-labelledby="hero-heading" className="relative overflow-hidden">
+    {/* Background floor photo: a slow drift on load plus a little scroll weight */}
+    <div className="absolute inset-0 -z-10 overflow-hidden" aria-hidden>
+      <Parallax depth={80} className="absolute -inset-y-12 inset-x-0">
         <img
-          src="/lovable-uploads/gym.JPG"
-          alt="Modern gym interior at Crunch Fitness Club"
-          className="w-full h-full object-cover"
-          loading="eager"
+          src="/images/floor-960.webp"
+          srcSet="/images/floor-960.webp 960w, /images/floor-1920.webp 1920w"
+          sizes="100vw"
+          alt=""
+          className="hero-drift h-full w-full object-cover opacity-[0.12] grayscale"
         />
-        <div className="absolute inset-0 bg-black/70" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-black/80" />
-      </div>
+      </Parallax>
+      <div className="absolute inset-0 bg-gradient-to-b from-ink-950/40 via-ink-950/80 to-ink-950" />
+    </div>
 
-      {/* Subtle ambient blobs — reduced to prevent CPU waste */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-orange-500/8 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-      </div>
-
-      {/* Main content */}
-      <div className="relative z-10 text-center px-4 max-w-6xl mx-auto">
-        <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl font-heading font-black mb-6 animate-fade-in-up">
-          <span className="block text-white">TRANSFORM</span>
-          <span className="block text-green-500">YOUR</span>
-          <span className="block text-white">STRENGTH</span>
-        </h1>
-
-        <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-body font-light text-gray-300 mb-8 animate-fade-in-up px-4 max-w-3xl mx-auto">
-          Welcome to <strong className="text-green-400">CRUNCH FITNESS CLUB</strong> — Your Premier Gym in Pune (Wakad) for Achieving Peak Performance.
+    <div className="container grid items-center gap-12 pb-16 pt-10 md:pt-14 lg:min-h-[calc(100svh-var(--page-top))] lg:grid-cols-12 lg:gap-8 lg:py-16">
+      {/* Copy */}
+      <div className="lg:col-span-7 xl:col-span-6">
+        <p className="eyebrow mb-6">
+          <TickRail mode="hero" className="w-10" />
+          <span className="hero-rise inline-flex items-center gap-2" style={d(150)}>
+            <MapPin className="h-3.5 w-3.5" aria-hidden /> Wakad, Pune
+          </span>
         </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in-up px-4 mb-16">
-          <button
-            onClick={() => navigate('/plans')}
-            className="group relative px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 text-black font-bold text-base sm:text-lg rounded-xl overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-green-500/40 hover:-translate-y-1 w-full sm:w-auto"
-          >
-            <span className="relative z-10 font-heading flex items-center justify-center gap-2">
-              START YOUR JOURNEY
-              <ChevronDown className="w-5 h-5 -rotate-90 group-hover:translate-x-1 transition-transform duration-300" />
+        {/* Kinetic headline — each line drives up out of its own mask */}
+        <h1 id="hero-heading" className="font-display text-display-xl font-extrabold uppercase text-white">
+          <span className="m-line hero-line"><span style={d(120)}>Transform</span></span>
+          <span className="m-line hero-line">
+            <span style={d(220)}>
+              your{' '}
+              <span className="relative inline-block text-brand-400">
+                strength
+                {/* A measurement rail loads beneath the word once it lands */}
+                <TickRail mode="hero" delay={760} className="absolute -bottom-2 left-0 w-full md:-bottom-3" />
+              </span>
             </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-green-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-          </button>
+          </span>
+        </h1>
 
-          <button
-            onClick={() => navigate('/plans')}
-            className="group px-8 py-4 border-2 border-orange-500 text-orange-400 font-bold text-base sm:text-lg rounded-xl hover:bg-orange-500 hover:text-white transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-orange-500/40 hover:-translate-y-1 relative overflow-hidden w-full sm:w-auto"
-          >
-            <span className="font-heading relative z-10">EXPLORE PLANS</span>
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-          </button>
+        <p className="hero-rise mt-7 max-w-xl text-base leading-relaxed text-ink-300 sm:text-lg" style={d(460)}>
+          Crunch Fitness Club is a strength-first gym with certified coaches on the floor, modern
+          equipment and flexible memberships — whether it&apos;s your first session or your next PR.
+        </p>
+
+        <div className="hero-rise mt-9 flex flex-col gap-3 sm:flex-row" style={d(560)}>
+          <Button asChild size="lg">
+            <Link to="/plans">
+              View membership plans
+              <ArrowRight className="transition-transform duration-200 group-hover/btn:translate-x-1" />
+            </Link>
+          </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link to="/contact">Book a free tour</Link>
+          </Button>
         </div>
 
-        {/* Stats — counter animates in on scroll */}
-        <div
-          ref={statsRef}
-          className={`grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-10 px-4 transition-all duration-700 ${
-            statsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-          }`}
-        >
-          {stats.map((stat, i) => (
-            <StatCard key={i} stat={stat} active={statsVisible} />
-          ))}
-        </div>
+        <dl className="hero-rise mt-12 grid max-w-lg grid-cols-2 gap-6 border-t border-white/10 pt-6" style={d(680)}>
+          <div className="flex flex-col-reverse">
+            <dt className="mt-1 text-sm text-ink-400">Members training</dt>
+            <dd className="font-display text-4xl font-bold text-white sm:text-5xl"><CountUp value={500} suffix="+" delay={700} /></dd>
+          </div>
+          <div className="flex flex-col-reverse border-l border-white/10 pl-6">
+            <dt className="mt-1 text-sm text-ink-400">Certified coaches</dt>
+            <dd className="font-display text-4xl font-bold text-white sm:text-5xl"><CountUp value={10} suffix="+" delay={800} duration={1000} /></dd>
+          </div>
+        </dl>
+
+        <HoursTrack />
       </div>
-    </section>
-  );
-};
+
+      {/* Imagery — the photo is lifted into frame, then settles; layers move at different depths */}
+      <div className="relative lg:col-span-5 xl:col-span-6">
+        <div className="hero-lift relative aspect-square w-full overflow-hidden rounded-2xl bg-ink-900 sm:aspect-[16/10] lg:aspect-[4/5] xl:aspect-[5/6]">
+          <Parallax depth={-60} className="absolute -inset-y-10 inset-x-0">
+            <img
+              src="/images/hero-deadlift-640.webp"
+              srcSet="/images/hero-deadlift-640.webp 640w, /images/hero-deadlift-1200.webp 1200w"
+              sizes="(min-width: 1024px) 40vw, 100vw"
+              alt="Member deadlifting a loaded barbell on the Crunch Fitness gym floor"
+              width={1179}
+              height={1239}
+              {...{ fetchpriority: 'high' }}
+              className="hero-settle h-full w-full object-cover object-[50%_35%] sm:object-[50%_72%] lg:object-[50%_35%]"
+            />
+          </Parallax>
+        </div>
+
+        <Parallax depth={40} className="absolute -bottom-8 -left-2 hidden w-40 sm:block md:w-48 lg:-left-10 xl:w-56">
+          <figure className="hero-wipe overflow-hidden rounded-xl border-4 border-ink-950" style={d(900)}>
+            <img
+              src="/images/coach-spot-480.webp"
+              alt="Crunch coach spotting a member on the incline press"
+              width={480}
+              height={534}
+              className="aspect-[4/5] w-full object-cover"
+            />
+            <figcaption className="bg-ink-950 px-3 py-2 text-xs font-medium text-ink-300">Coached, not left alone</figcaption>
+          </figure>
+        </Parallax>
+      </div>
+    </div>
+  </section>
+);
 
 export default HeroSection;

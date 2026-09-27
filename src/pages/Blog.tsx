@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Clock, Calendar, Tag, ArrowRight } from 'lucide-react';
+import { Clock, Calendar, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
-import { useScrollReveal } from '../hooks/useScrollReveal';
+import { PageHeader, Section } from '@/components/site/Section';
+import { cn } from '@/lib/utils';
 
 interface BlogPost {
   id: string;
@@ -17,78 +18,52 @@ interface BlogPost {
   publishedAt: { seconds: number };
   readTime: number;
   tags: string[];
+  published?: boolean;
 }
 
 const CATEGORIES = ['All', 'Fitness Tips', 'Nutrition', 'Workout Guide', 'Success Story', 'News'];
 
 const BlogCard = ({ post, index }: { post: BlogPost; index: number }) => {
-  const ref = useScrollReveal<HTMLDivElement>();
-  const date = new Date(post.publishedAt.seconds * 1000).toLocaleDateString('en-IN', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
+  const date = post.publishedAt?.seconds
+    ? new Date(post.publishedAt.seconds * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
 
   return (
-    <div ref={ref} className="reveal" style={{ transitionDelay: `${(index % 3) * 80}ms` }}>
-      <Link to={`/blog/${post.slug}`} className="group block h-full">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-green-500/40 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/10 h-full flex flex-col">
-          {/* Cover image */}
-          <div className="relative h-52 overflow-hidden flex-shrink-0">
-            {post.coverImage ? (
-              <img
-                src={post.coverImage}
-                alt={post.title}
-                loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-              />
-            ) : (
-              <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                <span className="text-zinc-600 text-sm">No image</span>
-              </div>
-            )}
-            <div className="absolute top-3 left-3">
-              <span className="px-3 py-1 bg-green-400/90 text-black text-xs font-bold rounded-full">
-                {post.category}
-              </span>
-            </div>
-          </div>
+    <li className="animate-fade-up" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+      <Link to={`/blog/${post.slug}`} className="group flex h-full flex-col">
+        <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-ink-900">
+          {post.coverImage ? (
+            <img
+              src={post.coverImage}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-700 ease-out-expo group-hover:scale-[1.03]"
+            />
+          ) : (
+            <img src="/images/floor-800.webp" alt="" loading="lazy" className="h-full w-full object-cover opacity-40 grayscale" />
+          )}
+          {post.category && (
+            <span className="absolute left-3 top-3 rounded-full bg-ink-950/80 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+              {post.category}
+            </span>
+          )}
+        </div>
 
-          {/* Content */}
-          <div className="p-5 flex flex-col flex-1">
-            <div className="flex items-center gap-3 text-gray-500 text-xs mb-3">
-              <span className="flex items-center gap-1">
-                <Calendar size={11} />
-                {date}
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock size={11} />
-                {post.readTime} min read
-              </span>
-            </div>
-
-            <h2 className="text-white font-bold text-lg leading-snug mb-2 group-hover:text-green-400 transition-colors duration-200 line-clamp-2">
-              {post.title}
-            </h2>
-            <p className="text-gray-400 text-sm leading-relaxed flex-1 line-clamp-3">
-              {post.excerpt}
-            </p>
-
-            {post.tags?.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {post.tags.slice(0, 3).map((tag) => (
-                  <span key={tag} className="flex items-center gap-1 text-xs text-gray-500 bg-zinc-800 px-2 py-0.5 rounded-full">
-                    <Tag size={9} />{tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-1 text-green-400 text-sm font-semibold mt-4">
-              Read more <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </div>
-          </div>
+        <div className="mt-5 flex flex-1 flex-col">
+          <p className="flex items-center gap-3 text-xs text-ink-400">
+            {date && <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" aria-hidden />{date}</span>}
+            {post.readTime ? <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" aria-hidden />{post.readTime} min read</span> : null}
+          </p>
+          <h2 className="mt-3 font-sans text-xl font-semibold leading-snug text-white transition-colors group-hover:text-brand-400 line-clamp-2">
+            {post.title}
+          </h2>
+          <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-400 line-clamp-3">{post.excerpt}</p>
+          <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-white">
+            Read article <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+          </span>
         </div>
       </Link>
-    </div>
+    </li>
   );
 };
 
@@ -96,7 +71,6 @@ const Blog = () => {
   const [posts, setPosts]           = useState<BlogPost[]>([]);
   const [loading, setLoading]       = useState(true);
   const [activeCategory, setActive] = useState('All');
-  const headingRef = useScrollReveal<HTMLDivElement>();
 
   useEffect(() => {
     const q = query(
@@ -107,7 +81,7 @@ const Blog = () => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost));
       setPosts(all.filter((p) => p.published));
       setLoading(false);
-    });
+    }, () => setLoading(false));
     return unsub;
   }, []);
 
@@ -116,81 +90,62 @@ const Blog = () => {
     : posts.filter((p) => p.category === activeCategory);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen">
+      <main>
+        <PageHeader
+          eyebrow="Knowledge hub"
+          title={<>The Crunch <span className="text-brand-400">journal</span></>}
+          lede="Expert tips, workout guides, nutrition advice and member success stories from Crunch Fitness Club."
+        />
 
-      {/* Hero */}
-      <section className="pt-32 pb-16 relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-green-500/8 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-green-400/5 rounded-full blur-3xl" />
-        </div>
-        <div ref={headingRef} className="reveal max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
-          <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-full px-4 py-2 mb-5">
-            <span className="text-green-400 text-sm font-medium tracking-wider uppercase">Knowledge Hub</span>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-heading font-black mb-5">
-            <span className="text-white">FITNESS</span>
-            <br />
-            <span className="neon-text">BLOG</span>
-          </h1>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Expert tips, workout guides, nutrition advice, and member success stories from Crunch Fitness Club.
-          </p>
-        </div>
-      </section>
-
-      {/* Category filter */}
-      <section className="pb-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap justify-center gap-3">
+        <Section aria-label="Articles">
+          <div className="mb-10 flex flex-wrap gap-2" role="group" aria-label="Filter by category">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
+                type="button"
                 onClick={() => setActive(cat)}
-                className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                  activeCategory === cat
-                    ? 'bg-green-400 text-black'
-                    : 'bg-zinc-900 border border-zinc-700 text-gray-300 hover:border-green-400/40 hover:text-white'
-                }`}
+                aria-pressed={activeCategory === cat}
+                className={cn(
+                  'h-10 shrink-0 rounded-full px-5 text-sm font-semibold transition-colors',
+                  activeCategory === cat ? 'bg-white text-ink-950' : 'border border-white/10 text-ink-300 hover:border-white/30 hover:text-white',
+                )}
               >
                 {cat}
               </button>
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* Posts grid */}
-      <section className="pb-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="bg-zinc-900 rounded-2xl overflow-hidden animate-pulse">
-                  <div className="h-52 bg-zinc-800" />
-                  <div className="p-5 space-y-3">
-                    <div className="h-3 bg-zinc-800 rounded w-1/3" />
-                    <div className="h-5 bg-zinc-800 rounded w-3/4" />
-                    <div className="h-3 bg-zinc-800 rounded w-full" />
-                    <div className="h-3 bg-zinc-800 rounded w-2/3" />
-                  </div>
-                </div>
+            <ul className="grid gap-x-6 gap-y-12 md:grid-cols-2 lg:grid-cols-3" aria-label="Loading articles">
+              {[1, 2, 3].map((i) => (
+                <li key={i} className="animate-pulse">
+                  <div className="aspect-[16/10] rounded-2xl bg-ink-900" />
+                  <div className="mt-5 h-3 w-1/3 rounded bg-ink-900" />
+                  <div className="mt-4 h-5 w-3/4 rounded bg-ink-900" />
+                  <div className="mt-3 h-3 w-full rounded bg-ink-900" />
+                </li>
               ))}
-            </div>
+            </ul>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-24">
-              <p className="text-gray-500 text-lg">No posts yet in this category.</p>
+            <div className="rounded-2xl border border-dashed border-white/10 px-6 py-20 text-center">
+              <p className="font-display text-display-sm font-bold uppercase text-white">Nothing here yet</p>
+              <p className="mt-2 text-ink-400">
+                {activeCategory === 'All' ? 'New articles are on the way — check back soon.' : `No ${activeCategory.toLowerCase()} posts yet.`}
+              </p>
+              {activeCategory !== 'All' && (
+                <button type="button" onClick={() => setActive('All')} className="mt-6 text-sm font-semibold text-brand-400 hover:text-brand-300">
+                  Show all articles
+                </button>
+              )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filtered.map((post, i) => (
-                <BlogCard key={post.id} post={post} index={i} />
-              ))}
-            </div>
+            <ul className="grid gap-x-6 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((post, i) => <BlogCard key={post.id} post={post} index={i} />)}
+            </ul>
           )}
-        </div>
-      </section>
-
+        </Section>
+      </main>
       <Footer />
     </div>
   );

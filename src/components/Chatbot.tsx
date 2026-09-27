@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, User, Bot, Sparkles } from 'lucide-react';
+import { MessageCircle, X, Send, User, Bot } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -978,17 +978,6 @@ Just type your question naturally — like "I'm a beginner, how do I start?" and
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isBotTyping]);
 
-  // Auto-open on first visit — desktop only (skip on mobile to avoid covering the screen)
-  useEffect(() => {
-    const isMobile = window.innerWidth < 768;
-    if (isMobile) return;
-    const hasVisited = sessionStorage.getItem('hasVisitedChatbot');
-    if (!hasVisited) {
-      setTimeout(() => setIsOpen(true), 1000);
-      sessionStorage.setItem('hasVisitedChatbot', 'true');
-    }
-  }, []);
-
   // Auto-focus input
   useEffect(() => {
     if (isOpen) {
@@ -1016,16 +1005,10 @@ Just type your question naturally — like "I'm a beginner, how do I start?" and
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          aria-label="Open Coach Crunch chatbot"
-          className="relative w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 8px 32px rgba(16,185,129,0.45)' }}
+          aria-label="Open Coach Crunch chat assistant"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-400 text-ink-950 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] transition-transform duration-200 hover:scale-105 active:scale-95 sm:h-14 sm:w-14"
         >
-          {/* pulse ring */}
-          <span className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: '#10b981' }} />
-          <MessageCircle size={26} className="text-white relative z-10" />
-          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-green-400 border-2 border-black rounded-full flex items-center justify-center">
-            <Sparkles size={10} className="text-black" />
-          </span>
+          <MessageCircle size={24} aria-hidden />
         </button>
       )}
 

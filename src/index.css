@@ -2,353 +2,302 @@
 @tailwind components;
 @tailwind utilities;
 
-
+/* ─────────────────────────────────────────────────────────────────────────────
+   Design tokens
+   Surfaces are near-black neutrals; the only accent is the brand lime taken
+   from the logo. Everything else (cards, borders, text tiers) derives from here.
+   ───────────────────────────────────────────────────────────────────────────── */
 @layer base {
   :root {
-    --page-top: 7rem; /* navbar h-28 = 7rem; increases to 9.25rem when offer banner is visible */
-    --background: 0 0% 0%; /* Deep black background */
-    --foreground: 0 0% 95%; /* Near-white text for contrast */
-    --card: 0 0% 5%; /* Very dark gray for card backgrounds, slight tint */
-    --card-foreground: 0 0% 98%; /* White text on dark cards */
-    --popover: 0 0% 5%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 146 70% 45%; /* A vibrant, strong green */
-    --primary-foreground: 0 0% 10%; /* Dark text for primary buttons */
-    --secondary: 0 0% 15%; /* A slightly lighter dark gray for secondary elements */
-    --secondary-foreground: 0 0% 90%; /* Light text for secondary elements */
-    --muted: 0 0% 10%; /* Darker mute for backgrounds */
-    --muted-foreground: 0 0% 60%; /* Softer gray for muted text */
-    --accent: 146 70% 45%; /* Same as primary for accent elements */
-    --accent-foreground: 0 0% 10%;
-    --destructive: 0 84% 60%; /* A clear red for destructive actions */
+    --nav-h: 4rem;          /* navbar height; md+ overrides below */
+    --banner-h: 0rem;       /* set to 2.25rem by App when the offer banner is visible */
+    --page-top: calc(var(--nav-h) + var(--banner-h));
+
+    --background: 240 5% 4%;          /* #0a0a0b */
+    --foreground: 0 0% 96%;
+    --card: 240 5% 7%;                /* #111113 */
+    --card-foreground: 0 0% 96%;
+    --popover: 240 4% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 77 64% 54%;            /* brand-400 #b0d43f */
+    --primary-foreground: 240 5% 6%;
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 240 4% 11%;
+    --muted-foreground: 240 3% 62%;
+    --accent: 240 4% 14%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 18%; /* Slightly visible border color */
-    --input: 0 0% 15%; /* Darker input background */
-    --ring: 146 70% 45%; /* Ring focus color, matching primary */
-    --radius: 0.75rem; /* Slightly larger border radius for modern feel */
+    --border: 240 4% 16%;
+    --input: 240 4% 18%;
+    --ring: 77 64% 54%;
+    --radius: 0.75rem;
 
-    /* IMPORTANT: Define this custom property for HSL shadows for neon glow */
-    --neon-green-hsl: 146 70% 45%; /* HSL components for --primary green */
+    --brand-hsl: 77 64% 54%;
+    color-scheme: dark;
   }
 
-  /* Dark theme scrollbar for general page content */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  @media (min-width: 768px) {
+    :root { --nav-h: 4.5rem; }
   }
-  ::-webkit-scrollbar-track {
-    background: #0d0d0d; /* Slightly lighter than body background */
-    border-radius: 10px;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: hsla(var(--neon-green-hsl), 0.5); /* Semi-transparent neon green */
-    border-radius: 10px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsla(var(--neon-green-hsl), 0.7);
-  }
-  /* For Firefox */
-  html {
-    scrollbar-width: thin;
-    scrollbar-color: hsla(var(--neon-green-hsl), 0.5) #0d0d0d;
-  }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
 
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a3f #0a0a0b;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    /* Set Open Sans as the default body font for general text */
-    @apply bg-background text-foreground;
-    font-family: 'Open Sans', sans-serif; /* Default body font */
-    overflow-x: hidden; /* Ensure no horizontal scroll for the main body */
+    @apply bg-background text-foreground font-sans antialiased;
+    overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
   }
 
-  /* Override for specific headings and key brand elements */
-  /* Use Orbitron for a strong, tech-inspired feel */
-  h1, h2, h3, h4, h5, h6,
-  .font-orbitron { /* Retain .font-orbitron class for specific use */
-    font-family: 'Titillium Web', sans-serif;
+  h1, h2 {
+    @apply font-display;
   }
 
-  /* Ensure input fields and buttons also follow the body font for readability */
-  input, button, textarea, select {
-      font-family: 'Open Sans', sans-serif;
+  ::selection {
+    background: hsl(var(--brand-hsl) / 0.35);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #0a0a0b; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 999px; border: 2px solid #0a0a0b; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a3f; }
+
+  /* One consistent, clearly visible keyboard focus style across the site */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+    border-radius: 6px;
   }
 }
 
 @layer components {
-  /* Adjusted Neon Text for more vibrancy */
-  .neon-text {
-    color: var(--neon-green);
-    text-shadow:
-      0 0 7px hsla(var(--neon-green-hsl), 0.8), /* Inner glow */
-      0 0 15px hsla(var(--neon-green-hsl), 0.6), /* Medium glow */
-      0 0 30px hsla(var(--neon-green-hsl), 0.4), /* Outer glow */
-      0 0 50px hsla(var(--neon-green-hsl), 0.2); /* Farthest spread */
+  /* Small uppercase label that sits above section headings */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 font-sans text-xs font-semibold uppercase tracking-[0.18em] text-brand-400;
   }
 
-  /* Adjusted Neon Glow for more vibrancy and animation on hover */
-  .neon-glow {
-    box-shadow:
-      0 0 10px hsla(var(--neon-green-hsl), 0.7),
-      0 0 20px hsla(var(--neon-green-hsl), 0.5),
-      0 0 30px hsla(var(--neon-green-hsl), 0.3),
-      inset 0 0 10px hsla(var(--neon-green-hsl), 0.2);
-    transition: box-shadow 0.3s ease-in-out;
-  }
-  .neon-glow:hover {
-    box-shadow:
-      0 0 15px hsla(var(--neon-green-hsl), 0.8),
-      0 0 30px hsla(var(--neon-green-hsl), 0.6),
-      0 0 50px hsla(var(--neon-green-hsl), 0.4),
-      inset 0 0 15px hsla(var(--neon-green-hsl), 0.3);
-  }
-
-
-  /* Updated Glassmorphism for better depth and integration */
+  /* ── Legacy aliases ─────────────────────────────────────────────────────────
+     Still referenced by the Founder page and the portal dashboards. Restyled to
+     fit the new system instead of neon glows and glassmorphism. */
+  .neon-text { color: theme('colors.brand.400'); }
+  .neon-glow { box-shadow: 0 0 0 1px hsl(var(--brand-hsl) / 0.25); }
   .glass-morphism {
-    background: rgba(var(--neon-green-hsl), 0.03); /* Lighter background for transparency */
-    backdrop-filter: blur(15px); /* Increased blur for stronger effect */
-    border: 1px solid rgba(var(--neon-green-hsl), 0.1); /* Softer border */
-    border-radius: var(--radius); /* Use variable for consistency */
-    box-shadow: 0 8px 32px 0 rgba(var(--neon-green-hsl), 0.1); /* Subtle shadow for depth */
+    background: theme('colors.ink.900');
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
   }
 
-  /* Electric Gradient with a more dynamic feel */
-  .electric-gradient {
-    background: linear-gradient(90deg, #0d0d0d 0%, #2e8b57 50%, #0d0d0d 100%); /* Green center, fading to dark */
-    background-size: 200% 100%; /* For animation */
-    animation: gradient-shift 8s ease infinite alternate;
-  }
-
-  @keyframes gradient-shift {
-    0% { background-position: 0% 50%; }
-    100% { background-position: 100% 50%; }
-  }
-
-
-  .pulse-green {
-    animation: pulse-green 2s infinite;
-  }
-
-  .float {
-    animation: float 3s ease-in-out infinite;
-  }
-
-  .rotate-3d {
-    transform-style: preserve-3d;
-    transition: transform 0.5s ease;
-  }
-
-  .rotate-3d:hover {
-    transform: rotateY(180deg);
-  }
-
-  .perspective-1000 {
-    perspective: 1000px;
-  }
-
-  /* --- ANIMATIONS --- */
-  @keyframes pulse-slow {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 0.4; }
-  }
-
-  .animate-pulse-slow {
-    animation: pulse-slow 6s infinite ease-in-out;
-  }
-
-  @keyframes text-reveal-slide-up {
-    0% { transform: translateY(100%); opacity: 0; }
-    100% { transform: translateY(0); opacity: 1; }
-  }
-
-  .animate-text-reveal-1 {
-    animation: text-reveal-slide-up 0.8s ease-out forwards;
-    animation-delay: 0.5s;
-  }
-
-  .animate-text-reveal-2 {
-    animation: text-reveal-slide-up 0.8s ease-out forwards;
-    animation-delay: 0.7s;
-  }
-
-  .animate-text-reveal-3 {
-    animation: text-reveal-slide-up 0.8s ease-out forwards;
-    animation-delay: 0.9s;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .animate-fade-in {
-    animation: fade-in 0.3s ease-out forwards;
-  }
-
-  /* For the glow on the progress dots and other elements */
-  .shadow-green-glow {
-    box-shadow: 0 0 8px 3px var(--neon-green);
-  }
-
-  /* Chatbot Scrollbar Hiding */
-  .hide-scrollbar {
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
-  }
-
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
-  }
-
-  /* Chatbot specific animations for messages */
-  @keyframes slideInFromRight {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-
-  @keyframes slideInFromLeft {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-
-  .animate-slide-in-right {
-    animation: slideInFromRight 0.4s ease-out;
-  }
-  .animate-slide-in-left {
-    animation: slideInFromLeft 0.4s ease-out; /* Added for bot messages */
-  }
-
-
-  @keyframes slideInUp {
-    0% {
-      transform: translateY(50px);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  .animate-slide-in-up {
-    animation: slideInUp 0.5s ease-out;
-  }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
 }
 
-/* Original animations, ensuring they are at the end if you want them to override */
-@keyframes pulse-green {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(34, 197, 94, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(34, 197, 94, 0.4), 0 0 35px rgba(34, 197, 94, 0.2);
-  }
+/* ═════════════════════════════════════════════════════════════════════════════
+   MOTION SYSTEM — "The Rep"
+   Every movement follows a lift: LOAD (anticipation) → DRIVE (fast acceleration)
+   → LOCKOUT (controlled settle). Only transform, opacity and clip-path animate.
+
+   Triggers: an ancestor gains `.revealed` (useScrollReveal / useRevealOnMount).
+   Timing:   --d = delay in ms, --i = stagger index (70ms steps).
+   ═════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --ease-drive: cubic-bezier(0.2, 0.9, 0.1, 1);     /* explosive start, long controlled finish */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);     /* images, large surfaces */
+  --ease-snap: cubic-bezier(0.3, 0, 0.2, 1);        /* feedback: hover, press */
+  --t-snap: 180ms;
+  --t-drive: 800ms;
+  --t-settle: 1400ms;
+  --stagger: 70ms;
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+/* Section trigger — the container itself does not move */
+.reveal { }
+
+/* Shared timing for every motion primitive */
+.m-rise, .m-line > *, .m-wipe-up, .m-wipe-right, .m-wipe-left, .m-rack, .m-fill-x, .m-fill-y, .m-settle, .m-pop, .stagger {
+  transition-duration: var(--t-drive);
+  transition-timing-function: var(--ease-drive);
+  transition-delay: calc(var(--d, 0) * 1ms + var(--i, 0) * var(--stagger));
 }
 
-@keyframes fadeInUp {
-  0% {
-    transform: translateY(50px);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0);
-  }
+/* Rise — short vertical drive into position */
+.m-rise, .stagger { opacity: 0; transform: translate3d(0, 28px, 0); transition-property: opacity, transform; }
+.revealed .m-rise, .revealed.m-rise, .revealed .stagger { opacity: 1; transform: none; }
+
+/* Masked line — text drives up from behind a baseline (kinetic headlines) */
+.m-line { display: block; overflow: hidden; padding-bottom: 0.08em; margin-bottom: -0.08em; }
+.m-line > * { display: block; transform: translate3d(0, 108%, 0); transition-property: transform; }
+.revealed .m-line > * { transform: none; }
+
+/* Wipes — images revealed like a bar travelling through its range of motion */
+.m-wipe-up    { clip-path: inset(100% 0 0 0); transition-property: clip-path; transition-duration: 1100ms; }
+.m-wipe-right { clip-path: inset(0 100% 0 0); transition-property: clip-path; transition-duration: 1100ms; }
+.m-wipe-left  { clip-path: inset(0 0 0 100%); transition-property: clip-path; transition-duration: 1100ms; }
+.revealed .m-wipe-up, .revealed .m-wipe-right, .revealed .m-wipe-left { clip-path: inset(0 0 0 0); }
+
+/* Settle — image inside a wipe starts slightly loaded (scaled) and locks out */
+.m-settle { transform: scale(1.14); transition-property: transform; transition-duration: var(--t-settle); transition-timing-function: var(--ease-settle); }
+.revealed .m-settle { transform: none; }
+
+/* Rack — horizontal slide, like plates loading onto a bar */
+.m-rack { opacity: 0; transform: translate3d(56px, 0, 0); transition-property: opacity, transform; }
+.revealed .m-rack { opacity: 1; transform: none; }
+
+/* Pop — small scale-in for tiles */
+.m-pop { opacity: 0; transform: scale(0.94); transition-property: opacity, transform; }
+.revealed .m-pop { opacity: 1; transform: none; }
+
+/* Fills — the progression motif */
+.m-fill-x { transform: scaleX(0); transform-origin: left center; transition-property: transform; transition-duration: 1200ms; }
+.m-fill-y { transform: scaleY(0); transform-origin: center top; transition-property: transform; transition-duration: 1200ms; }
+.revealed .m-fill-x { transform: scaleX(var(--fill, 1)); }
+.revealed .m-fill-y { transform: scaleY(var(--fill, 1)); }
+
+/* Measurement rail — tick marks with a lime fill, the recurring "progress" mark */
+.tick-rail {
+  position: relative;
+  height: 8px;
+  background-image: repeating-linear-gradient(to right, rgb(255 255 255 / 0.22) 0 1px, transparent 1px 6px);
+}
+.tick-rail > .tick-fill {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(to right, theme('colors.brand.400') 0 2px, transparent 2px 6px);
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.6s ease-out;
+/* ── Scroll-linked motion ─────────────────────────────────────────────────────
+   The shared scroll engine writes --sp (0 → 1 as an element travels through the
+   viewport). Depth is capped small so motion reads as weight, not parallax. */
+.parallax { transform: translate3d(0, calc((var(--sp, 0.5) - 0.5) * var(--depth, 0) * 1px), 0); will-change: transform; }
+.scroll-fill-y { transform: scaleY(clamp(0, calc((var(--sp, 0) - 0.25) * 2.2), 1)); transform-origin: top; }
+.scroll-zoom { transform: scale(calc(1.12 - var(--sp, 0.5) * 0.12)); will-change: transform; }
+
+/* ── Hero entrance ("The Lift") — runs once on load ─────────────────────────── */
+@keyframes lift-reveal { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes lift-settle { from { transform: scale(1.2); } to { transform: scale(1); } }
+@keyframes line-drive  { from { transform: translate3d(0, 108%, 0); } to { transform: none; } }
+@keyframes rise-in     { from { opacity: 0; transform: translate3d(0, 24px, 0); } to { opacity: 1; transform: none; } }
+@keyframes bar-load    { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wipe-in-right { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes drift       { from { transform: scale(1.08); } to { transform: scale(1); } }
+@keyframes drop-in     { from { opacity: 0; transform: translate3d(0, -12px, 0); } to { opacity: 1; transform: none; } }
+
+.hero-lift     { animation: lift-reveal 1.15s var(--ease-drive) 0.05s both; }
+.hero-settle   { animation: lift-settle 2.2s var(--ease-settle) both; }
+.hero-line > * { animation: line-drive 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-rise     { animation: rise-in 0.8s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-bar      { transform-origin: left; animation: bar-load 0.9s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-wipe     { animation: wipe-in-right 1s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+.hero-drift    { animation: drift 9s var(--ease-settle) both; }
+.hero-drop     { animation: drop-in 0.6s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * 1ms); }
+
+/* ── Interaction language ─────────────────────────────────────────────────────
+   Primary buttons: one light sweep on hover (energy), compression on press (load). */
+.btn-sweep { position: relative; overflow: hidden; isolation: isolate; }
+.btn-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.45) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0s;
+}
+.btn-sweep:hover::after { transform: translateX(120%); transition: transform 700ms var(--ease-drive); }
+
+/* Arrow links: arrow drives forward, underline loads from the left */
+.link-drive { position: relative; }
+.link-drive::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 1.5rem; bottom: -4px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 350ms var(--ease-drive);
+}
+.link-drive:hover::after, .link-drive:focus-visible::after { transform: scaleX(1); }
+.link-drive svg { transition: transform 250ms var(--ease-drive); }
+.link-drive:hover svg, .link-drive:focus-visible svg { transform: translateX(4px); }
+
+/* Focus grid — hovering one tile quietly pushes the others back */
+@media (hover: hover) {
+  .focus-grid .focus-item { transition: opacity 400ms var(--ease-snap), transform 600ms var(--ease-settle); }
+  .focus-grid:has(.focus-item:hover) .focus-item:not(:hover) { opacity: 0.55; transform: scale(0.985); }
 }
 
-.animate-delay-100 { animation-delay: 0.1s; }
-.animate-delay-200 { animation-delay: 0.2s; }
-.animate-delay-300 { animation-delay: 0.3s; }
-.animate-delay-400 { animation-delay: 0.4s; }
-.animate-delay-500 { animation-delay: 0.5s; }
-
-/* ── Scroll reveal ─────────────────────────────────────────────────────────── */
-.reveal {
-  opacity: 0;
-  transform: translateY(40px);
-  transition: opacity 0.65s ease-out, transform 0.65s ease-out;
+/* Route change — a rep-bar loads across the top of the viewport */
+@keyframes rep-bar {
+  0%   { transform: scaleX(0); opacity: 1; }
+  60%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
 }
+.route-bar { transform-origin: left; animation: rep-bar 700ms var(--ease-drive) both; }
 
-.reveal.revealed {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.reveal-left {
-  opacity: 0;
-  transform: translateX(-40px);
-  transition: opacity 0.65s ease-out, transform 0.65s ease-out;
-}
-
-.reveal-left.revealed {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.reveal-right {
-  opacity: 0;
-  transform: translateX(40px);
-  transition: opacity 0.65s ease-out, transform 0.65s ease-out;
-}
-
-.reveal-right.revealed {
-  opacity: 1;
-  transform: translateX(0);
+/* Mobile menu — a curtain drops from the bar; links drive in from the left */
+@keyframes curtain-in  { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes curtain-out { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 100% 0); } }
+@keyframes link-in     { from { opacity: 0; transform: translate3d(-28px, 0, 0); } to { opacity: 1; transform: none; } }
+.menu-curtain[data-state='open']    { animation: curtain-in 480ms var(--ease-drive) both; }
+.menu-curtain[data-state='closing'] { animation: curtain-out 320ms var(--ease-snap) both; }
+.menu-curtain[data-state='open'] .menu-link {
+  animation: link-in 520ms var(--ease-drive) both;
+  animation-delay: calc(120ms + var(--i, 0) * 45ms);
 }
 
 /* ── Page transitions ──────────────────────────────────────────────────────── */
 @keyframes pageEnter {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-
 .page-transition {
-  animation: pageEnter 0.35s ease-out both;
+  animation: pageEnter 0.35s var(--ease-snap) both;
   padding-top: var(--page-top);
-  transition: padding-top 0.3s ease;
 }
 
-/* ── Offer banner marquee ───────────────────────────────────────────────────── */
+/* ── Offer banner marquee ──────────────────────────────────────────────────── */
 @keyframes marquee {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
 .animate-marquee {
-  animation: marquee 28s linear infinite;
+  animation: marquee 40s linear infinite;
   will-change: transform;
+}
+.animate-marquee:hover { animation-play-state: paused; }
+
+/* ── Reduced motion ────────────────────────────────────────────────────────────
+   Everything renders in its final state; no transitions, no scroll-linking. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .m-rise, .stagger, .m-line > *, .m-rack, .m-pop, .m-settle { opacity: 1 !important; transform: none !important; }
+  .m-wipe-up, .m-wipe-right, .m-wipe-left { clip-path: none !important; }
+  .m-fill-x { transform: scaleX(var(--fill, 1)) !important; }
+  .m-fill-y { transform: scaleY(var(--fill, 1)) !important; }
+  .parallax, .scroll-zoom { transform: none !important; }
+  .scroll-fill-y { transform: none !important; }
+  .focus-grid .focus-item { opacity: 1 !important; transform: none !important; }
+  /* Entrance keyframes are removed outright so nothing flashes from its start state */
+  .hero-lift, .hero-settle, .hero-line > *, .hero-rise, .hero-bar, .hero-wipe, .hero-drift, .hero-drop,
+  .menu-curtain, .menu-curtain .menu-link, .page-transition { animation: none !important; }
+  .route-bar { display: none; }
+  .animate-marquee { animation: none; }
 }

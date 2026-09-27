@@ -1,83 +1,43 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { Award, Dumbbell, Flame, Star, PlayCircle, BookOpen, Globe } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Award, Dumbbell, BookOpen, Globe, PlayCircle } from 'lucide-react';
 import Footer from '../components/Footer';
 import { Helmet } from 'react-helmet';
+import { Section, SectionHeader } from '@/components/site/Section';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import CtaBand from '@/components/site/CtaBand';
 
-// --- Custom Hook for Scroll-Triggered Animations (No changes needed) ---
-const useScrollAnimation = (): [
-  Record<string, boolean>,
-  (id: string) => (node: HTMLElement | null) => void
-] => {
-  const [elementsInView, setElementsInView] = useState<Record<string, boolean>>({});
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const elementsToObserve = useRef<Map<string, HTMLElement>>(new Map());
-
-  const setRef = useCallback(
-    (id: string) => (node: HTMLElement | null) => {
-      if (node) {
-        elementsToObserve.current.set(id, node);
-        if (observerRef.current) {
-          observerRef.current.observe(node);
-        }
-      } else {
-        if (elementsToObserve.current.has(id) && observerRef.current) {
-          observerRef.current.unobserve(elementsToObserve.current.get(id)!);
-        }
-        elementsToObserve.current.delete(id);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const animationId = (entry.target as HTMLElement).dataset.animationId;
-          if (entry.isIntersecting) {
-            setElementsInView((prev) => ({ ...prev, [animationId!]: true }));
-            // Stop observing once element is in view to prevent re-animation on scroll
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.2, rootMargin: '0px 0px -10% 0px' } // Trigger animation earlier
-    );
-
-    observerRef.current = observer;
-    elementsToObserve.current.forEach((node) => {
-      observer.observe(node);
-    });
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
-
-  return [elementsInView, setRef];
-};
-
+// Timeline copy uses **bold** markers — render them as <strong> instead of literal asterisks
+const RichText = ({ text }: { text: string }) => (
+  <>
+    {text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+      part.startsWith('**') ? <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong> : part,
+    )}
+  </>
+);
 
 const Founder = () => {
-  const [inView, setRef] = useScrollAnimation();
-  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  const [currentVideoUrl, setCurrentVideoUrl] = useState('');
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoAvailable, setVideoAvailable] = useState(false);
 
-  // --- ADJUSTED: Founder's specific details and assets ---
   const founderVideoPath = "/lovable-uploads/nilima-mam-video.mp4";
   const founderImagePath = "/lovable-uploads/nilima mam.jpeg";
   const heroBackgroundImage = "/lovable-uploads/nilima-mam1.jpeg";
 
+  // Only offer playback if the video file is actually deployed
+  useEffect(() => {
+    fetch(founderVideoPath, { method: 'HEAD' })
+      .then((r) => setVideoAvailable(r.ok && (r.headers.get('content-type') ?? '').startsWith('video')))
+      .catch(() => setVideoAvailable(false));
+  }, []);
+
   const highlights = [
-    { icon: <BookOpen className="w-8 h-8" />, label: "Certified Yoga Instructor", detail: "YOG VIDYA DHAM (2010)" },
-    { icon: <BookOpen className="w-8 h-8" />, label: "Naturopathy Expert", detail: "YOG VIDYA DHAM" },
-    { icon: <BookOpen className="w-8 h-8" />, label: "Power Yoga Certified", detail: "PARAM YOGA INSTITUTE (2013)" },
-    { icon: <Dumbbell className="w-8 h-8" />, label: "Master Trainer", detail: "K11 Fitness Academy" },
-    { icon: <Award className="w-8 h-8" />, label: "National Bench Press Gold", detail: "Bangalore Championship" },
-    { icon: <Globe className="w-8 h-8" />, label: "Asia Pacific Bench Press Gold", detail: "Hong Kong 2023 Champion" },
-    { icon: <Award className="w-8 h-8" />, label: "World Bench Press Silver", detail: "Austin, Texas" },
+    { icon: <BookOpen className="h-5 w-5" />, label: "Certified Yoga Instructor", detail: "YOG VIDYA DHAM (2010)" },
+    { icon: <BookOpen className="h-5 w-5" />, label: "Naturopathy Expert", detail: "YOG VIDYA DHAM" },
+    { icon: <BookOpen className="h-5 w-5" />, label: "Power Yoga Certified", detail: "PARAM YOGA INSTITUTE (2013)" },
+    { icon: <Dumbbell className="h-5 w-5" />, label: "Master Trainer", detail: "K11 Fitness Academy" },
+    { icon: <Award className="h-5 w-5" />, label: "National Bench Press Gold", detail: "Bangalore Championship" },
+    { icon: <Globe className="h-5 w-5" />, label: "Asia Pacific Bench Press Gold", detail: "Hong Kong 2023 Champion" },
+    { icon: <Award className="h-5 w-5" />, label: "World Bench Press Silver", detail: "Austin, Texas" },
   ];
 
   const journeyEvents = [
@@ -148,20 +108,8 @@ const Founder = () => {
     },
   ];
 
-  const openVideoModal = useCallback((videoUrl) => {
-    setCurrentVideoUrl(videoUrl);
-    setIsVideoModalOpen(true);
-    document.body.style.overflow = 'hidden';
-  }, []);
-
-  const closeVideoModal = useCallback(() => {
-    setCurrentVideoUrl('');
-    setIsVideoModalOpen(false);
-    document.body.style.overflow = '';
-  }, []);
-
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="min-h-screen overflow-x-hidden">
       <Helmet>
         <title>Meet Nilima Patil: Founder of Crunch Fitness | Inspiring Journey</title>
         <meta name="description" content="Discover the inspiring journey of Nilima Patil, the multi-certified fitness expert and international medalist in powerlifting behind Crunch Fitness in Wakad, Pune. Explore her certifications, achievements, and dedication to holistic wellness." />
@@ -173,202 +121,162 @@ const Founder = () => {
         <meta property="og:type" content="website" />
       </Helmet>
 
-
-      {/* Hero Section - IMMERSIVE IMAGE BACKGROUND & TEXT REVEAL */}
-      <section
-        className="relative h-screen overflow-hidden flex items-center justify-center p-4 text-white"
-        aria-labelledby="founder-hero-heading"
-        style={{
-          backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${heroBackgroundImage}')`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 30%', // Adjusted to show face better
-        }}
-      >
-        <div
-          ref={setRef('hero-section')}
-          data-animation-id="hero-section"
-          className={`relative z-20 text-center transition-all duration-1000 ${inView['hero-section'] ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
-        >
-          <h1 id="founder-hero-heading" className="text-5xl md:text-7xl font-orbitron font-black mb-6">
-            <span className="text-primary inline-block overflow-hidden">MEET</span>
-            <br />
-            <span className="neon-text inline-block overflow-hidden">NILIMA PATIL</span>
-          </h1>
-          <p className="text-lg md:text-xl text-gray-200 font-rajdhani max-w-3xl mx-auto leading-relaxed mt-4">
-            From acclaimed national and international champion to the visionary behind Crunch Fitness in Wakad, Pimpri-Chinchwad, Maharashtra, India — discover her inspiring journey of dedication, discipline, and triumph.
-          </p>
-        </div>
-      </section>
-
-      {/* Founder's Story & Image Section - ANIMATED ENTRANCE */}
-      <section className="py-20 bg-background" aria-labelledby="founder-story-heading">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-          <div
-            ref={setRef('founder-image')}
-            data-animation-id="founder-image"
-            className={`transition-all duration-1000 delay-200 ${inView['founder-image'] ? 'opacity-100 transform-none scale-100' : 'opacity-0 scale-90 translate-x-10'}`}
-          >
-            <img
-              src={founderImagePath}
-              alt="Nilima Patil, Founder of Crunch Fitness, a multi-medalist and certified trainer, standing confidently."
-              className="rounded-2xl w-full shadow-2xl object-cover max-h-[500px] border border-border hover:border-primary transition-colors duration-300"
-              style={{ objectPosition: 'center 10%' }}
-              loading="lazy"
-            />
-          </div>
-
-          <div
-            ref={setRef('founder-story')}
-            data-animation-id="founder-story"
-            className={`transition-all duration-1000 delay-300 ${inView['founder-story'] ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10'}`}
-          >
-            <h2 id="founder-story-heading" className="text-4xl md:text-5xl font-orbitron font-bold mb-6">
-              <span className="text-primary">HER</span> <span className="neon-text">STORY</span>
-            </h2>
-            <p className="text-muted-foreground font-rajdhani text-lg leading-relaxed mb-6">
-              Nilima Patil is not just a gym owner, but a highly distinguished professional with a remarkable journey spanning Yoga, Naturopathy, Power Yoga, and advanced fitness training. She holds a Yoga certification (YOG VIDYA DHAM) and a Naturopathy Course diploma, bringing a truly holistic perspective to fitness.
-            </p>
-            <p className="text-muted-foreground font-rajdhani text-lg leading-relaxed mb-6">
-              Her prowess extends to competitive sports, where she's a decorated powerlifter. She's earned a GOLD MEDAL IN NATIONAL BENCH PRESS CHAMPIONSHIP (Bangalore), a GOLD MEDAL IN ASIA PACIFIC AFRICAN BENCH PRESS CHAMPIONSHIP in Hong Kong 2023, and a SILVER MEDAL IN WORLD BENCH PRESS CHAMPIONSHIP from Austin, Texas.
-            </p>
-            <p className="text-muted-foreground font-rajdhani text-lg leading-relaxed">
-              As a Certified MASTER TRAINER from K11 Fitness Academy, she combines academic knowledge with real-world championship experience. Her vision for Crunch Fitness is to empower every individual to achieve their highest potential, drawing from her diverse background and relentless pursuit of excellence.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Achievements Section - DYNAMIC GRID WITH GLOWS & ANIMATIONS */}
-      <section className="py-20 bg-gray-50 dark:bg-zinc-900" aria-labelledby="achievements-heading">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2
-            id="achievements-heading"
-            ref={setRef('achievements-title')}
-            data-animation-id="achievements-title"
-            className={`text-center text-4xl md:text-5xl font-extrabold text-zinc-800 dark:text-white mb-16 transition-opacity duration-700 ${inView['achievements-title'] ? 'opacity-100' : 'opacity-0'}`}
-          >
-            <span className="text-primary">HER</span> <span className="font-sans">DISTINCTIONS</span>
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-            {highlights.map((item, index) => (
-              <div
-                key={index}
-                ref={setRef(`highlight-${index}`)}
-                data-animation-id={`highlight-${index}`}
-                className={`transform transition-all duration-700 ease-out ${inView[`highlight-${index}`] ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}
-                             bg-white dark:bg-zinc-850 rounded-xl shadow-lg border border-gray-200 dark:border-zinc-700 p-6 flex flex-col items-center text-center
-                             hover:shadow-xl hover:border-primary transition-all duration-300`}
-              >
-                <div className="inline-flex p-3 rounded-full bg-primary-600 text-primary-accent mb-4 shadow-md transition-shadow duration-300">
-                  {item.icon}
-                </div>
-                <h3 className="text-lg md:text-xl font-semibold text-zinc-800 dark:text-white mb-1">
-                  {item.label}
-                </h3>
-                <p className="text-zinc-600 dark:text-zinc-400 text-sm md:text-base font-normal">
-                  {item.detail}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Founder's Journey Timeline - VERTICAL TIMELINE WITH CUSTOM IMAGE POSITIONING */}
-      <section className="py-20 bg-background relative overflow-hidden" aria-labelledby="journey-timeline-heading">
-        <h2
-          id="journey-timeline-heading"
-          ref={setRef('journey-title')}
-          data-animation-id="journey-title"
-          className={`text-center text-4xl md:text-5xl font-orbitron font-bold mb-16 transition-opacity duration-700 ${inView['journey-title'] ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <span className="neon-text">JOURNEY</span> THROUGH TIME
-        </h2>
-
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Vertical Timeline Line */}
-          <div className="absolute left-1/2 -translate-x-1/2 w-1 bg-border h-full top-0 bottom-0 z-0"></div>
-
-          {journeyEvents.map((event, index) => {
-            const isEven = index % 2 === 0;
-
-            return (
-              <div
-                key={index}
-                ref={setRef(`journey-event-${index}`)}
-                data-animation-id={`journey-event-${index}`}
-                className={`relative mb-20 flex items-center w-full ${isEven ? 'justify-start' : 'justify-end'}`}
-              >
-                {/* Timeline Dot */}
-                <div className={`absolute left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-primary z-10 border-2 border-background neon-glow ${inView[`journey-event-${index}`] ? 'scale-125' : 'scale-0'} transition-transform duration-500`}></div>
-
-                <div
-                  className={`w-full md:w-5/12 ${isEven ? 'md:pr-10' : 'md:pl-10'}
-                   ${inView[`journey-event-${index}`] ? 'opacity-100 translate-x-0' : (isEven ? 'opacity-0 -translate-x-20' : 'opacity-0 translate-x-20')}
-                   transition-all duration-700 ease-out`}
-                  style={{ transitionDelay: `${(index + 1) * 100}ms` }}
-                >
-                  <div className="glass-morphism p-6 rounded-2xl shadow-2xl border border-border hover:border-primary transition-colors duration-300">
-                    <div className="relative w-full mb-4 overflow-hidden rounded-lg">
-                      {(event.image || event.isMainImage) && (
-                        <img
-                          src={event.isMainImage ? founderImagePath : event.image}
-                          alt={event.imageAlt}
-                          className="w-full h-48 object-cover shadow-lg border border-border"
-                          style={{ objectPosition: event.imagePosition?.replace('object-[', '').replace(']', '') || 'center' }}
-                          loading="lazy"
-                        />
-                      )}
-                      {(event.video || event.isMainVideo) && (
-                        <button
-                          onClick={() => openVideoModal(event.isMainVideo ? founderVideoPath : event.video)}
-                          className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-5xl md:text-6xl opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-lg"
-                          aria-label={`Play video for ${event.title}`}
-                        >
-                          <PlayCircle className="w-16 h-16 neon-text" />
-                        </button>
-                      )}
-                    </div>
-                    <span className="text-primary text-2xl md:text-3xl font-orbitron font-bold mb-2 block">{event.year}</span>
-                    <h3 className="text-xl md:text-2xl font-orbitron font-bold text-foreground mb-2 leading-tight">{event.title}</h3>
-                    <p className="text-muted-foreground font-rajdhani text-base md:text-lg leading-relaxed">{event.description}</p>
+      <main>
+        {/* Hero */}
+        <header className="relative overflow-hidden border-b border-white/[0.06]" aria-labelledby="founder-hero-heading">
+          <div className="container grid items-end gap-10 pt-12 lg:grid-cols-12 lg:gap-12 lg:pt-20">
+            <div className="pb-4 lg:col-span-7 lg:pb-20 animate-fade-up">
+              <p className="eyebrow mb-5">Our founder</p>
+              <h1 id="founder-hero-heading" className="font-display text-display-xl font-extrabold uppercase text-white">
+                Meet <span className="text-brand-400">Nilima Patil</span>
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-300 md:text-lg">
+                From acclaimed national and international champion to the visionary behind Crunch Fitness in Wakad,
+                Pimpri-Chinchwad — a journey of dedication, discipline and triumph.
+              </p>
+              <dl className="mt-10 grid max-w-lg grid-cols-3 gap-4 border-t border-white/10 pt-6">
+                {[
+                  ['Gold', 'Asia Pacific bench press'],
+                  ['Silver', 'World bench press'],
+                  ['2010', 'Certified since'],
+                ].map(([v, l]) => (
+                  <div key={l} className="flex flex-col-reverse">
+                    <dt className="mt-1 text-xs text-ink-400 sm:text-sm">{l}</dt>
+                    <dd className="font-display text-3xl font-bold text-white">{v}</dd>
                   </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Video Modal */}
-      {isVideoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background bg-opacity-75 p-4 animate-fade-in">
-          <div className="relative w-full max-w-[400px] bg-card rounded-lg shadow-2xl">
-            <button
-              onClick={closeVideoModal}
-              className="absolute -top-10 right-0 text-foreground text-4xl font-bold p-2 hover:text-primary transition-colors z-50"
-              aria-label="Close video"
-            >
-              &times;
-            </button>
-            <div className="relative" style={{ paddingTop: '177.77%' }}>
-              <video
-                src={currentVideoUrl}
-                controls
-                autoPlay
-                className="absolute inset-0 w-full h-full rounded-lg object-contain"
-                onEnded={closeVideoModal}
-                aria-label="Founder's journey video playback"
-              >
-                Your browser does not support the video tag.
-              </video>
+                ))}
+              </dl>
+            </div>
+            <div className="relative lg:col-span-5">
+              <img
+                src={heroBackgroundImage}
+                alt="Nilima Patil with her championship medals"
+                className="mx-auto aspect-[4/5] w-full max-w-md rounded-t-2xl object-cover object-[center_20%] animate-image-in lg:max-w-none"
+              />
             </div>
           </div>
-        </div>
-      )}
-      <Footer />  
+        </header>
+
+        {/* Story */}
+        <Section aria-labelledby="founder-story-heading">
+          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
+            <img
+              src="/images/founder-900.webp"
+              alt="Nilima Patil, Founder of Crunch Fitness, a multi-medalist and certified trainer, standing confidently."
+              className="aspect-[4/5] w-full rounded-2xl object-cover object-[center_10%]"
+              loading="lazy"
+            />
+            <div>
+              <p className="eyebrow mb-4">Her story</p>
+              <h2 id="founder-story-heading" className="font-display text-display-md font-bold uppercase text-white text-balance">
+                A champion who coaches
+              </h2>
+              <div className="mt-6 space-y-5 leading-relaxed text-ink-300 md:text-lg">
+                <p>
+                  Nilima Patil is not just a gym owner, but a highly distinguished professional with a remarkable journey spanning
+                  Yoga, Naturopathy, Power Yoga and advanced fitness training. She holds a Yoga certification (YOG VIDYA DHAM) and a
+                  Naturopathy diploma, bringing a truly holistic perspective to fitness.
+                </p>
+                <p>
+                  She&apos;s also a decorated powerlifter: <strong className="font-semibold text-white">gold</strong> at the National Bench Press
+                  Championship (Bangalore), <strong className="font-semibold text-white">gold</strong> at the Asia Pacific African Bench Press
+                  Championship in Hong Kong 2023, and <strong className="font-semibold text-white">silver</strong> at the World Bench Press
+                  Championship in Austin, Texas.
+                </p>
+                <p>
+                  As a Certified Master Trainer from K11 Fitness Academy, she combines academic knowledge with real-world championship
+                  experience — and built Crunch Fitness to help every member reach their highest potential.
+                </p>
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* Distinctions */}
+        <Section tone="raised" aria-labelledby="achievements-heading">
+          <SectionHeader id="achievements-heading" eyebrow="Credentials" title="Her distinctions" />
+          <ul className="grid gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2 lg:grid-cols-4">
+            {highlights.map((item, i) => (
+              <li key={item.label} className="stagger flex gap-4 bg-ink-900 p-6" style={{ '--i': i } as React.CSSProperties}>
+                <span className="mt-0.5 text-brand-400" aria-hidden>{item.icon}</span>
+                <div>
+                  <h3 className="font-semibold text-white">{item.label}</h3>
+                  <p className="mt-1 text-sm text-ink-400">{item.detail}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Section>
+
+        {/* Timeline */}
+        <Section aria-labelledby="journey-timeline-heading">
+          <SectionHeader id="journey-timeline-heading" eyebrow="Timeline" title="Journey through time" />
+          <ol className="relative mx-auto max-w-5xl">
+            <span className="absolute bottom-2 left-[7px] top-2 w-px bg-white/10" aria-hidden />
+            {journeyEvents.map((event) => (
+              <li key={event.title} className="relative pb-14 pl-10 last:pb-0 md:pl-14">
+                <span className="absolute left-0 top-1.5 h-[15px] w-[15px] rounded-full border-[3px] border-ink-950 bg-brand-400" aria-hidden />
+                <TimelineCard
+                  event={event}
+                  image={event.isMainImage ? founderImagePath : event.image}
+                  onPlay={event.isMainVideo && videoAvailable ? () => setVideoOpen(true) : undefined}
+                />
+              </li>
+            ))}
+          </ol>
+        </Section>
+
+        <CtaBand title="Train where champions coach" body="Book a free tour of the gym Nilima built — and see how her approach shapes every session." />
+      </main>
+
+      <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
+        <DialogContent className="max-w-sm overflow-hidden p-0">
+          <DialogTitle className="sr-only">Founder&apos;s journey video</DialogTitle>
+          <video src={founderVideoPath} controls autoPlay className="aspect-[9/16] w-full bg-black object-contain" onEnded={() => setVideoOpen(false)} />
+        </DialogContent>
+      </Dialog>
+      <Footer />
     </div>
   );
 };
+
+interface TimelineEvent {
+  year: string;
+  title: string;
+  description: string;
+  imageAlt: string;
+  imagePosition?: string;
+}
+
+const TimelineCard = ({ event, image, onPlay }: {
+  event: TimelineEvent; image: string; onPlay?: () => void;
+}) => (
+  <div className="grid gap-5 md:grid-cols-[1fr_16rem] md:gap-10 lg:grid-cols-[1fr_20rem] animate-fade-up">
+    <div>
+      <p className="font-display text-lg font-bold uppercase text-brand-400">{event.year}</p>
+      <h3 className="mt-1 font-display text-2xl font-bold uppercase leading-tight text-white md:text-3xl">{event.title}</h3>
+      <p className="mt-3 max-w-xl leading-relaxed text-ink-400"><RichText text={event.description} /></p>
+    </div>
+    <div className="relative overflow-hidden rounded-xl bg-ink-900">
+      <img
+        src={image}
+        alt={event.imageAlt}
+        loading="lazy"
+        className="aspect-[4/3] w-full object-cover"
+        style={{ objectPosition: event.imagePosition?.replace('object-[', '').replace(']', '').replace('_', ' ') || 'center' }}
+      />
+      {onPlay && (
+        <button
+          type="button"
+          onClick={onPlay}
+          className="absolute inset-0 flex items-center justify-center bg-ink-950/40 text-white transition-colors hover:bg-ink-950/60"
+          aria-label={`Play video for ${event.title}`}
+        >
+          <PlayCircle className="h-14 w-14" />
+        </button>
+      )}
+    </div>
+  </div>
+);
 
 export default Founder;
