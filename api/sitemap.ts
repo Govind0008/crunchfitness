@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { buildSitemap, type SitemapEvent } from './_lib/sitemap';
+import { buildSitemap, type SitemapEvent } from './_lib/sitemap.js';
 
 // Public (non-draft) events, read anonymously through the Firestore REST API — the same
 // security rules as the website apply, so drafts can never leak into the sitemap.
