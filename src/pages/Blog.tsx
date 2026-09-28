@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Clock, Calendar, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
@@ -74,13 +74,15 @@ const Blog = () => {
   const [activeCategory, setActive] = useState('All');
 
   useEffect(() => {
+    // Published posts only — drafts aren't readable by the public (the rules enforce it).
+    // Sorted here rather than by the query, so no composite index is needed.
     const q = query(
       collection(db, 'posts'),
-      orderBy('publishedAt', 'desc'),
+      where('published', '==', true),
     );
     const unsub = onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost));
-      setPosts(all.filter((p) => p.published));
+      setPosts(all.sort((a, b) => (b.publishedAt?.seconds ?? 0) - (a.publishedAt?.seconds ?? 0)));
       setLoading(false);
     }, () => setLoading(false));
     return unsub;

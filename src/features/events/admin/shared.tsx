@@ -1,10 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { ActorContext, useActor } from './actor';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Menu } from 'lucide-react';
-import AdminSidebar from '@/components/admin/AdminSidebar';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase-auth';
+import { Link, Navigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import type { NavKey } from '@/components/admin/tabs';
 import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,17 +23,22 @@ export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-ink-950" role="status" aria-label="Loading"><div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-400 border-t-transparent" /></div>;
   if (!user) return <Navigate to="/admin/login" replace />;
   if (role?.role !== 'admin') {
+    const marketing = role?.role === 'marketing';
     return (
       <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
-        <Seo title="Events admin | Crunch Fitness" description="Staff area" noindex />
+        <Seo title="Admin | Crunch Fitness" description="Staff area" noindex />
         <div className="max-w-md">
-          <p className="hud text-brand-400">Events admin</p>
-          <h1 className="mt-4 font-display text-4xl font-bold uppercase text-white">This account can’t manage events yet</h1>
+          <p className="hud text-brand-400">Crunch admin</p>
+          <h1 className="mt-4 font-display text-4xl font-bold uppercase text-white">{marketing ? 'This is a marketing account' : 'This account can’t use the admin yet'}</h1>
           <p className="mt-4 text-ink-300">
-            You’re signed in as <strong className="text-white">{user.email}</strong>. To manage events, this account needs the
-            <strong className="text-white"> admin</strong> role. The gym owner can add it in Firebase → Firestore → <code className="text-brand-300">userRoles/{user.uid}</code> with <code className="text-brand-300">role: "admin"</code>.
+            You’re signed in as <strong className="text-white">{user.email}</strong>.{' '}
+            {marketing
+              ? 'Marketing accounts use the Creative Desk for the blog, events, offers and social content. Members and payments stay with the gym’s admins.'
+              : 'Ask the gym owner to give this account admin access in Settings → Staff access.'}
           </p>
-          <Button asChild variant="outline" className="mt-8"><Link to="/admin/dashboard"><ArrowLeft /> Back to dashboard</Link></Button>
+          {marketing
+            ? <Button asChild className="mt-8"><Link to="/marketing">Go to the Creative Desk <ArrowRight /></Link></Button>
+            : <Button asChild variant="outline" className="mt-8"><Link to="/"><ArrowLeft /> Back to the website</Link></Button>}
         </div>
       </div>
     );
@@ -43,42 +46,28 @@ export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
   return <ActorContext.Provider value={{ uid: user.uid, email: user.email ?? 'admin' }}>{children}</ActorContext.Provider>;
 };
 
-/** Every event screen sits inside the same admin layout as the dashboard: shared sidebar, top bar. */
-export const AdminShell = ({ title, back, children, actions }: { title: string; back?: { to: string; label: string }; children: ReactNode; actions?: ReactNode }) => {
-  const navigate = useNavigate();
-  const actor = useActor();
-  const [menuOpen, setMenuOpen] = useState(false);
-  return (
-    <div className="flex h-screen overflow-hidden bg-ink-950 text-white">
-      <Seo title={`${title} | Crunch events admin`} description="Staff area" noindex />
-      <AdminSidebar active="events" email={actor.email} open={menuOpen} onClose={() => setMenuOpen(false)}
-        onLogout={async () => { await signOut(auth); navigate('/admin/login'); }} />
-      <div className="flex h-screen w-full flex-1 flex-col overflow-hidden md:ml-60">
-        <header className="z-20 flex h-16 flex-shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-900/95 px-4 backdrop-blur md:px-6">
-          <button onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-gray-400 hover:bg-zinc-800 hover:text-white md:hidden" aria-label="Open menu"><Menu size={20} /></button>
-          <div>
-            <p className="text-base font-bold text-white">Events &amp; competitions</p>
-            <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
-          </div>
-        </header>
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">
-            {back && (
-              <Link to={back.to} className="mb-5 inline-flex items-center gap-2 text-sm text-ink-400 hover:text-white">
-                <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
-              </Link>
-            )}
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-              <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
-              {actions}
-            </div>
-            {children}
-          </div>
-        </main>
-      </div>
+/**
+ * Page content inside the persistent AdminLayout (which owns the sidebar, header and guard).
+ * `nav` / `area` are kept for call-site compatibility; the layout derives both from the URL.
+ */
+export const AdminShell = ({ title, back, children, actions }: {
+  title: string; back?: { to: string; label: string }; children: ReactNode; actions?: ReactNode;
+  nav?: NavKey; area?: string;
+}) => (
+  <>
+    <Seo title={`${title} | Crunch admin`} description="Staff area" noindex />
+    {back && (
+      <Link to={back.to} className="mb-5 inline-flex items-center gap-2 text-sm text-ink-400 hover:text-white">
+        <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
+      </Link>
+    )}
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
+      {actions}
     </div>
-  );
-};
+    {children}
+  </>
+);
 
 const PILL: Record<EventStatus, string> = {
   draft: 'bg-white/10 text-ink-200',

@@ -10,6 +10,7 @@ import {
 } from '@/lib/events';
 import { AdminShell, Field, inputCls } from './shared';
 import { useActor } from './actor';
+import { useArea } from './area';
 
 const STEPS = ['Basics', 'Registration', 'Competition', 'Review'] as const;
 
@@ -32,6 +33,9 @@ const EventWizard = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const actor = useActor();
+  const base = useArea();
+  // Opening registration (and everything after) is an admin decision; marketing saves drafts
+  const canOpen = base === '/admin';
   const [step, setStep] = useState(0);
   const [d, setD] = useState<EventDraft>(blank);
   const [existing, setExisting] = useState<CrunchEvent | null>(null);
@@ -91,11 +95,11 @@ const EventWizard = () => {
           await setCover(ev, await uploadMedia(ev, cover, 'highlight', actor), actor);
         } catch {
           setBusy(null);
-          navigate(`/admin/events/${eventId}?notice=cover-failed`);
+          navigate(`${base}/events/${eventId}?notice=cover-failed`);
           return;
         }
       }
-      navigate(`/admin/events/${eventId}`);
+      navigate(`${base}/events/${eventId}`);
     } catch (err) {
       setErrors([`Couldn’t save: ${(err as Error).message}`]);
       setBusy(null);
@@ -103,7 +107,7 @@ const EventWizard = () => {
   };
 
   return (
-    <AdminShell title={existing ? 'Edit event' : 'Create event'} back={{ to: existing ? `/admin/events/${existing.id}` : '/admin/events', label: existing ? existing.title : 'All events' }}>
+    <AdminShell title={existing ? 'Edit event' : 'Create event'} back={{ to: existing ? `${base}/events/${existing.id}` : `${base}/events`, label: existing ? existing.title : 'All events' }}>
       {/* Step indicator */}
       <ol className="mb-8 grid grid-cols-4 gap-2" aria-label="Steps">
         {STEPS.map((s, i) => (
@@ -232,7 +236,9 @@ const EventWizard = () => {
             {step === 3 && !existing && (
               <>
                 <Button size="lg" variant="outline" disabled={!!busy} onClick={() => save(false)}>{busy === 'Saving…' ? busy : 'Save draft'}</Button>
-                <Button size="lg" disabled={!!busy} onClick={() => save(true)}>{busy && busy !== 'Saving…' ? busy : 'Open registration'}</Button>
+                {canOpen
+                  ? <Button size="lg" disabled={!!busy} onClick={() => save(true)}>{busy && busy !== 'Saving…' ? busy : 'Open registration'}</Button>
+                  : <p className="self-center text-sm text-ink-400">An admin opens registration when it’s ready.</p>}
               </>
             )}
           </div>

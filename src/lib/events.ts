@@ -367,7 +367,7 @@ export async function register(eventId: string, input: RegistrationInput): Promi
     const regId = String(n);
     tx.update(ref, { registrationCount: n });
     tx.set(doc(db, 'events', eventId, 'registrations', regId), {
-      name: input.name.trim(), phone: input.phone.trim(), email: input.email.trim(), categoryId: input.categoryId,
+      name: input.name.trim(), phone: input.phone.trim(), phoneKey: input.phone.replace(/\D/g, '').slice(-10), email: input.email.trim(), categoryId: input.categoryId,
       number: n, status: 'registered', showName: input.showName, passId, createdAt: serverTimestamp(),
     });
     tx.set(doc(db, 'events', eventId, 'passes', passId), {
@@ -419,6 +419,15 @@ export async function updateEvent(id: string, draft: EventDraft, actor: Actor) {
   const b = writeBatch(db);
   b.update(doc(db, 'events', id), { ...draft, slug, updatedAt: serverTimestamp() });
   log(b, id, actor, 'Event details updated', id);
+  await b.commit();
+}
+
+/** Public-facing copy only — what the marketing desk edits on any event (the rules allow exactly these fields). */
+export type EventContent = Pick<CrunchEvent, 'title' | 'shortDescription' | 'description' | 'location' | 'eligibility' | 'rules'>;
+export async function updateEventContent(id: string, content: EventContent, actor: Actor) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'events', id), { ...content, title: content.title.trim(), updatedAt: serverTimestamp() });
+  log(b, id, actor, 'Event page text updated', id);
   await b.commit();
 }
 

@@ -3,12 +3,14 @@ import { Eye, EyeOff, Instagram, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addHighlight, normaliseInstagramUrl, removeHighlight, setHighlightVisible, watchHighlights, type SocialHighlight } from '@/lib/socialHighlights';
 import { AdminShell, ConfirmButton, Empty, inputCls } from './shared';
+import { useArea } from './area';
 
 /** Paste real Instagram post links; they show on the homepage when the live feed isn't available. */
 const SocialHighlights = () => {
   const [items, setItems] = useState<SocialHighlight[]>([]);
   const [url, setUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const base = useArea();
   useEffect(() => watchHighlights(setItems), []);
 
   const add = async (e: FormEvent) => {
@@ -22,7 +24,7 @@ const SocialHighlights = () => {
   };
 
   return (
-    <AdminShell title="Instagram highlights" back={{ to: '/admin/events', label: 'All events' }}>
+    <AdminShell title="Instagram highlights" back={base === '/admin' ? { to: '/admin/events', label: 'All events' } : { to: '/marketing', label: 'Creative Desk' }}>
       <p className="-mt-4 mb-8 max-w-2xl text-ink-300">
         The homepage shows your latest Instagram posts automatically when the Instagram connection is working. If it isn’t, it shows the posts you add here instead — using Instagram’s own embed, so they always match the real post.
       </p>

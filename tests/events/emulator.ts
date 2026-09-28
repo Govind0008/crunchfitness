@@ -12,12 +12,15 @@ export async function resetFirestore() {
 }
 
 type V = string | number | boolean | null | V[] | { [k: string]: V };
+/** Seed a Firestore timestamp: ts('2030-01-01T10:00:00Z') */
+export const ts = (iso: string) => ({ __ts: iso });
 const enc = (v: V): unknown => {
   if (v === null) return { nullValue: null };
   if (typeof v === 'boolean') return { booleanValue: v };
   if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
   if (typeof v === 'string') return { stringValue: v };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(enc) } };
+  if ('__ts' in v && typeof v.__ts === 'string') return { timestampValue: v.__ts };
   return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enc(x)])) } };
 };
 

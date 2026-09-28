@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import Seo from '@/components/site/Seo';
 
 interface BlogPost {
+  seoTitle?: string;
+  seoDescription?: string;
   id: string;
   title: string;
   slug: string;
@@ -92,8 +94,8 @@ const BlogPost = () => {
   return (
     <div className="min-h-screen">
       <Seo
-        title={`${post.title} | The Crunch Journal`}
-        description={post.excerpt || `${post.title} — from the coaches at Crunch Fitness Club, Wakad, Pune.`}
+        title={`${post.seoTitle || post.title} | The Crunch Journal`}
+        description={post.seoDescription || post.excerpt || `${post.title} — from the coaches at Crunch Fitness Club, Wakad, Pune.`}
         image={post.coverImage || undefined}
         type="article"
       />

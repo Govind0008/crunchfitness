@@ -1,5 +1,4 @@
 import { Route, Routes } from 'react-router-dom';
-import { EventAdminRoute } from './shared';
 import EventsHome from './EventsHome';
 import EventWizard from './EventWizard';
 import EventControl from './EventControl';
@@ -7,10 +6,9 @@ import CheckIn from './CheckIn';
 import LiveMode from './LiveMode';
 import SocialHighlights from './SocialHighlights';
 
-/** /admin/events/* — one lazy chunk, one guard (userRoles role "admin"). */
+/** /admin/events/* — one lazy chunk, rendered inside the persistent AdminLayout (which guards it). */
 const EventsAdmin = () => (
-  <EventAdminRoute>
-    <Routes>
+  <Routes>
       <Route index element={<EventsHome />} />
       <Route path="new" element={<EventWizard />} />
       <Route path="social" element={<SocialHighlights />} />
@@ -18,8 +16,7 @@ const EventsAdmin = () => (
       <Route path=":id/edit" element={<EventWizard />} />
       <Route path=":id/check-in" element={<CheckIn />} />
       <Route path=":id/live" element={<LiveMode />} />
-    </Routes>
-  </EventAdminRoute>
+  </Routes>
 );
 
 export default EventsAdmin;

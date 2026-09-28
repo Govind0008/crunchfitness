@@ -48,6 +48,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        // A plain <button> submits its form by default; only an explicit type="submit" should
+        {...(asChild ? {} : { type: "button" as const })}
         {...props}
       />
     )

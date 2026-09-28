@@ -23,9 +23,9 @@ const noOverflow = async (page: Page) => expect(await page.evaluate(() => docume
 const signIn = async (page: Page) => {
   await page.goto('/admin/login');
   await page.getByLabel(/email/i).fill(ADMIN.email);
-  await page.getByLabel(/password/i).fill(ADMIN.password);
+  await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
   await page.getByRole('button', { name: /sign in|log in|login/i }).click();
-  await page.waitForURL(/\/admin\/dashboard/);
+  await page.waitForURL(/\/admin\/?$/);
 };
 
 test.beforeAll(async () => {

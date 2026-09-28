@@ -3,7 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './useAuth';
 
-export type UserRole = 'admin' | 'trainer' | 'client' | null;
+export type UserRole = 'admin' | 'marketing' | 'trainer' | 'client' | null;
 
 export interface RoleDoc {
   role: UserRole;

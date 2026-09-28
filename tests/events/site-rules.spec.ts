@@ -48,13 +48,15 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await Promise.all(apps.map((a) => deleteApp(a))); });
 
-test('visitors: public content readable; can submit enquiries and self check-in; cannot read enquiries', async () => {
+test('visitors: public content readable; can submit enquiries; cannot read enquiries or write free-form attendance', async () => {
   const db = await as();
   expect((await getDoc(doc(db, 'plans', 'p1'))).exists()).toBe(true);
   await getDocs(collection(db, 'teamMembers'));
   await getDocs(collection(db, 'classSessions'));
   await addDoc(collection(db, 'enquiries'), { name: 'New lead', phone: '9000000000' });
-  await addDoc(collection(db, 'attendance'), { sessionId: 's1', name: 'Walk-in' });
+  // Self check-in now goes through the counted {session}_{phone} transaction (admin2-rules.spec);
+  // free-form attendance writes are refused
+  await denied(addDoc(collection(db, 'attendance'), { sessionId: 's1', name: 'Walk-in' }));
   await denied(getDocs(collection(db, 'enquiries')));
   await denied(updateDoc(doc(db, 'plans', 'p1'), { price: '₹1' }));
 });
