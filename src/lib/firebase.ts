@@ -50,12 +50,16 @@
 // export const storage = getStorage(app);
 // export const auth    = getAuth(app);
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 
 // Firestore only. Auth lives in ./firebase-auth so public pages never download it;
 // Storage was initialised here before but nothing uses it, so it is no longer loaded.
 
-export const firebaseConfig = {
+// Local testing only (VITE_FIREBASE_EMULATORS=1): talk to the Firebase emulators under an
+// emulator-only "demo-" project id, so tests can never read or write production data.
+export const USE_EMULATORS = import.meta.env.VITE_FIREBASE_EMULATORS === '1';
+
+const productionConfig = {
   apiKey: "AIzaSyBK99gCuF9YPvYV1w-wzt_STx_9D_slgoM",
   authDomain: "crunch-fitness-blog.firebaseapp.com",
   projectId: "crunch-fitness-blog",
@@ -65,6 +69,11 @@ export const firebaseConfig = {
   measurementId: "G-9PQSYTR6G7"
 };
 
+export const firebaseConfig = USE_EMULATORS
+  ? { ...productionConfig, projectId: 'demo-crunch', storageBucket: 'demo-crunch.appspot.com' }
+  : productionConfig;
+
 export const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
+if (USE_EMULATORS) connectFirestoreEmulator(db, '127.0.0.1', 8085);

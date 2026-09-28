@@ -1,0 +1,160 @@
+import { useState, type ReactNode } from 'react';
+import { ActorContext, useActor } from './actor';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Menu } from 'lucide-react';
+import AdminSidebar from '@/components/admin/AdminSidebar';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/lib/firebase-auth';
+import { useRole } from '@/hooks/useRole';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
+import { STATUS, type EventStatus } from '@/lib/events';
+import Seo from '@/components/site/Seo';
+
+
+/**
+ * Event admin guard. Matches the security rules exactly: only accounts whose
+ * userRoles document says role "admin" can manage events.
+ */
+export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
+  const { role, loading, user } = useRole();
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-ink-950" role="status" aria-label="Loading"><div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-400 border-t-transparent" /></div>;
+  if (!user) return <Navigate to="/admin/login" replace />;
+  if (role?.role !== 'admin') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
+        <Seo title="Events admin | Crunch Fitness" description="Staff area" noindex />
+        <div className="max-w-md">
+          <p className="hud text-brand-400">Events admin</p>
+          <h1 className="mt-4 font-display text-4xl font-bold uppercase text-white">This account can’t manage events yet</h1>
+          <p className="mt-4 text-ink-300">
+            You’re signed in as <strong className="text-white">{user.email}</strong>. To manage events, this account needs the
+            <strong className="text-white"> admin</strong> role. The gym owner can add it in Firebase → Firestore → <code className="text-brand-300">userRoles/{user.uid}</code> with <code className="text-brand-300">role: "admin"</code>.
+          </p>
+          <Button asChild variant="outline" className="mt-8"><Link to="/admin/dashboard"><ArrowLeft /> Back to dashboard</Link></Button>
+        </div>
+      </div>
+    );
+  }
+  return <ActorContext.Provider value={{ uid: user.uid, email: user.email ?? 'admin' }}>{children}</ActorContext.Provider>;
+};
+
+/** Every event screen sits inside the same admin layout as the dashboard: shared sidebar, top bar. */
+export const AdminShell = ({ title, back, children, actions }: { title: string; back?: { to: string; label: string }; children: ReactNode; actions?: ReactNode }) => {
+  const navigate = useNavigate();
+  const actor = useActor();
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div className="flex h-screen overflow-hidden bg-ink-950 text-white">
+      <Seo title={`${title} | Crunch events admin`} description="Staff area" noindex />
+      <AdminSidebar active="events" email={actor.email} open={menuOpen} onClose={() => setMenuOpen(false)}
+        onLogout={async () => { await signOut(auth); navigate('/admin/login'); }} />
+      <div className="flex h-screen w-full flex-1 flex-col overflow-hidden md:ml-60">
+        <header className="z-20 flex h-16 flex-shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-900/95 px-4 backdrop-blur md:px-6">
+          <button onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-gray-400 hover:bg-zinc-800 hover:text-white md:hidden" aria-label="Open menu"><Menu size={20} /></button>
+          <div>
+            <p className="text-base font-bold text-white">Events &amp; competitions</p>
+            <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
+          </div>
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">
+            {back && (
+              <Link to={back.to} className="mb-5 inline-flex items-center gap-2 text-sm text-ink-400 hover:text-white">
+                <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
+              </Link>
+            )}
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+              <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
+              {actions}
+            </div>
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+const PILL: Record<EventStatus, string> = {
+  draft: 'bg-white/10 text-ink-200',
+  registration_open: 'bg-brand-400 text-ink-950',
+  registration_closed: 'bg-white/15 text-white',
+  check_in: 'bg-sky-400/20 text-sky-200',
+  live: 'bg-red-500 text-white',
+  results_pending: 'bg-amber-400/20 text-amber-200',
+  results_published: 'bg-brand-400/20 text-brand-200',
+  archived: 'bg-white/5 text-ink-400',
+};
+
+export const StatusPill = ({ status, className }: { status: EventStatus; className?: string }) => (
+  <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider', PILL[status], className)}>
+    {status === 'live' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white motion-reduce:animate-none" aria-hidden />}
+    {STATUS[status].admin}
+  </span>
+);
+
+export const Stat = ({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) => (
+  <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
+    <p className="text-sm text-ink-400">{label}</p>
+    <p className="mt-1 font-display text-4xl font-bold leading-none tabular-nums text-white">{value}</p>
+    {sub && <p className="mt-2 text-xs text-ink-500">{sub}</p>}
+  </div>
+);
+
+/** Confirm anything that changes what the public sees. */
+export const ConfirmButton = ({
+  children, confirm, onConfirm, variant = 'default', size = 'lg', className, disabled,
+}: {
+  children: ReactNode; confirm?: { title: string; body: string }; onConfirm: () => Promise<void> | void;
+  variant?: 'default' | 'outline' | 'secondary' | 'destructive'; size?: 'default' | 'lg' | 'sm'; className?: string; disabled?: boolean;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const run = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); setOpen(false); } };
+  return (
+    <>
+      <Button variant={variant} size={size} className={className} disabled={disabled || busy} onClick={() => (confirm ? setOpen(true) : run())}>
+        {children}
+      </Button>
+      {confirm && (
+        <AlertDialog open={open} onOpenChange={setOpen}>
+          <AlertDialogContent className="border-white/10 bg-ink-900">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display text-2xl uppercase text-white">{confirm.title}</AlertDialogTitle>
+              <AlertDialogDescription className="text-ink-300">{confirm.body}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/5">Cancel</AlertDialogCancel>
+              <AlertDialogAction className="rounded-full bg-brand-400 text-ink-950 hover:bg-brand-300" onClick={(e) => { e.preventDefault(); run(); }} disabled={busy}>
+                {busy ? 'Working…' : 'Yes, continue'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
+  );
+};
+
+export const Field = ({ label, hint, children, htmlFor }: { label: string; hint?: string; children: ReactNode; htmlFor: string }) => (
+  <div>
+    <label htmlFor={htmlFor} className="text-sm font-semibold text-white">{label}</label>
+    {hint && <p className="mt-0.5 text-xs text-ink-500">{hint}</p>}
+    <div className="mt-2">{children}</div>
+  </div>
+);
+
+export const inputCls = 'h-12 w-full rounded-xl border border-white/15 bg-ink-900 px-4 text-base text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30';
+
+export const Empty = ({ title, body, children }: { title: string; body: string; children?: ReactNode }) => (
+  <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center">
+    <p className="font-display text-2xl font-bold uppercase text-white">{title}</p>
+    <p className="mx-auto mt-2 max-w-md text-sm text-ink-400">{body}</p>
+    {children && <div className="mt-6">{children}</div>}
+  </div>
+);

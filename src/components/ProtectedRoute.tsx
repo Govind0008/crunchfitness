@@ -7,13 +7,14 @@ import { db } from '../lib/firebase';
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading: authLoading } = useAuth();
   const [roleChecked, setRoleChecked] = useState(false);
-  const [isTrainer, setIsTrainer] = useState(false);
+  const [redirect, setRedirect] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading || !user) { setRoleChecked(true); return; }
     getDoc(doc(db, 'userRoles', user.uid)).then((snap) => {
-      // If a userRoles doc exists with role='trainer', block admin access
-      setIsTrainer(snap.exists() && snap.data().role === 'trainer');
+      // Trainer and client accounts have their own portals and must not reach the admin dashboard
+      const role = snap.exists() ? snap.data().role : null;
+      setRedirect(role === 'trainer' ? '/trainer/dashboard' : role === 'client' ? '/client/dashboard' : null);
       setRoleChecked(true);
     });
   }, [user, authLoading]);
@@ -27,8 +28,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!user) return <Navigate to="/admin/login" replace />;
-  // Trainers who try to hit /admin/dashboard get sent to their own portal
-  if (isTrainer) return <Navigate to="/trainer/dashboard" replace />;
+  // Trainers and clients who try to hit /admin/dashboard get sent to their own portal
+  if (redirect) return <Navigate to={redirect} replace />;
 
   return <>{children}</>;
 };

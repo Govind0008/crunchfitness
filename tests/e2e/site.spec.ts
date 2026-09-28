@@ -421,7 +421,12 @@ test.describe('seo', () => {
     const robots = await (await request.get('/robots.txt')).text();
     expect(robots).toContain('Sitemap: https://www.crunchfitness.fitness/sitemap.xml');
     expect(robots).toContain('Disallow: /admin/');
-    const sitemap = await (await request.get('/sitemap.xml')).text();
+    // /sitemap.xml is a Vercel function in production; check its builder directly
+    const { buildSitemap } = await import('../../api/_lib/sitemap');
+    const sitemap = buildSitemap([{ slug: 'crunch-challenge-2030', updatedAt: '2030-06-14T08:00:00Z' }, { slug: 'bad slug<script>' }]);
     expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/plans</loc>');
+    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/events</loc>');
+    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/events/crunch-challenge-2030</loc><lastmod>2030-06-14</lastmod>');
+    expect(sitemap).not.toContain('<script>');
   });
 });

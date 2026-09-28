@@ -45,7 +45,7 @@ const OfferBanner = ({ onVisibilityChange }: Props) => {
         .map((d) => ({ id: d.id, ...d.data() } as Offer))
         .find((o) => o.active && o.startDate <= today && o.endDate >= today && o.id !== dismissedId);
       setOffer(active ?? null);
-    });
+    }, () => setOffer(null)); // no banner if offers can't be read
     return unsub;
   }, []);
 

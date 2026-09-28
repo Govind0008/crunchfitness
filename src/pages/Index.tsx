@@ -7,6 +7,7 @@ import TestimonialsSection from '../components/TestimonialsSection';
 import FreeToolsSection from '../components/FreeToolsSection';
 import InstagramSection from '../components/InstagramSection';
 import FAQSection from '../components/FAQSection';
+import EventsTeaser from '../components/EventsTeaser';
 import CtaBand from '../components/site/CtaBand';
 import Footer from '../components/Footer';
 import Seo from '@/components/site/Seo';
@@ -22,6 +23,7 @@ const Index = () => (
       <FilmStrip />
       <GallerySection />
       <TestimonialsSection />
+      <EventsTeaser />
       <MembershipSection />
       <FreeToolsSection />
       <InstagramSection />

@@ -45,10 +45,11 @@ const AdminLogin = () => {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-1.5">Email</label>
+              <label htmlFor="admin-email" className="block text-sm font-semibold text-gray-300 mb-1.5">Email</label>
               <div className="relative">
                 <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
+                  id="admin-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -62,10 +63,11 @@ const AdminLogin = () => {
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-1.5">Password</label>
+              <label htmlFor="admin-password" className="block text-sm font-semibold text-gray-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
+                  id="admin-password"
                   type={showPw ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
