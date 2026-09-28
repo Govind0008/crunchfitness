@@ -18,14 +18,29 @@ import { receiptNumber } from '@/lib/gym';
 import { activeUntilOf, todayIST, type Member } from './members';
 import { phoneKey } from './phone';
 import type { AdminActor } from './activity';
+import type { LegacyBalance, LegacyRef } from './packages';
 
-export type PaymentMethod = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'other';
-export const METHOD_LABEL: Record<PaymentMethod, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', bank_transfer: 'Bank transfer', other: 'Other' };
+/** 'unknown' exists only for imported history whose method was never written down. */
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'other' | 'unknown';
+export const METHOD_LABEL: Record<PaymentMethod, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', bank_transfer: 'Bank transfer', other: 'Other', unknown: 'Not recorded' };
+/** Methods staff can choose when recording a payment */
+export const RECORDABLE_METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'bank_transfer', 'other'];
+
+/** What the money was for. Older payments have no type — see paymentTypeOf(). */
+export type PaymentType = 'membership' | 'pt' | 'other';
+export const TYPE_LABEL: Record<PaymentType, string> = { membership: 'Membership', pt: 'Personal training', other: 'Other' };
 
 export interface Payment {
   id: string;
-  receiptNo: string;           // CR-R-0001 — sequential, never reused
-  receiptSeq: number;          // the number behind receiptNo (the rules check it against the counter)
+  /** CR-R-0001 — sequential, never reused. null for imported history (no receipt was issued here). */
+  receiptNo: string | null;
+  receiptSeq: number | null;   // the number behind receiptNo (the rules check it against the counter)
+  paymentType?: PaymentType;
+  /** The membership period or PT package this payment was for */
+  membershipId?: string | null;
+  ptPackageId?: string | null;
+  source?: 'admin' | 'legacy_excel';
+  legacy?: LegacyRef & LegacyBalance;
   memberId: string;
   // Snapshots: a receipt must keep showing what was true when it was issued
   memberName: string;
@@ -39,7 +54,7 @@ export interface Payment {
   listPricePaise?: number | null;
   discountPaise?: number;
   /** First membership payment or a renewal (absent on older payments) */
-  kind?: 'new' | 'renewal' | 'other';
+  kind?: 'new' | 'renewal' | 'other' | null;
   method: PaymentMethod;
   reference: string;           // UPI / card / transfer reference
   paidOn: string;              // YYYY-MM-DD (Pune)
@@ -54,8 +69,13 @@ export interface Payment {
   createdAt?: Timestamp;
 }
 
+export interface PtInput { packageName: string; trainerId: string | null; sessionsIncluded: number | null }
+
 export interface PaymentInput {
   member: Member;
+  paymentType: PaymentType;
+  /** Personal training package details (paymentType 'pt') */
+  pt?: PtInput;
   planId: string | null;
   planName: string;
   amountRupees: number;
@@ -73,6 +93,22 @@ export interface PaymentInput {
 }
 
 const col = () => collection(db, 'payments');
+
+/** Type of any payment: explicit on new ones; older ones were membership (with a plan) or other. */
+export const paymentTypeOf = (p: Pick<Payment, 'paymentType' | 'planId' | 'kind'>): PaymentType =>
+  p.paymentType ?? (p.planId && p.kind !== 'other' ? 'membership' : 'other');
+/** What a payment was for, in words: "3 Months membership", "Personal training — 1 Month PT", "Other payment". */
+export function paymentFor(p: Payment) {
+  const t = paymentTypeOf(p);
+  if (t === 'pt') return `Personal training${p.planName ? ` — ${p.planName}` : ''}`;
+  if (t === 'membership') return p.planName ? `${p.planName} membership` : 'Membership';
+  return p.planName || 'Other payment';
+}
+
+/** Receipt number, or a plain label for imported history. */
+export const receiptLabel = (p: Pick<Payment, 'receiptNo'>) => p.receiptNo ?? 'Imported';
+/** Newest first; ties broken by receipt number (imported records have none). */
+const newestFirst = (a: Payment, b: Payment) => b.paidOn.localeCompare(a.paidOn) || (b.receiptNo ?? '').localeCompare(a.receiptNo ?? '');
 const toPayment = (d: { id: string; data: () => Record<string, unknown> }) => ({ id: d.id, ...d.data() }) as Payment;
 
 export const rupees = (paise: number) =>
@@ -118,12 +154,19 @@ export function validatePayment(i: Omit<PaymentInput, 'member'> & { member: Memb
   if (i.extendMembership && !i.coversTo) e.push('Add the “covers until” date to extend the membership.');
   if (!Number.isFinite(i.discountRupees) || i.discountRupees < 0) e.push('The discount can’t be negative.');
   if (i.listPriceRupees != null && i.discountRupees > i.listPriceRupees) e.push('The discount can’t be more than the plan price.');
+  if (i.paymentType === 'pt' && !i.pt?.packageName.trim()) e.push('Name the PT package (e.g. “1 Month PT”).');
+  if (i.paymentType === 'pt' && (!i.coversFrom || !i.coversTo)) e.push('Add when the PT package starts and ends.');
+  if (i.paymentType === 'pt' && i.pt?.sessionsIncluded != null && (!Number.isInteger(i.pt.sessionsIncluded) || i.pt.sessionsIncluded < 1)) e.push('Sessions must be a whole number.');
+  if (i.paymentType !== 'membership' && i.extendMembership) e.push('Only a membership payment can extend the membership.');
   return e;
 }
 
 /** New member, renewal, or a payment that isn't for a plan — decided from the member record before the payment. */
 export const paymentKind = (member: Pick<Member, 'membershipEnd' | 'membershipStart'>, planId: string | null): NonNullable<Payment['kind']> =>
   !planId ? 'other' : member.membershipEnd || member.membershipStart ? 'renewal' : 'new';
+/** New vs renewal applies to membership payments only — never to PT. */
+export const kindFor = (i: Pick<PaymentInput, 'paymentType' | 'member' | 'planId'>): Payment['kind'] =>
+  i.paymentType === 'membership' ? paymentKind(i.member, i.planId) : null;
 export const KIND_LABEL: Record<NonNullable<Payment['kind']>, string> = { new: 'New membership', renewal: 'Renewal', other: 'Other payment' };
 
 /**
@@ -133,21 +176,41 @@ export const KIND_LABEL: Record<NonNullable<Payment['kind']>, string> = { new: '
 export async function recordPayment(i: PaymentInput, actor: AdminActor): Promise<string> {
   const counterRef = doc(db, 'counters', 'receipts');
   const payRef = doc(col());
+  // A membership period or PT package is recorded alongside the payment it came from
+  const membershipRef = i.paymentType === 'membership' && i.coversFrom && i.coversTo ? doc(collection(db, 'memberships')) : null;
+  const ptRef = i.paymentType === 'pt' ? doc(collection(db, 'ptPackages')) : null;
   await runTransaction(db, async (tx) => {
     const c = await tx.get(counterRef);
     const next = ((c.data()?.next as number | undefined) ?? 0) + 1;
     tx.set(counterRef, { next });
     const amountPaise = toPaise(i.amountRupees);
     tx.set(payRef, {
-      receiptNo: receiptNumber(next), receiptSeq: next,
+      receiptNo: receiptNumber(next), receiptSeq: next, paymentType: i.paymentType, source: 'admin',
+      membershipId: membershipRef?.id ?? null, ptPackageId: ptRef?.id ?? null,
       memberId: i.member.id, memberName: i.member.name, memberPhone: i.member.phone, memberPhoneKey: phoneKey(i.member.phone),
-      planId: i.planId, planName: i.planName, amountPaise, countedPaise: amountPaise,
+      planId: i.paymentType === 'membership' ? i.planId : null,
+      planName: i.paymentType === 'pt' ? i.pt!.packageName.trim() : i.planName,
+      amountPaise, countedPaise: amountPaise,
       listPricePaise: i.listPriceRupees != null ? toPaise(i.listPriceRupees) : null, discountPaise: toPaise(i.discountRupees || 0),
-      kind: paymentKind(i.member, i.planId),
+      kind: kindFor(i),
       method: i.method, reference: i.reference.trim(), paidOn: i.paidOn, coversFrom: i.coversFrom, coversTo: i.coversTo,
       notes: i.notes.trim(), status: 'paid', createdBy: actor.email, createdAt: serverTimestamp(),
     });
-    if (i.extendMembership && i.coversTo) {
+    if (membershipRef) {
+      tx.set(membershipRef, {
+        memberId: i.member.id, planId: i.planId, planLabel: i.planName, startDate: i.coversFrom, endDate: i.coversTo,
+        paymentId: payRef.id, source: 'payment', createdBy: actor.email, createdAt: serverTimestamp(),
+      });
+    }
+    if (ptRef) {
+      tx.set(ptRef, {
+        memberId: i.member.id, trainerId: i.pt!.trainerId || null, packageName: i.pt!.packageName.trim(),
+        sessionsIncluded: i.pt!.sessionsIncluded, sessionsRemaining: null, startDate: i.coversFrom, endDate: i.coversTo,
+        notes: '', paymentId: payRef.id, source: 'payment', createdBy: actor.email, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      });
+    }
+    // Only a membership payment moves the gym membership — PT never does
+    if (i.paymentType === 'membership' && i.extendMembership && i.coversTo) {
       const patch = {
         planId: i.planId ?? i.member.planId, membershipEnd: i.coversTo, status: 'active' as const,
         membershipStart: i.member.membershipStart ?? i.coversFrom, updatedAt: serverTimestamp(),
@@ -156,7 +219,7 @@ export async function recordPayment(i: PaymentInput, actor: AdminActor): Promise
     }
     tx.set(doc(collection(db, 'activity')), {
       action: 'Payment recorded', actorUid: actor.uid, actorEmail: actor.email, refType: 'payment', refId: payRef.id,
-      meta: { name: i.member.name, amount: rupees(amountPaise), method: METHOD_LABEL[i.method], receipt: receiptNumber(next), extended: i.extendMembership && !!i.coversTo },
+      meta: { name: i.member.name, amount: rupees(amountPaise), for: TYPE_LABEL[i.paymentType], method: METHOD_LABEL[i.method], receipt: receiptNumber(next), extended: i.paymentType === 'membership' && i.extendMembership && !!i.coversTo },
       at: serverTimestamp(),
     });
   });
@@ -168,7 +231,7 @@ export async function voidPayment(p: Payment, reason: string, actor: AdminActor)
     tx.update(doc(col(), p.id), { status: 'void', countedPaise: 0, voidReason: reason.trim(), voidedBy: actor.email, voidedAt: serverTimestamp() });
     tx.set(doc(collection(db, 'activity')), {
       action: 'Payment voided', actorUid: actor.uid, actorEmail: actor.email, refType: 'payment', refId: p.id,
-      meta: { name: p.memberName, amount: rupees(p.amountPaise), receipt: p.receiptNo, reason: reason.trim() }, at: serverTimestamp(),
+      meta: { name: p.memberName, amount: rupees(p.amountPaise), receipt: receiptLabel(p), reason: reason.trim() }, at: serverTimestamp(),
     });
   });
 }
@@ -182,11 +245,11 @@ export const LIST_LIMIT = 500;
 /** Payments in a date range, newest first (single-field range — no composite index). */
 export async function paymentsBetween(from: string, to: string) {
   const snap = await getDocs(query(col(), where('paidOn', '>=', from), where('paidOn', '<=', to), orderBy('paidOn', 'desc'), limit(LIST_LIMIT)));
-  return snap.docs.map(toPayment).sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.receiptNo.localeCompare(a.receiptNo));
+  return snap.docs.map(toPayment).sort(newestFirst);
 }
 export async function paymentsOfMember(memberId: string) {
   const snap = await getDocs(query(col(), where('memberId', '==', memberId), limit(100)));
-  return snap.docs.map(toPayment).sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.receiptNo.localeCompare(a.receiptNo));
+  return snap.docs.map(toPayment).sort(newestFirst);
 }
 export async function paymentByReceipt(receiptNo: string) {
   const snap = await getDocs(query(col(), where('receiptNo', '==', receiptNo.toUpperCase()), limit(1)));

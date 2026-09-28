@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { AlarmClock, ArrowRight, CalendarPlus, ClipboardCheck, Inbox, IndianRupee, UserPlus, CalendarDays } from 'lucide-react';
 import { collection, getCountFromServer, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { memberCounts, todayIST, type MemberCounts } from '@/lib/admin/members';
+import { DUES_LOOKBACK_DAYS, addDays, memberCounts, todayIST, type MemberCounts } from '@/lib/admin/members';
 import { classesOn, countSince, periodStarts, type ClassSession } from '@/lib/admin/attendance';
 import { getSettings } from '@/lib/admin/settings';
-import { revenueBetween, rupees } from '@/lib/admin/payments';
+import { paymentTypeOf, paymentsBetween, revenueBetween, rupees } from '@/lib/admin/payments';
 import { PUBLIC_STATUSES, STATUS, formatEventDate, normalizeEvent, type CrunchEvent } from '@/lib/events';
 import { AdminShell } from '@/features/events/admin/shared';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,7 @@ const Overview = () => {
   const [counts, setCounts] = useState<MemberCounts | null>(null);
   const [checkIns, setCheckIns] = useState<number | null>(null);
   const [collection_, setCollection] = useState<{ paise: number; payments: number } | null>(null);
+  const [todaySplit, setTodaySplit] = useState<{ membership: number; pt: number; other: number } | null>(null);
   const [classes, setClasses] = useState<ClassSession[] | null>(null);
   const [events, setEvents] = useState<CrunchEvent[] | null>(null);
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
@@ -64,11 +65,12 @@ const Overview = () => {
           getDocs(query(collection(db, 'events'), where('status', 'in', PUBLIC_STATUSES.filter((s) => s !== 'archived')))),
           getCountFromServer(query(collection(db, 'enquiries'), where('status', '==', 'new'))),
           getCountFromServer(query(collection(db, 'duties'), where('weekStart', '==', weekStart()))),
-          // Renewals overdue: expired memberships of members not marked inactive
-          getCountFromServer(query(collection(db, 'members'), where('activeUntil', '>', '0000-00-00'), where('activeUntil', '<', today))),
+          // Renewals overdue: memberships that ended in the last DUES_LOOKBACK_DAYS (not long-gone history)
+          getCountFromServer(query(collection(db, 'members'), where('activeUntil', '>=', addDays(today, -DUES_LOOKBACK_DAYS)), where('activeUntil', '<', today))),
           revenueBetween(today, today),
+          paymentsBetween(today, today),
         ]);
-        const NAMES = ['members', 'check-ins', 'classes', 'events', 'enquiries', 'duty roster', 'renewals', 'today’s collection'];
+        const NAMES = ['members', 'check-ins', 'classes', 'events', 'enquiries', 'duty roster', 'renewals', 'today’s collection', 'today’s payments'];
         const failedParts = parts.map((r, i) => (r.status === 'rejected' ? NAMES[i] : null)).filter(Boolean);
         const val = <T,>(i: number, fallback: T): T => (parts[i].status === 'fulfilled' ? (parts[i] as PromiseFulfilledResult<T>).value : fallback);
         const mc = val<MemberCounts | null>(0, null);
@@ -79,6 +81,12 @@ const Overview = () => {
         const duties = val<Awaited<ReturnType<typeof getCountFromServer>> | null>(5, null);
         const overdue = val<Awaited<ReturnType<typeof getCountFromServer>> | null>(6, null)?.data().count ?? 0;
         const takings = val<Awaited<ReturnType<typeof revenueBetween>> | null>(7, null);
+        const todays = val<Awaited<ReturnType<typeof paymentsBetween>> | null>(8, null);
+        if (todays) {
+          const t = { membership: 0, pt: 0, other: 0 };
+          todays.filter((p) => p.status === 'paid').forEach((p) => { t[paymentTypeOf(p)] += p.amountPaise; });
+          setTodaySplit(t);
+        }
         if (failedParts.length) setFailed(`${failedParts.join(', ')} couldn’t load (${(parts.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason?.message ?? 'error'})`);
         if (off) return;
         const evs = (evSnap?.docs ?? []).map((d) => normalizeEvent({ id: d.id, ...(d.data() as object) } as CrunchEvent)).sort((a, b) => a.eventDate.localeCompare(b.eventDate));
@@ -123,7 +131,11 @@ const Overview = () => {
       <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {loading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-ink-900" />) : <>
           <Metric label="Today’s collection" value={collection_ ? rupees(collection_.paise) : '—'}
-            sub={collection_ ? (collection_.payments ? `${collection_.payments} receipt${collection_.payments === 1 ? '' : 's'} today` : 'No payments yet today') : 'Unavailable'} to="/admin/revenue" />
+            sub={collection_ ? (collection_.payments
+              ? (todaySplit && (todaySplit.pt || todaySplit.other)
+                ? `Membership ${rupees(todaySplit.membership)} · PT ${rupees(todaySplit.pt)} · Other ${rupees(todaySplit.other)}`
+                : `${collection_.payments} receipt${collection_.payments === 1 ? '' : 's'} today`)
+              : 'No payments yet today') : 'Unavailable'} to="/admin/revenue" />
           <Metric label="Check-ins today" value={checkIns ?? '—'} sub={checkIns == null ? 'Unavailable' : classes?.length ? `${classes.length} class${classes.length === 1 ? '' : 'es'} today` : 'No classes today'} to="/admin/attendance" />
           <Metric label="Active members" value={!membersUnavailable && counts?.total ? counts.active : '—'}
             sub={membersUnavailable ? 'Unavailable' : !counts?.total ? 'No members added yet' : `of ${counts.total} member${counts.total === 1 ? '' : 's'}${counts.withExpiry < counts.total ? ` · ${counts.total - counts.withExpiry} without an expiry date` : ''}`}

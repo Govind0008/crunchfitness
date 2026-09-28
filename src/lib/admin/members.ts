@@ -34,7 +34,7 @@ export interface Member {
   /** Link to the trainer portal's client record (training data lives there) */
   trainerClient: { trainerId: string; clientId: string } | null;
   notes: string;
-  source: 'manual' | 'import' | 'trainer_client';
+  source: 'manual' | 'import' | 'trainer_client' | 'legacy_excel';
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -180,8 +180,14 @@ export async function membersByPhoneKeys(keys: string[]): Promise<Map<string, Me
 
 /** Renewals due: memberships that have expired, or expire within the window — soonest / most overdue first.
  *  (Members with no expiry, or marked inactive, aren't "due".) */
+/**
+ * Dues look back this far. A membership that ended longer ago (e.g. imported history from 2022)
+ * is a former member, not a renewal that's due — they stay under Members → Inactive.
+ */
+export const DUES_LOOKBACK_DAYS = 90;
+
 export async function membersDue(expiringDays: number) {
-  const snap = await getDocs(query(col(), where('activeUntil', '>', '0000-00-00'), where('activeUntil', '<=', addDays(todayIST(), expiringDays)), orderBy('activeUntil'), limit(500)));
+  const snap = await getDocs(query(col(), where('activeUntil', '>=', addDays(todayIST(), -DUES_LOOKBACK_DAYS)), where('activeUntil', '<=', addDays(todayIST(), expiringDays)), orderBy('activeUntil'), limit(500)));
   return snap.docs.map(toMember);
 }
 

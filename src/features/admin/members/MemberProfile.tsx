@@ -4,10 +4,12 @@ import { ClipboardCheck, IndianRupee, Link2, Pencil, Trash2 } from 'lucide-react
 import { collection, collectionGroup, doc, documentId, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { deleteMember, getMember, linkTrainerClient, memberCode, memberState, todayIST, type Member } from '@/lib/admin/members';
 import { ACCESS_CONNECTED, accessEligibility } from '@/lib/access';
 import { checkInsForPhone, periodStarts, type CheckInRecord } from '@/lib/admin/attendance';
-import { METHOD_LABEL, paymentsOfMember, rupees, type Payment } from '@/lib/admin/payments';
+import { METHOD_LABEL, TYPE_LABEL, paymentTypeOf, paymentsOfMember, receiptLabel, rupees, type Payment, type PaymentType } from '@/lib/admin/payments';
+import { PERIOD_LABEL, currentPt, membershipsOf, periodState, ptPackagesOf, type MembershipRecord, type PtPackage } from '@/lib/admin/packages';
 import { getSettings } from '@/lib/admin/settings';
 import { formatPhone, phoneKey } from '@/lib/admin/phone';
 import { STATUS, formatEventDate, formatScore, passNumber, type Category, type CrunchEvent, type Result } from '@/lib/events';
@@ -21,6 +23,9 @@ const Card = ({ title, children, action }: { title: string; children: ReactNode;
     <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-bold uppercase tracking-wider text-white">{title}</h2>{action}</div>
     <div className="mt-4">{children}</div>
   </section>
+);
+const PeriodTag = ({ state }: { state: ReturnType<typeof periodState> }) => (
+  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', state === 'current' ? 'bg-brand-400/15 text-brand-300' : 'bg-white/[0.06] text-ink-400')}>{PERIOD_LABEL[state]}</span>
 );
 const Row = ({ k, v }: { k: string; v: ReactNode }) => (
   <div className="flex justify-between gap-4 py-1.5 text-sm"><dt className="text-ink-400">{k}</dt><dd className="text-right text-white">{v}</dd></div>
@@ -44,7 +49,14 @@ const MemberProfile = () => {
   const [linkOptions, setLinkOptions] = useState<{ trainerId: string; clientId: string; name: string; phone: string }[] | null>(null);
   const [linkChoice, setLinkChoice] = useState('');
   const [payments, setPayments] = useState<Payment[] | null>(null);
-  useEffect(() => { paymentsOfMember(id).then(setPayments).catch(() => setPayments([])); }, [id]);
+  const [payFilter, setPayFilter] = useState<PaymentType | 'all'>('all');
+  const [memberships, setMemberships] = useState<MembershipRecord[] | null>(null);
+  const [pt, setPt] = useState<PtPackage[] | null>(null);
+  useEffect(() => {
+    paymentsOfMember(id).then(setPayments).catch(() => setPayments([]));
+    membershipsOf(id).then(setMemberships).catch(() => setMemberships([]));
+    ptPackagesOf(id).then(setPt).catch(() => setPt([]));
+  }, [id]);
 
   const reload = () => getMember(id).then(setM);
   useEffect(() => { reload(); getSettings().then((s) => setExpDays(s.expiringSoonDays)); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -129,6 +141,11 @@ const MemberProfile = () => {
   const plan = m.planId ? plans.get(m.planId) : undefined;
   const daysLeft = m.membershipEnd ? Math.round((new Date(`${m.membershipEnd}T00:00:00`).getTime() - new Date(`${todayIST()}T00:00:00`).getTime()) / 86400000) : null;
   const trainer = m.trainerId ? trainers.get(m.trainerId) : undefined;
+  const today = todayIST();
+  const ptNow = pt ? currentPt(pt, today) : null;
+  const ptTrainer = ptNow?.trainerId ? trainers.get(ptNow.trainerId)?.name : null;
+  const access = accessEligibility(m, today);
+  const shownPayments = (payments ?? []).filter((p) => payFilter === 'all' || paymentTypeOf(p) === payFilter);
 
   return (
     <AdminShell title={m.name} nav="members" area="People" back={{ to: '/admin/members', label: 'Members' }}
@@ -139,7 +156,7 @@ const MemberProfile = () => {
           <Button asChild variant="outline"><Link to={`/admin/members/${m.id}/edit`}><Pencil /> Edit member</Link></Button>
         </div>
       }>
-      <dl className="-mt-4 mb-8 grid grid-cols-2 gap-x-6 gap-y-3 rounded-2xl border border-white/[0.08] bg-ink-900 p-4 text-sm sm:grid-cols-3 lg:grid-cols-6" aria-label="Member summary">
+      <dl className="-mt-4 mb-8 grid grid-cols-2 gap-x-6 gap-y-3 rounded-2xl border border-white/[0.08] bg-ink-900 p-4 text-sm sm:grid-cols-4 xl:grid-cols-7" aria-label="Member summary">
         {[
           ['Member ID', <span className="font-mono">{memberCode(m.id)}</span>],
           ['Phone', <a href={`tel:${m.phone}`} className="tabular-nums hover:underline">{formatPhone(m.phone)}</a>],
@@ -147,6 +164,7 @@ const MemberProfile = () => {
           ['Status', <StatePill state={state} />],
           ['Expiry', m.membershipEnd ? fmtDate(m.membershipEnd) : 'Not set'],
           ['Trainer', trainer?.name ?? '—'],
+          ['PT', pt === null ? '…' : ptNow ? `Active${ptTrainer ? ` · ${ptTrainer}` : ''}` : 'No active package'],
         ].map(([k, v]) => <div key={k as string} className="min-w-0"><dt className="text-xs text-ink-500">{k}</dt><dd className="mt-0.5 truncate font-semibold text-white">{v}</dd></div>)}
       </dl>
 
@@ -157,18 +175,56 @@ const MemberProfile = () => {
             <Row k="Status" v={<StatePill state={state} />} />
             <Row k="Started" v={fmtDate(m.membershipStart) || '—'} />
             <Row k="Expires" v={m.membershipEnd ? `${fmtDate(m.membershipEnd)}${daysLeft != null ? ` · ${daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days ago`}` : ''}` : 'No expiry set'} />
-            <Row k="Added" v={`${fmtDate(m.createdAt)} · ${m.source === 'import' ? 'CSV import' : m.source === 'trainer_client' ? 'from trainer clients' : 'manually'}`} />
+            <Row k="Added" v={`${fmtDate(m.createdAt)} · ${m.source === 'import' ? 'CSV import' : m.source === 'trainer_client' ? 'from trainer clients' : m.source === 'legacy_excel' ? 'old member sheet' : 'manually'}`} />
           </dl>
-          {(() => {
-            const a = accessEligibility(m, todayIST());
-            return (
-              <div className="mt-4 border-t border-white/[0.06] pt-3 text-sm">
-                <p className="flex justify-between gap-3"><span className="text-ink-400">Entry access</span>
-                  <span className={a.eligible ? 'text-brand-300' : a.eligible === false ? 'text-red-300' : 'text-ink-300'}>{a.eligible ? 'Allowed' : a.eligible === false ? 'Not allowed' : 'Check membership'}</span></p>
-                <p className="mt-1 text-xs text-ink-500">{a.reason}. {ACCESS_CONNECTED ? '' : 'The door device isn’t connected yet.'}</p>
-              </div>
-            );
-          })()}
+          <div className="mt-4 border-t border-white/[0.06] pt-3 text-sm">
+            <p className="flex justify-between gap-3"><span className="text-ink-400">Gym entry</span>
+              <span className={access.eligible ? 'text-brand-300' : access.eligible === false ? 'text-red-300' : 'text-ink-300'}>{access.eligible ? 'Allowed' : access.eligible === false ? 'Not allowed' : 'Check membership'}</span></p>
+            <p className="mt-1 text-xs text-ink-500">{access.reason}.{ptNow && !access.eligible ? ' Personal training alone doesn’t give gym entry.' : ''} {ACCESS_CONNECTED ? '' : 'The door device isn’t connected yet.'}</p>
+          </div>
+          <div className="mt-4 border-t border-white/[0.06] pt-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-ink-400">Membership history</p>
+            {memberships === null ? <div className="mt-2 h-10 animate-pulse rounded bg-ink-800" /> : memberships.length === 0 ? <p className="mt-2 text-xs text-ink-500">No earlier periods on record.</p> : (
+              <ul className="mt-2 space-y-2 text-sm" aria-label="Membership history">
+                {memberships.map((r) => (
+                  <li key={r.id}>
+                    <div className="flex justify-between gap-3"><span className="text-white">{r.planLabel}</span><PeriodTag state={periodState(r, today)} /></div>
+                    <p className="text-xs text-ink-500">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}{r.source === 'legacy_excel' ? ' · from the old member sheet' : ''}</p>
+                    {r.legacyBalanceNote && <p className="text-xs text-ink-500">Old sheet “bal”: {r.legacyBalanceNote}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+
+        <Card title="Personal training" action={<Link to={`/admin/payments/new?member=${m.id}&type=pt`} className="text-xs font-semibold text-brand-400 hover:underline">Record PT payment</Link>}>
+          {pt === null ? <div className="h-20 animate-pulse rounded-xl bg-ink-800" /> : (
+            <>
+              {ptNow ? (
+                <dl>
+                  <Row k="Package" v={ptNow.packageName} />
+                  <Row k="Trainer" v={ptTrainer ?? 'Not set'} />
+                  <Row k="Started" v={fmtDate(ptNow.startDate) || '—'} />
+                  <Row k="Ends" v={fmtDate(ptNow.endDate) || '—'} />
+                  {ptNow.sessionsIncluded != null && <Row k="Sessions" v={`${ptNow.sessionsRemaining != null ? `${ptNow.sessionsRemaining} left of ` : ''}${ptNow.sessionsIncluded}`} />}
+                  <Row k="Status" v={<PeriodTag state="current" />} />
+                </dl>
+              ) : <p className="text-sm text-ink-400">No active PT package.</p>}
+              <p className="mt-4 text-xs font-bold uppercase tracking-wider text-ink-400">PT history</p>
+              {pt.filter((x) => x !== ptNow).length === 0 ? <p className="mt-2 text-xs text-ink-500">No earlier PT packages.</p> : (
+                <ul className="mt-2 space-y-2 text-sm" aria-label="PT history">
+                  {pt.filter((x) => x !== ptNow).map((x) => (
+                    <li key={x.id}>
+                      <div className="flex justify-between gap-3"><span className="text-white">{x.packageName}</span><PeriodTag state={periodState(x, today)} /></div>
+                      <p className="text-xs text-ink-500">{x.startDate ? `${fmtDate(x.startDate)} – ${fmtDate(x.endDate)}` : 'Dates not recorded'} · {x.trainerId ? trainers.get(x.trainerId)?.name ?? 'Trainer' : 'Trainer not recorded'}{x.sessionsIncluded != null ? ` · ${x.sessionsIncluded} sessions` : ''}</p>
+                      {x.legacyBalanceNote && <p className="text-xs text-ink-500">Old sheet “bal”: {x.legacyBalanceNote}{x.legacyBalanceAmountPaise ? ' (not confirmed — not shown as due)' : ''}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </Card>
 
         <Card title="Attendance">
@@ -235,11 +291,20 @@ const MemberProfile = () => {
         <Card title="Payments" action={<Link to={`/admin/payments/new?member=${m.id}`} className="text-xs font-semibold text-brand-400 hover:underline">Record payment</Link>}>
           {payments === null ? <div className="h-20 animate-pulse rounded-xl bg-ink-800" /> : payments.length === 0 ? <p className="text-sm text-ink-400">No payments recorded.</p> : (
             <>
-              <p className="text-sm text-ink-400">Total paid: <span className="text-white">{rupees(payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amountPaise, 0))}</span></p>
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Show payments for">
+                {(['all', 'membership', 'pt', 'other'] as const).map((t) => (
+                  <button key={t} type="button" aria-pressed={payFilter === t} onClick={() => setPayFilter(t)}
+                    className={cn('rounded-full border px-3 py-1 text-xs font-semibold', payFilter === t ? 'border-white bg-white text-ink-950' : 'border-white/15 text-ink-300 hover:text-white')}>
+                    {t === 'all' ? 'All' : t === 'pt' ? 'PT' : TYPE_LABEL[t]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-sm text-ink-400">Total paid: <span className="text-white">{rupees(shownPayments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amountPaise, 0))}</span></p>
+              {shownPayments.length === 0 && <p className="mt-2 text-sm text-ink-500">None of this type.</p>}
               <ul className="mt-3 space-y-2 text-sm" aria-label="Payment history">
-                {payments.slice(0, 8).map((p) => (
+                {shownPayments.slice(0, 12).map((p) => (
                   <li key={p.id} className="flex items-center justify-between gap-3">
-                    <Link to={`/admin/payments/${p.id}`} className="min-w-0 hover:text-brand-400"><span className="font-mono text-xs text-ink-400">{p.receiptNo}</span> <span className="text-ink-300">{fmtDate(p.paidOn)} · {METHOD_LABEL[p.method]}</span></Link>
+                    <Link to={`/admin/payments/${p.id}`} className="min-w-0 hover:text-brand-400"><span className="font-mono text-xs text-ink-400">{receiptLabel(p)}</span> <span className="text-ink-300">{fmtDate(p.paidOn)} · {paymentTypeOf(p) === 'pt' ? 'PT' : TYPE_LABEL[paymentTypeOf(p)]} · {METHOD_LABEL[p.method]}</span></Link>
                     <span className={p.status === 'void' ? 'tabular-nums text-ink-500 line-through' : 'tabular-nums text-white'}>{rupees(p.amountPaise)}</span>
                   </li>
                 ))}

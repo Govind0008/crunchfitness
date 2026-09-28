@@ -34,3 +34,6 @@ playwright-report/
 
 # Firebase emulator logs
 *-debug.log
+
+# Real member data used by the legacy-import tests — never commit (names, phone numbers)
+tests/fixtures/*.xlsx

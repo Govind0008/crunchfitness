@@ -125,7 +125,7 @@ test('bring in trainer clients: added as members and linked to their training da
   await expect(page.getByRole('status')).toContainText('Added 1 member');
   await page.goto('/admin/members');
   await page.getByRole('link', { name: 'Client One' }).first().click();
-  await expect(page.getByRole('region', { name: 'Training' })).toContainText('Strength');
+  await expect(page.getByRole('region', { name: 'Training', exact: true })).toContainText('Strength');
   await expect(page.getByRole('region', { name: 'Trainer' })).toContainText('Linked to the trainer portal');
 });
 

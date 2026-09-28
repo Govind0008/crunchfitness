@@ -77,6 +77,16 @@ Only admins write roles, and an admin can't demote or delete their own role.
 Publish with `firebase deploy --only firestore:rules`, or paste `firestore.rules` into
 Firebase console → Firestore → Rules → Publish.
 
+**Legacy import / PT additions** (details in `LEGACY_MEMBER_IMPORT.md`):
+
+- **New collections, admin-only:**
+  - `memberships`: create and update, never deleted.
+  - `ptPackages`: trainers can also read their own; never deleted.
+  - `imports`: append-only.
+- **Imported payments:** a second payment `create` path.
+  - `source == "legacy_excel"`, id `lx_…_p`, no receipt number, method may be `"unknown"`.
+  - Normal payments are unchanged, except that they may now carry a `paymentType`.
+
 ## 4. Firestore indexes
 
 See `FIREBASE_INDEX_AUDIT.md`. Deploy with `firebase deploy --only firestore:indexes`.

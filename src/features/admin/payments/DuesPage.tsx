@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { membersDue, todayIST, type Member } from '@/lib/admin/members';
+import { DUES_LOOKBACK_DAYS, membersDue, todayIST, type Member } from '@/lib/admin/members';
 import { getSettings } from '@/lib/admin/settings';
 import { formatPhone } from '@/lib/admin/phone';
 import { parsePrice, rupees, toPaise } from '@/lib/admin/payments';
@@ -60,7 +60,7 @@ const DuesPage = () => {
 
   return (
     <AdminShell title="Dues" nav="dues" area="Money">
-      <p className="-mt-4 text-sm text-ink-400">Renewals due, from member expiry dates. Amounts are <strong className="text-white">estimates</strong> — the member’s plan at its current price, not money owed. Record what they actually pay. Members with no expiry date don’t appear here.</p>
+      <p className="-mt-4 text-sm text-ink-400">Renewals due, from member expiry dates. Amounts are <strong className="text-white">estimates</strong> — the member’s plan at its current price, not money owed. Record what they actually pay. Members with no expiry date, and memberships that ended more than {DUES_LOOKBACK_DAYS} days ago, don’t appear here — find those under <Link to="/admin/members?filter=inactive" className="text-white underline-offset-4 hover:underline">Members → Inactive</Link>. Old balances from the imported member sheet are never shown as dues.</p>
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">Dues couldn’t load: {error}</p>}
       {!rows && !error ? <div className="mt-8 h-40 animate-pulse rounded-2xl bg-ink-900" role="status" aria-label="Loading dues" /> : rows && (
         rows.length === 0 ? <div className="mt-8"><Empty title="Nothing due" body={`No memberships have expired or expire in the next ${days} days.`} /></div> : <>

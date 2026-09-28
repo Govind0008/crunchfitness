@@ -11,6 +11,7 @@ import { AdminShell } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { useLookups, type PlanRef } from './lookups';
 import { parseCsv } from '@/lib/admin/csv';
+import LegacyImport from './LegacyImport';
 
 const TEMPLATE = 'name,phone,email,plan,start,expiry,status\nAsha Rao,9876543210,asha@example.com,3 Months,2026-09-01,2026-11-30,active\n';
 const ALIASES: Record<keyof Omit<MemberInput, 'trainerId' | 'notes'> | 'plan', string[]> = {
@@ -221,15 +222,15 @@ const FromTrainerClients = () => {
 };
 
 const ImportMembers = () => {
-  const [tab, setTab] = useState<'csv' | 'trainers'>('csv');
+  const [tab, setTab] = useState<'csv' | 'trainers' | 'legacy'>('csv');
   return (
     <AdminShell title="Import members" nav="members" area="People" back={{ to: '/admin/members', label: 'Members' }}>
-      <div role="tablist" aria-label="Import source" className="mb-8 flex gap-1 border-b border-white/[0.08]">
-        {([['csv', 'From a spreadsheet (CSV)'], ['trainers', 'From trainer clients']] as const).map(([id, label]) => (
+      <div role="tablist" aria-label="Import source" className="mb-8 flex gap-1 overflow-x-auto border-b border-white/[0.08]">
+        {([['csv', 'From a spreadsheet (CSV)'], ['legacy', 'From the old member sheet'], ['trainers', 'From trainer clients']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={cn('border-b-2 px-4 py-3 text-sm font-semibold', tab === id ? 'border-brand-400 text-white' : 'border-transparent text-ink-400 hover:text-white')}>{label}</button>
         ))}
       </div>
-      {tab === 'csv' ? <CsvImport /> : <FromTrainerClients />}
+      {tab === 'csv' ? <CsvImport /> : tab === 'legacy' ? <LegacyImport /> : <FromTrainerClients />}
     </AdminShell>
   );
 };

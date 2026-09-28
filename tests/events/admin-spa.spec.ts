@@ -5,13 +5,16 @@ import { ADMIN, resetFirestore, seedAdmin, seedDoc, ts } from './emulator';
 test.describe.configure({ mode: 'serial' });
 test.skip(({ isMobile }) => isMobile, 'desktop navigation story; mobile menu covered below');
 
+// Expired a few days ago — inside the Dues window (older expiries are former members, not dues)
+const expiredRecently = (() => { const d = new Date(Date.now() + 5.5 * 3600e3); d.setUTCDate(d.getUTCDate() - 10); return d.toISOString().slice(0, 10); })();
+
 test.beforeAll(async () => {
   await resetFirestore();
   await seedAdmin();
   await seedDoc('plans/p1', { duration: '1 Month', price: '₹3,000', order: 1 });
   await seedDoc('teamMembers/T1', { name: 'Coach One', role: 'Coach' });
   await seedDoc('members/mSpa', { name: 'Money Member', nameLower: 'money member', phone: '9000000044', phoneKey: '9000000044', email: '', emailLower: '', planId: 'p1',
-    membershipStart: '2026-01-01', membershipEnd: '2026-02-01', status: 'active', activeUntil: '2026-02-01', trainerId: null, trainerClient: null, notes: '', source: 'manual' });
+    membershipStart: '2026-01-01', membershipEnd: expiredRecently, status: 'active', activeUntil: expiredRecently, trainerId: null, trainerClient: null, notes: '', source: 'manual' });
   await seedDoc('enquiries/e1', { name: 'Lead', phone: '9000000077', status: 'new', read: false, submittedAt: ts(new Date().toISOString()) });
 });
 
