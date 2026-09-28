@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { todayIST, addDays } from '@/lib/admin/members';
-import { LIST_LIMIT, METHOD_LABEL, monthEnd, monthStart, paymentsBetween, rupees, shiftMonth, type Payment, type PaymentMethod } from '@/lib/admin/payments';
+import { LIST_LIMIT, METHOD_LABEL, paymentFor, TYPE_LABEL, monthEnd, monthStart, paymentTypeOf, paymentsBetween, receiptLabel, rupees, shiftMonth, type Payment, type PaymentMethod, type PaymentType } from '@/lib/admin/payments';
 import { AdminShell, Empty, inputCls } from '@/features/events/admin/shared';
 import { fmtDate } from '@/features/admin/members/lookups';
 import { PaymentStatus } from './ui';
@@ -25,6 +25,7 @@ const PaymentsPage = () => {
   const { from, to } = rangeOf(preset, params.get('from'), params.get('to'));
   const method = (params.get('method') as PaymentMethod | 'all') || 'all';
   const status = (params.get('status') as 'paid' | 'void' | 'all') || 'all';
+  const type = (params.get('type') as PaymentType | 'all') || 'all';
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Payment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,8 +42,8 @@ const PaymentsPage = () => {
   }, [from, to]);
 
   const shown = useMemo(() => (rows ?? []).filter((p) =>
-    (method === 'all' || p.method === method) && (status === 'all' || p.status === status) &&
-    (!q.trim() || p.memberName.toLowerCase().includes(q.trim().toLowerCase()) || p.receiptNo.toLowerCase().includes(q.trim().toLowerCase()))), [rows, method, status, q]);
+    (method === 'all' || p.method === method) && (status === 'all' || p.status === status) && (type === 'all' || paymentTypeOf(p) === type) &&
+    (!q.trim() || p.memberName.toLowerCase().includes(q.trim().toLowerCase()) || (p.receiptNo ?? '').toLowerCase().includes(q.trim().toLowerCase()))), [rows, method, status, type, q]);
   const total = shown.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amountPaise, 0);
 
   return (
@@ -61,6 +62,12 @@ const PaymentsPage = () => {
             <label className="text-xs text-ink-400">To<input type="date" className={`${inputCls} mt-1 h-10`} value={to} min={from} max={todayIST()} onChange={(e) => setParam({ to: e.target.value })} /></label>
           </>
         )}
+        <label className="text-xs text-ink-400">For
+          <select className={`${inputCls} mt-1 h-10`} value={type} onChange={(e) => setParam({ type: e.target.value === 'all' ? null : e.target.value })}>
+            <option value="all">Everything</option>
+            {(Object.keys(TYPE_LABEL) as PaymentType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+          </select>
+        </label>
         <label className="text-xs text-ink-400">Method
           <select className={`${inputCls} mt-1 h-10`} value={method} onChange={(e) => setParam({ method: e.target.value === 'all' ? null : e.target.value })}>
             <option value="all">All methods</option>
@@ -95,15 +102,15 @@ const PaymentsPage = () => {
               <div className="hidden overflow-x-auto rounded-2xl border border-white/[0.08] md:block">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-white/[0.08] text-xs uppercase tracking-wider text-ink-500">
-                    <tr>{['Receipt', 'Date', 'Member', 'Plan', 'Method', 'Amount', 'Status'].map((h) => <th key={h} scope="col" className={cn('px-4 py-3 font-semibold', h === 'Amount' && 'text-right')}>{h}</th>)}</tr>
+                    <tr>{['Receipt', 'Date', 'Member', 'For', 'Method', 'Amount', 'Status'].map((h) => <th key={h} scope="col" className={cn('px-4 py-3 font-semibold', h === 'Amount' && 'text-right')}>{h}</th>)}</tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06]">
                     {shown.map((p) => (
                       <tr key={p.id} className="hover:bg-white/[0.02]">
-                        <td className="px-4 py-3"><Link to={`/admin/payments/${p.id}`} className="font-mono font-semibold text-white hover:text-brand-400">{p.receiptNo}</Link></td>
+                        <td className="px-4 py-3"><Link to={`/admin/payments/${p.id}`} className="font-mono font-semibold text-white hover:text-brand-400">{receiptLabel(p)}</Link></td>
                         <td className="px-4 py-3 text-ink-300">{fmtDate(p.paidOn)}</td>
                         <td className="px-4 py-3 text-white">{p.memberName}</td>
-                        <td className="px-4 py-3 text-ink-300">{p.planName || '—'}</td>
+                        <td className="px-4 py-3 text-ink-300">{paymentFor(p)}</td>
                         <td className="px-4 py-3 text-ink-300">{METHOD_LABEL[p.method]}</td>
                         <td className={cn('px-4 py-3 text-right tabular-nums', p.status === 'void' ? 'text-ink-500 line-through' : 'text-white')}>{rupees(p.amountPaise)}</td>
                         <td className="px-4 py-3"><PaymentStatus p={p} /></td>
@@ -116,10 +123,10 @@ const PaymentsPage = () => {
                 {shown.map((p) => (
                   <li key={p.id}><Link to={`/admin/payments/${p.id}`} className="block rounded-2xl border border-white/[0.08] bg-ink-900 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="min-w-0"><span className="block truncate font-semibold text-white">{p.memberName}</span><span className="font-mono text-xs text-ink-500">{p.receiptNo} · {fmtDate(p.paidOn)}</span></span>
+                      <span className="min-w-0"><span className="block truncate font-semibold text-white">{p.memberName}</span><span className="font-mono text-xs text-ink-500">{receiptLabel(p)} · {fmtDate(p.paidOn)}</span></span>
                       <span className={cn('font-display text-xl font-bold tabular-nums', p.status === 'void' ? 'text-ink-500 line-through' : 'text-white')}>{rupees(p.amountPaise)}</span>
                     </div>
-                    <p className="mt-2 flex items-center gap-2 text-xs text-ink-400">{METHOD_LABEL[p.method]}{p.planName && ` · ${p.planName}`} <PaymentStatus p={p} /></p>
+                    <p className="mt-2 flex items-center gap-2 text-xs text-ink-400">{METHOD_LABEL[p.method]} · {paymentFor(p)} <PaymentStatus p={p} /></p>
                   </Link></li>
                 ))}
               </ul>

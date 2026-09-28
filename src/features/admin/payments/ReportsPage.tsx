@@ -5,7 +5,7 @@ import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { memberState, membersDue, todayIST, type Member } from '@/lib/admin/members';
 import { getSettings } from '@/lib/admin/settings';
-import { METHOD_LABEL, monthStart, paymentsBetween, toCsv } from '@/lib/admin/payments';
+import { METHOD_LABEL, TYPE_LABEL, monthStart, paymentTypeOf, paymentsBetween, toCsv } from '@/lib/admin/payments';
 import { AdminShell, Field, inputCls } from '@/features/events/admin/shared';
 import { useLookups } from '@/features/admin/members/lookups';
 
@@ -34,8 +34,9 @@ const ReportsPage = () => {
   const paymentsCsv = () => run('payments', async () => {
     const rows = await paymentsBetween(from, to);
     download(`crunch-payments-${from}-to-${to}.csv`, toCsv([
-      ['Receipt', 'Date', 'Member', 'Phone', 'Plan', 'Covers from', 'Covers to', 'Method', 'Reference', 'Amount (INR)', 'Status', 'Void reason', 'Recorded by'],
-      ...rows.map((p) => [p.receiptNo, p.paidOn, p.memberName, p.memberPhone, p.planName, p.coversFrom, p.coversTo, METHOD_LABEL[p.method], p.reference, (p.amountPaise / 100).toFixed(2), p.status, p.voidReason ?? '', p.createdBy]),
+      ['Receipt', 'Date', 'Member', 'Phone', 'For', 'Plan / package', 'Covers from', 'Covers to', 'Method', 'Reference', 'Amount (INR)', 'Status', 'Void reason', 'Recorded by', 'Source', 'Old sheet row', 'Old sheet bal'],
+      ...rows.map((p) => [p.receiptNo ?? '', p.paidOn, p.memberName, p.memberPhone, TYPE_LABEL[paymentTypeOf(p)], p.planName, p.coversFrom, p.coversTo, METHOD_LABEL[p.method], p.reference, (p.amountPaise / 100).toFixed(2), p.status, p.voidReason ?? '', p.createdBy,
+        p.source === 'legacy_excel' ? 'Old member sheet' : 'Admin', p.legacy?.row ?? '', p.legacy?.legacyBalanceNote ?? '']),
     ]));
     const paid = rows.filter((p) => p.status === 'paid');
     return `Downloaded ${rows.length} payments (${paid.length} paid, ${rows.length - paid.length} void).`;

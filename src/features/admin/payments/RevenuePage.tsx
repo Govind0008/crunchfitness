@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { todayIST } from '@/lib/admin/members';
-import { KIND_LABEL, METHOD_LABEL, groupTotals, monthEnd, monthLabel, monthStart, paymentsBetween, revenueBetween, rupees, shiftMonth, type Payment } from '@/lib/admin/payments';
+import { KIND_LABEL, METHOD_LABEL, TYPE_LABEL, groupTotals, paymentTypeOf, type PaymentType, monthEnd, monthLabel, monthStart, paymentsBetween, revenueBetween, rupees, shiftMonth, type Payment } from '@/lib/admin/payments';
 import { AdminShell } from '@/features/events/admin/shared';
 
 interface Totals { paise: number; payments: number }
@@ -19,6 +19,7 @@ const RevenuePage = () => {
   const [cards, setCards] = useState<Record<string, Totals> | null>(null);
   const [trend, setTrend] = useState<{ month: string; paise: number }[] | null>(null);
   const [thisMonth, setThisMonth] = useState<Payment[] | null>(null);
+  const [lastMonth, setLastMonth] = useState<Payment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,12 +31,21 @@ const RevenuePage = () => {
     Promise.all(months.map((s) => revenueBetween(s, monthEnd(s)).then((r) => ({ month: s, paise: r.paise }))))
       .then(setTrend).catch((e) => setError(e.message));
     paymentsBetween(m0, today).then(setThisMonth).catch((e) => setError(e.message));
+    paymentsBetween(last, monthEnd(last)).then(setLastMonth).catch((e) => setError(e.message));
   }, [today]);
 
   const max = Math.max(1, ...(trend ?? []).map((t) => t.paise));
   const byMethod = thisMonth ? groupTotals(thisMonth, (p) => METHOD_LABEL[p.method]) : [];
   const byPlan = thisMonth ? groupTotals(thisMonth, (p) => p.planName || 'No plan') : [];
-  const byKind = thisMonth ? groupTotals(thisMonth, (p) => (p.kind ? KIND_LABEL[p.kind] : 'Not recorded (older payments)')) : [];
+  // New vs renewal is about gym memberships only — PT and other payments aren't renewals
+  const byKind = thisMonth ? groupTotals(thisMonth.filter((p) => paymentTypeOf(p) === 'membership'), (p) => (p.kind ? KIND_LABEL[p.kind] : 'Not recorded')) : [];
+  const split = (list: Payment[] | null) => {
+    if (!list) return null;
+    const t: Record<PaymentType, number> = { membership: 0, pt: 0, other: 0 };
+    list.filter((p) => p.status === 'paid').forEach((p) => { t[paymentTypeOf(p)] += p.amountPaise; });
+    return { ...t, total: t.membership + t.pt + t.other };
+  };
+  const splits = [['This month', split(thisMonth)], ['Last month', split(lastMonth)]] as const;
   const monthPaise = thisMonth?.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amountPaise, 0) ?? 0;
 
   return (
@@ -74,8 +84,24 @@ const RevenuePage = () => {
         )}
       </section>
 
+      <section aria-labelledby="split-h" className="mt-6 overflow-x-auto rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
+        <h2 id="split-h" className="text-sm font-bold uppercase tracking-wider text-white">Membership, PT and other</h2>
+        <table className="mt-4 w-full min-w-[28rem] text-sm" aria-label="Revenue by type">
+          <thead className="text-xs uppercase tracking-wider text-ink-500"><tr><th scope="col" className="pb-2 text-left font-semibold">Month</th>{(['membership', 'pt', 'other'] as PaymentType[]).map((t) => <th key={t} scope="col" className="pb-2 text-right font-semibold">{t === 'pt' ? 'PT' : TYPE_LABEL[t]}</th>)}<th scope="col" className="pb-2 text-right font-semibold">Total</th></tr></thead>
+          <tbody className="divide-y divide-white/[0.06]">
+            {splits.map(([label, v]) => (
+              <tr key={label}><th scope="row" className="py-2 text-left font-semibold text-white">{label}</th>
+                {v ? <>{(['membership', 'pt', 'other'] as PaymentType[]).map((t) => <td key={t} className="py-2 text-right tabular-nums text-ink-200">{rupees(v[t])}</td>)}<td className="py-2 text-right font-semibold tabular-nums text-white">{rupees(v.total)}</td></>
+                  : <td colSpan={4} className="py-2 text-right text-ink-500">…</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-3 text-xs text-ink-500">Payments recorded before payment types existed count as membership when they had a plan, otherwise as other.</p>
+      </section>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {[['This month by method', byMethod], ['This month by plan', byPlan], ['New vs renewal', byKind]].map(([title, rows]) => (
+        {[['This month by method', byMethod], ['This month by plan or package', byPlan], ['New vs renewal', byKind]].map(([title, rows]) => (
           <section key={title as string} aria-label={title as string} className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
             <h2 className="text-sm font-bold uppercase tracking-wider text-white">{title as string}</h2>
             {!thisMonth ? <div className="mt-4 h-24 animate-pulse rounded-xl bg-ink-800" /> : (rows as ReturnType<typeof groupTotals>).length === 0 ? <p className="mt-4 text-sm text-ink-400">No payments this month yet.</p> : (

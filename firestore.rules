@@ -112,9 +112,29 @@ service cloud.firestore {
     // ── Payments — money actually received ────────────────────────────────────
     // Admins only. Each payment takes the next receipt number (counter moves by exactly one in
     // the same transaction), is never edited, and can only be voided — with a reason. No deletes.
+    // What a payment is for (absent on payments recorded before types existed)
+    function validPaymentType() {
+      return !('paymentType' in request.resource.data) || request.resource.data.paymentType in ['membership', 'pt', 'other'];
+    }
     match /payments/{paymentId} {
       allow read: if isAdmin();
+      // Imported history (the old member sheet): no receipt number is issued and the counter
+      // isn't touched; the id is the row's migration key, so the same row can't be imported twice.
       allow create: if isAdmin()
+        && request.resource.data.source == 'legacy_excel'
+        && paymentId.matches('lx_[A-Za-z0-9_-]+_p')
+        && request.resource.data.receiptNo == null && request.resource.data.receiptSeq == null
+        && request.resource.data.amountPaise is int && request.resource.data.amountPaise > 0
+        && request.resource.data.countedPaise == request.resource.data.amountPaise
+        && request.resource.data.status == 'paid'
+        && request.resource.data.method in ['cash', 'upi', 'card', 'bank_transfer', 'other', 'unknown']
+        && request.resource.data.paidOn is string && request.resource.data.paidOn.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.memberId is string
+        && request.resource.data.paymentType in ['membership', 'pt', 'other']
+        && request.resource.data.createdAt == request.time;
+      allow create: if isAdmin()
+        && request.resource.data.get('source', 'admin') == 'admin'
+        && validPaymentType()
         && request.resource.data.amountPaise is int && request.resource.data.amountPaise > 0
         && request.resource.data.countedPaise == request.resource.data.amountPaise
         && request.resource.data.status == 'paid'
@@ -137,6 +157,38 @@ service cloud.firestore {
         && request.resource.data.countedPaise == 0
         && request.resource.data.voidReason is string && request.resource.data.voidReason.size() > 2;
       allow delete: if false;
+    }
+
+    // ── Membership periods and PT packages (history; never deleted) ───────────
+    // Admins only; a trainer can read the PT packages assigned to them. PT is its own record —
+    // it never changes the gym membership.
+    match /memberships/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.memberId is string
+        && request.resource.data.startDate is string && request.resource.data.endDate is string
+        && request.resource.data.source in ['payment', 'legacy_excel']
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAdmin() && !changed().hasAny(['memberId', 'source', 'legacy', 'createdAt', 'paymentId']);
+      allow delete: if false;
+    }
+    match /ptPackages/{id} {
+      allow read: if isAdmin() || (isTrainer() && resource.data.trainerId == myRole().trainerId);
+      allow create: if isAdmin()
+        && request.resource.data.memberId is string
+        && request.resource.data.packageName is string && request.resource.data.packageName.size() > 0
+        && request.resource.data.source in ['payment', 'legacy_excel']
+        && (request.resource.data.sessionsIncluded == null || (request.resource.data.sessionsIncluded is int && request.resource.data.sessionsIncluded > 0))
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAdmin() && !changed().hasAny(['memberId', 'source', 'legacy', 'createdAt', 'paymentId']);
+      allow delete: if false;
+    }
+
+    // Import history (counts only): admins, append-only
+    match /imports/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
     }
 
     // Receipt numbering: only ever moves up by one

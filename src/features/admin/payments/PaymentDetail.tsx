@@ -6,7 +6,7 @@ import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { SITE, whatsappLink } from '@/lib/site';
-import { METHOD_LABEL, getPayment, rupees, voidPayment, type Payment } from '@/lib/admin/payments';
+import { METHOD_LABEL, getPayment, paymentFor, rupees, voidPayment, type Payment } from '@/lib/admin/payments';
 import { phoneKey } from '@/lib/admin/phone';
 import { AdminShell, Empty, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
@@ -30,7 +30,7 @@ const PaymentDetail = () => {
   if (p === null) return <AdminShell title="Payment not found" nav="payments" area="Money" back={{ to: '/admin/payments', label: 'Payments' }}><Empty title="No such payment" body="Check the link or search by receipt number." /></AdminShell>;
 
   const share = whatsappLink(
-    `Payment received — ${SITE.name}\nReceipt ${p.receiptNo} · ${fmtDate(p.paidOn)}\n${p.memberName}: ${rupees(p.amountPaise)} (${METHOD_LABEL[p.method]}${p.reference ? ` · Ref ${p.reference}` : ''})${p.planName ? `\n${p.planName} membership${p.coversTo ? ` until ${fmtDate(p.coversTo)}` : ''}` : ''}\nThank you!`,
+    `Payment received — ${SITE.name}\nReceipt ${p.receiptNo} · ${fmtDate(p.paidOn)}\n${p.memberName}: ${rupees(p.amountPaise)} (${METHOD_LABEL[p.method]}${p.reference ? ` · Ref ${p.reference}` : ''})\n${paymentFor(p)}${p.coversTo ? ` until ${fmtDate(p.coversTo)}` : ''}\nThank you!`,
     `91${phoneKey(p.memberPhone)}`,
   );
 
@@ -43,11 +43,11 @@ const PaymentDetail = () => {
   };
 
   return (
-    <AdminShell title={p.receiptNo} nav="payments" area="Money" back={{ to: '/admin/payments', label: 'Back to payments' }}
+    <AdminShell title={p.receiptNo ?? 'Imported payment'} nav="payments" area="Money" back={{ to: '/admin/payments', label: 'Back to payments' }}
       actions={
         <div className="flex flex-wrap gap-2 print:hidden">
           <Button onClick={() => window.print()}><Printer /> Print / save PDF</Button>
-          {p.status === 'paid' && <Button asChild variant="outline"><a href={share} target="_blank" rel="noopener noreferrer"><MessageCircle /> Share on WhatsApp</a></Button>}
+          {p.status === 'paid' && p.receiptNo && <Button asChild variant="outline"><a href={share} target="_blank" rel="noopener noreferrer"><MessageCircle /> Share on WhatsApp</a></Button>}
         </div>
       }>
       {params.get('new') && p.status === 'paid' && (
@@ -66,7 +66,7 @@ const PaymentDetail = () => {
               {p.status === 'void' && <div className="flex justify-between gap-3"><dt className="text-ink-400">Voided</dt><dd className="text-right text-white">{fmtTime(p.voidedAt)}<br /><span className="text-xs text-ink-500">{p.voidedBy} · {p.voidReason}</span></dd></div>}
             </dl>
           </div>
-          {p.status === 'paid' && (
+          {p.status === 'paid' && p.receiptNo && (
             <div className="rounded-2xl border border-white/[0.08] p-5 text-sm text-ink-400">
               <p className="font-semibold text-white">Sending the receipt</p>
               <p className="mt-1">“Share on WhatsApp” sends the receipt details as a message to the member’s number. For the PDF, choose “Print / save PDF” → Save as PDF, then attach the file in WhatsApp or email.</p>
@@ -85,7 +85,7 @@ const PaymentDetail = () => {
       <AlertDialog open={voidOpen} onOpenChange={(o) => !busy && setVoidOpen(o)}>
         <AlertDialogContent className="border-white/10 bg-ink-900">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-2xl uppercase text-white">Void {p.receiptNo}?</AlertDialogTitle>
+            <AlertDialogTitle className="font-display text-2xl uppercase text-white">Void {p.receiptNo ?? 'this imported payment'}?</AlertDialogTitle>
             <AlertDialogDescription className="text-ink-300">{rupees(p.amountPaise)} from {p.memberName} will no longer count towards revenue. The receipt stays on record, marked void.</AlertDialogDescription>
           </AlertDialogHeader>
           <label className="block"><span className="text-sm text-white">Reason</span>

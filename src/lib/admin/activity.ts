@@ -1,6 +1,6 @@
 // Gym-wide admin activity log (append-only; the rules forbid edits and deletes).
 // Event-specific actions keep their own per-event log (events/{id}/activity).
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, writeBatch, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, writeBatch, type DocumentData, type DocumentReference, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export interface AdminActor { uid: string; email: string }
@@ -9,7 +9,8 @@ export interface ActivityEntry {
   refType: string; refId: string | null; meta: Record<string, string | number | boolean | null>; at?: Timestamp;
 }
 
-type Batch = ReturnType<typeof writeBatch>;
+/** A batch or a transaction — anything that can stage a write. */
+type Batch = { set: (ref: DocumentReference, data: DocumentData) => unknown };
 
 /** Add a log entry to a batch so it commits atomically with the change it describes. */
 export function logTo(b: Batch, actor: AdminActor, action: string, refType: string, refId: string | null, meta: ActivityEntry['meta'] = {}) {

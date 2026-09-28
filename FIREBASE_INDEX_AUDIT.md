@@ -87,3 +87,20 @@ answer **No**.
   - The Reports → Members CSV export downloads every member. That's an explicit, on-demand
     export, so it stays.
   - Plans, team members and offers are read whole, but they're small, public collections.
+
+## Legacy import, PT and membership history (added 2026-09-28)
+
+**No new composite indexes are needed.**
+
+| Query | Collection | Why no index |
+|---|---|---|
+| `memberId ==` (member profile: membership history) | `memberships` | Equality only; sorted in the browser |
+| `memberId ==` (member profile: PT) | `ptPackages` | Equality only; sorted in the browser |
+| `trainerId ==` (trainer's own PT packages, allowed by the rules) | `ptPackages` | Equality only |
+| `legacy.key in [...]` (≤30 per query: "already imported?") | `payments` | Equality on a nested field; single-field index is automatic |
+| Whole collection (import history; one small document per import) | `imports` | No filter |
+| `activeUntil >=` 90 days ago and `< today` (dues and overdue count) | `members` | Range on a single field |
+| `paidOn` range (today's and last month's payments, for the membership/PT/other split) | `payments` | Existing single-field range, `limit(500)` |
+
+The membership / PT / other revenue split is added up in the browser from those bounded lists.
+It isn't a per-type `sum()`, which would need a new `(paymentType, paidOn, countedPaise)` index.

@@ -52,7 +52,7 @@ const AdminSearch = () => {
     if (term.length < 2) { setMembers([]); return; }
     const t = setTimeout(() => {
       // "CR-R-0012" → that receipt; anything else → members
-      if (/^cr-r-\d+$/i.test(term)) paymentByReceipt(term).then((p) => setMembers(p ? [{ group: 'Payments', id: p.id, title: p.receiptNo, sub: `${p.memberName} · ${rupees(p.amountPaise)}`, to: `/admin/payments/${p.id}` }] : [])).catch(() => setMembers([]));
+      if (/^cr-r-\d+$/i.test(term)) paymentByReceipt(term).then((p) => setMembers(p ? [{ group: 'Payments', id: p.id, title: p.receiptNo ?? 'Imported payment', sub: `${p.memberName} · ${rupees(p.amountPaise)}`, to: `/admin/payments/${p.id}` }] : [])).catch(() => setMembers([]));
       else searchMembers(term).then((ms) => setMembers(ms.map((m) => ({ group: 'Members', id: m.id, title: m.name, sub: 'Member', to: `/admin/members/${m.id}` })))).catch(() => setMembers([]));
     }, 250);
     return () => clearTimeout(t);
