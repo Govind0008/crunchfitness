@@ -7,6 +7,7 @@ import { SITE } from '@/lib/site';
 import Footer from '../components/Footer';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import Seo from '@/components/site/Seo';
 
 // ─── Google Sheets integration via Google Apps Script ─────────────────────────
 //
@@ -114,6 +115,7 @@ const Contact = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo title="Contact & Visit | Crunch Fitness Club, Wakad, Pune" description="Visit Crunch Fitness Club at Palash Plus, opposite Euro School, Wakad, Pune. Call +91 84830 48363, message us on WhatsApp or book a free facility tour." />
       <main>
         <PageHeader
           eyebrow="Contact & visit"

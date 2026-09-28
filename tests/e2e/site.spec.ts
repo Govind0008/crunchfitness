@@ -318,3 +318,110 @@ test.describe('cinematic chapters', () => {
     expect(state).toEqual({ finalSet: 'none', hiddenFrames: 0, filmPinned: false, filmShifted: false });
   });
 });
+
+test.describe('explore and choose', () => {
+  test('facility explorer switches areas by click and arrow keys', async ({ page }) => {
+    await page.goto('/');
+    const list = page.getByRole('tablist', { name: 'Areas of the gym' });
+    await list.scrollIntoViewIfNeeded();
+    await expect(list.getByRole('tab', { name: 'Strength' })).toHaveAttribute('aria-selected', 'true');
+
+    await list.getByRole('tab', { name: 'Cardio' }).click();
+    const panel = page.getByRole('tabpanel');
+    await expect(panel.locator('img').first()).toHaveAttribute('alt', /cardio zone/i);
+
+    // Keyboard: arrows move between areas (roving focus)
+    await list.getByRole('tab', { name: 'Cardio' }).focus();
+    await page.keyboard.press(isMobile(page) ? 'ArrowRight' : 'ArrowDown');
+    await expect(list.getByRole('tab', { name: 'Studio' })).toHaveAttribute('aria-selected', 'true');
+
+    // Photo switcher within an area
+    await list.getByRole('tab', { name: 'Strength' }).click();
+    await page.getByRole('button', { name: /Show photo 2 of 3/ }).click();
+    await expect(page.getByRole('button', { name: /Show photo 2 of 3/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('tabpanel').locator('img').first()).toHaveAttribute('alt', /free-weights/);
+  });
+
+  test('"Find your plan" lands on the finder and recommends real plans', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('link', { name: 'Find your plan' }).click();
+    await expect(page).toHaveURL(/\/plans#finder$/);
+    const finder = page.locator('#finder');
+    await expect(finder).toBeInViewport();
+
+    // Both questions are built from plan data: goal options = plans' "ideal for", lengths = durations
+    const lengths = finder.locator('fieldset').last().getByRole('button');
+    await lengths.last().click();
+    await finder.locator('fieldset').first().getByRole('button').last().click();
+    const result = finder.locator('article');
+    await expect(result.first()).toBeVisible();
+    const chosen = (await lengths.last().textContent())!.trim();
+    await expect(result.filter({ hasText: chosen }).first()).toBeVisible();
+
+    // A recommended plan's CTA still carries the plan to the enquiry form
+    await result.first().getByRole('button').click();
+    await expect(page).toHaveURL('/contact');
+    expect(await page.getByLabel('Interested in').inputValue()).not.toBe('');
+  });
+});
+
+test.describe('continuity', () => {
+  test('chapter rail appears after the hero and follows the chapters', async ({ page }) => {
+    test.skip(isMobile(page), 'wide screens only');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    const rail = page.getByRole('navigation', { name: 'Homepage chapters' });
+    await expect(rail).toHaveAttribute('data-state', 'off');
+
+    await page.locator('#reviews').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await expect(rail).toHaveAttribute('data-state', 'on');
+    await expect(rail.locator('[aria-current="step"]')).toContainText('03');
+
+    await rail.getByRole('link', { name: /04/ }).click();
+    await expect(page).toHaveURL(/#membership$/);
+    await expect(rail.locator('[aria-current="step"]')).toContainText('04');
+  });
+
+  test('film strip spotlights the set in the gate', async ({ page }) => {
+    test.skip(isMobile(page), 'the pinned strip is a desktop experience');
+    await page.goto('/');
+    const section = page.locator('#method');
+    const { top, height } = await section.evaluate((el) => ({ top: el.getBoundingClientRect().top + scrollY, height: el.getBoundingClientRect().height }));
+    await page.evaluate((y) => scrollTo(0, y), top + (height - 900) * 0.4);
+    await expect(section.locator('.film-frame[data-state="active"]')).toHaveCount(1);
+    await expect(section.locator('.film-frame[data-state="rest"]')).toHaveCount(3);
+  });
+});
+
+test.describe('seo', () => {
+  test('each route has one canonical, one description and one h1', async ({ page }) => {
+    for (const route of ['/', '/plans', '/team', '/gallery', '/contact', '/about-us', '/founders', '/blog']) {
+      await page.goto(route);
+      await expect(page.locator('h1').first()).toBeVisible();
+      await expect(page.locator('link[rel="canonical"]')).toHaveCount(1);
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://www.crunchfitness.fitness${route === '/' ? '/' : route}`);
+      await expect(page.locator('meta[name="description"]')).toHaveCount(1);
+      await expect(page.locator('h1')).toHaveCount(1);
+    }
+  });
+
+  test('structured data is valid and contains no self-declared rating', async ({ page }) => {
+    await page.goto('/');
+    const raw = await page.locator('script[type="application/ld+json"]').first().textContent();
+    const data = JSON.parse(raw!);
+    expect(data['@type']).toBe('HealthClub');
+    expect(data.address.postalCode).toBe('411050');
+    expect(data.telephone).toBe('+91-8483048363');
+    expect(data.aggregateRating).toBeUndefined();
+  });
+
+  test('404 is noindex; robots and sitemap are served', async ({ page, request }) => {
+    await page.goto('/definitely-not-a-page');
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+    const robots = await (await request.get('/robots.txt')).text();
+    expect(robots).toContain('Sitemap: https://www.crunchfitness.fitness/sitemap.xml');
+    expect(robots).toContain('Disallow: /admin/');
+    const sitemap = await (await request.get('/sitemap.xml')).text();
+    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/plans</loc>');
+  });
+});

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { db } from '../lib/firebase';
+import { auth } from '../lib/firebase-auth';
 import { Lock, Mail, Eye, EyeOff, Dumbbell } from 'lucide-react';
 
 const TrainerLogin = () => {

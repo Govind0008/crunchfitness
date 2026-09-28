@@ -48,7 +48,7 @@ const TestimonialsSection = () => {
   const pad = (n: number) => String(n).padStart(2, '0');
 
   return (
-    <Section aria-labelledby="reviews-heading">
+    <Section id="reviews" aria-labelledby="reviews-heading">
       <ChapterMark index="03" word="Transform" />
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         {/* Summary — the real Google rating, set large */}

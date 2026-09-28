@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/site/Seo';
 
 const NotFound = () => {
   const location = useLocation();
@@ -12,6 +13,8 @@ const NotFound = () => {
   }, [location.pathname]);
 
   return (
+    <>
+    <Seo title="Page not found | Crunch Fitness Club" description="This page doesn't exist. Head back to Crunch Fitness Club, Wakad, Pune." noindex />
     <main className="container grid min-h-[calc(100svh-var(--page-top))] items-center gap-12 py-16 lg:grid-cols-2">
       <div className="animate-fade-up">
         <p className="eyebrow">Error 404</p>
@@ -32,6 +35,7 @@ const NotFound = () => {
         className="hidden aspect-[4/5] w-full max-w-md justify-self-end rounded-2xl object-cover opacity-80 lg:block"
       />
     </main>
+    </>
   );
 };
 

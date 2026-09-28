@@ -1,14 +1,9 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
 User-agent: *
 Allow: /
+# Staff and member portals are behind login and have no public content
+Disallow: /admin/
+Disallow: /trainer/
+Disallow: /client/
+Disallow: /checkin
+
+Sitemap: https://www.crunchfitness.fitness/sitemap.xml

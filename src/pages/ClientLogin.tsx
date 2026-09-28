@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { db } from '../lib/firebase';
+import { auth } from '../lib/firebase-auth';
 import { Lock, Mail, Eye, EyeOff, UserCheck } from 'lucide-react';
 
 const ClientLogin = () => {

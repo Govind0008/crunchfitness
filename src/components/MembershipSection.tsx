@@ -22,12 +22,15 @@ const MembershipSection = () => {
         title={<>Choose your <span className="text-brand-400">commitment</span></>}
         lede="Every plan includes the full gym floor, coach guidance and a free facility tour."
         action={
-          <Link
-            to="/plans"
-            className="link-drive inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-brand-400 transition-colors"
-          >
-            Compare all benefits <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
+          <div className="flex flex-col gap-3 md:items-end">
+            <Link
+              to="/plans#finder"
+              className="link-drive inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-brand-400 transition-colors"
+            >
+              Find your plan <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+            <Link to="/plans" className="text-sm text-ink-400 transition-colors hover:text-white">Compare all benefits</Link>
+          </div>
         }
       />
 

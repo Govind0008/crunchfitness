@@ -6,7 +6,8 @@ import {
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, getAuth } from 'firebase/auth';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { db, auth, firebaseConfig } from '../lib/firebase';
+import { db, firebaseConfig } from '../lib/firebase';
+import { auth } from '../lib/firebase-auth';
 import { useAuth } from '../hooks/useAuth';
 import {
   Plus, Trash2, LogOut, Eye, EyeOff, Upload,

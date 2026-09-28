@@ -6,6 +6,7 @@ import Lightbox, { type LightboxImage } from '@/components/site/Lightbox';
 import CtaBand from '@/components/site/CtaBand';
 import { cn } from '@/lib/utils';
 import { TickRail } from '@/components/motion';
+import Seo from '@/components/site/Seo';
 
 type Category = 'Equipment' | 'Facilities' | 'Training' | 'Powerlifting';
 
@@ -87,6 +88,7 @@ const Gallery = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo title="Gym Photos & Facilities | Crunch Fitness Club, Wakad" description="Inside Crunch Fitness Club, Wakad, Pune: the strength floor, powerlifting platform, cardio zone, group studio and coaching in action." image="/images/floor-3-1600.webp" />
       <main>
         <PageHeader
           eyebrow="Gallery"

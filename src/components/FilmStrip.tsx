@@ -127,6 +127,8 @@ const FilmStrip = () => {
       g.frames.forEach((el, i) => {
         const off = (g.centers[i] - x - vw / 2) / vw;
         el.style.setProperty('--fx', Math.max(-1.2, Math.min(1.2, off)).toFixed(3));
+        // Spotlight: the frame in the gate is lit, the rest of the strip sits back
+        el.dataset.state = i === a ? 'active' : 'rest';
       });
       setActive((cur) => (cur === a ? cur : a));
     };
@@ -138,6 +140,7 @@ const FilmStrip = () => {
       if (!g.pinned) {
         section.style.height = '';
         track.style.transform = '';
+        track.querySelectorAll<HTMLElement>('.film-frame').forEach((el) => delete el.dataset.state);
         return;
       }
       const vh = pin.offsetHeight;
@@ -192,8 +195,15 @@ const FilmStrip = () => {
           <span className="hud text-white">
             Set <span key={active} className="inline-block animate-[rise-in_0.5s_var(--ease-drive)_both] text-brand-400">{pad(active + 1)}</span>
             <span className="text-ink-500">/ {pad(FRAMES.length)}</span>
+            <span className="h-px w-5 bg-white/25" />
+            <span key={`w-${active}`} className="inline-block min-w-[7.5rem] animate-[rise-in_0.5s_var(--ease-drive)_both]">{FRAMES[active].word}</span>
           </span>
         </div>
+
+        {/* Title card behind the strip — the set's word, set huge in outline, changing with the set */}
+        <p className="film-title pointer-events-none absolute inset-x-0 bottom-[-0.14em] hidden overflow-hidden" aria-hidden>
+          <span key={active} className="film-title-word block whitespace-nowrap">{FRAMES[active].word}</span>
+        </p>
 
         <ol ref={trackRef} className="film-track" onFocus={onFocus}>
           {/* Intro card — the chapter title */}

@@ -6,6 +6,7 @@ import { db } from '../lib/firebase';
 import { Clock, Calendar, ArrowLeft, Share2 } from 'lucide-react';
 import Footer from '../components/Footer';
 import { Button } from '@/components/ui/button';
+import Seo from '@/components/site/Seo';
 
 interface BlogPost {
   id: string;
@@ -76,6 +77,7 @@ const BlogPost = () => {
   if (notFound || !post) {
     return (
       <div className="container flex min-h-[60vh] flex-col items-center justify-center gap-6 py-20 text-center">
+        <Seo title="Article not found | The Crunch Journal" description="This article may have been moved or unpublished." noindex />
         <h1 className="font-display text-display-md font-bold uppercase text-white">Article not found</h1>
         <p className="text-ink-400">It may have been moved or unpublished.</p>
         <Button asChild variant="outline"><Link to="/blog"><ArrowLeft /> Back to the journal</Link></Button>
@@ -89,6 +91,12 @@ const BlogPost = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo
+        title={`${post.title} | The Crunch Journal`}
+        description={post.excerpt || `${post.title} — from the coaches at Crunch Fitness Club, Wakad, Pune.`}
+        image={post.coverImage || undefined}
+        type="article"
+      />
       <main>
         <article>
           <header className="container max-w-3xl pt-10 md:pt-16">

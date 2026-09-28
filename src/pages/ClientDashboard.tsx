@@ -5,7 +5,8 @@ import {
   addDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
+import { db } from '../lib/firebase';
+import { auth } from '../lib/firebase-auth';
 import { useRole } from '../hooks/useRole';
 import {
   LogOut, Dumbbell, Calendar, Clock,
