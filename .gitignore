@@ -31,3 +31,6 @@ dist-ssr
 # Playwright
 test-results/
 playwright-report/
+
+# Firebase emulator logs
+*-debug.log

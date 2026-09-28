@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { name: 'Team',    href: '/team' },
   { name: 'Founder', href: '/founders' },
   { name: 'Gallery', href: '/gallery' },
+  { name: 'Events',  href: '/events' },
   { name: 'Blog',    href: '/blog' },
   { name: 'Plans',   href: '/plans' },
   { name: 'Contact', href: '/contact' },

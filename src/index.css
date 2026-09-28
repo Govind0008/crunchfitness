@@ -263,6 +263,17 @@
 
 .finder-result { animation: rise-in 600ms var(--ease-drive) both; }
 
+/* ── Events ──────────────────────────────────────────────────────────────────────
+   LIVE is a broadcast signal: one slow pulse. Leaderboard rows glide to their new rank
+   (transform only). A confirmed registration lands like the Final Set. */
+@keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+.live-dot { animation: live-pulse 1.6s ease-in-out infinite; }
+.board-row { transition: transform 700ms var(--ease-drive); }
+@keyframes board-in { from { opacity: 0; } to { opacity: 1; } }
+.board-row { animation: board-in 500ms var(--ease-snap) both; }
+@keyframes register-land { 0% { clip-path: inset(calc(50% - 1px) 100% calc(50% - 1px) 0 round 2px); } 45% { clip-path: inset(calc(50% - 1px) 0 calc(50% - 1px) 0 round 2px); } 100% { clip-path: inset(0 0 0 0 round 24px); } }
+.register-done { animation: register-land 1.1s var(--ease-drive) both; }
+
 /* Chapter rail — fades in after the hero; only the current chapter shows its name */
 .chapter-rail { transition: opacity 500ms var(--ease-snap), transform 700ms var(--ease-drive); }
 .chapter-rail[data-state='off'] { opacity: 0; pointer-events: none; transform: translate3d(-12px, -50%, 0); }
@@ -463,7 +474,9 @@ html { scroll-padding-top: calc(var(--page-top) + 1rem); }
   .hero-floor, .hero-wipe-x, .hero-fade,
   .menu-curtain, .menu-curtain .menu-link, .page-transition { animation: none !important; }
   .route-bar { display: none; }
-  .review-quote, .explorer-cut, .explorer-copy, .film-title-word, .finder-result { animation: none !important; }
+  .board-row { transition: none !important; }
+  .live-dot { animation: none !important; }
+  .review-quote, .explorer-cut, .explorer-copy, .film-title-word, .finder-result, .register-done, .board-row { animation: none !important; }
   .review-timer { animation: none !important; transform: none; }
   .animate-marquee { animation: none; }
 }

@@ -58,6 +58,10 @@ const ClientLogin      = lazy(() => import("./pages/ClientLogin"));
 const ClientArea       = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.ClientArea })));
 const CheckIn          = lazy(() => import("./pages/CheckIn"));
 const NotFound         = lazy(() => import("./pages/NotFound"));
+const EventsPage       = lazy(() => import("./features/events/public/EventsPage"));
+const EventPage        = lazy(() => import("./features/events/public/EventPage"));
+const PassPage         = lazy(() => import("./features/events/public/PassPage"));
+const EventsAdmin      = lazy(() => import("./features/events/admin"));
 
 // Minimal dark spinner shown while a lazy chunk is loading
 const PageLoader = () => (
@@ -89,7 +93,11 @@ const App = () => (
               <Route path="/contact"          element={<Contact />} />
               <Route path="/blog"             element={<Blog />} />
               <Route path="/blog/:slug"       element={<BlogPost />} />
+              <Route path="/events"           element={<EventsPage />} />
+              <Route path="/events/:slug"     element={<EventPage />} />
+              <Route path="/events/:slug/pass/:passId" element={<PassPage />} />
               <Route path="/admin/login"      element={<AdminLogin />} />
+              <Route path="/admin/events/*"   element={<EventsAdmin />} />
               <Route path="/admin/dashboard"  element={<AdminArea />} />
               <Route path="/trainer/login"    element={<TrainerLogin />} />
               <Route path="/trainer/dashboard" element={<TrainerArea />} />

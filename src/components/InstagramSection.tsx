@@ -29,8 +29,33 @@ interface Tile {
   isVideo: boolean;
 }
 
+/** Instagram's official embed for real posts; its script loads only when there's something to embed. */
+const InstagramEmbeds = ({ urls }: { urls: string[] }) => {
+  useEffect(() => {
+    const w = window as unknown as { instgrm?: { Embeds: { process: () => void } } };
+    if (w.instgrm) { w.instgrm.Embeds.process(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://www.instagram.com/embed.js';
+    s.async = true;
+    document.body.appendChild(s);
+  }, [urls]);
+  return (
+    <ul className="grid gap-4 md:grid-cols-3">
+      {urls.map((url) => (
+        <li key={url} className="overflow-hidden rounded-xl bg-white">
+          <blockquote className="instagram-media" data-instgrm-permalink={url} data-instgrm-version="14" style={{ margin: 0, width: '100%', minWidth: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="block p-6 text-sm text-ink-950">View this post on Instagram</a>
+          </blockquote>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
 const InstagramSection: React.FC = () => {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
+  // Fallback chain: live feed → staff-picked posts (official embeds) → gym photos
+  const [highlights, setHighlights] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +65,11 @@ const InstagramSection: React.FC = () => {
         if (!cancelled && Array.isArray(data.posts) && data.posts.length > 0) setPosts(data.posts);
       })
       .catch(() => {
-        // Live feed unavailable — the fallback mosaic below covers this.
+        // Live feed unavailable — try the posts staff picked in the events admin
+        import('@/lib/socialHighlights')
+          .then(({ getPublicHighlights }) => getPublicHighlights())
+          .then((h) => { if (!cancelled) setHighlights(h.map((x) => x.url).slice(0, 3)); })
+          .catch(() => { /* photo mosaic below covers this */ });
       });
     return () => { cancelled = true; };
   }, []);
@@ -73,6 +102,7 @@ const InstagramSection: React.FC = () => {
         }
       />
 
+      {!posts && highlights.length > 0 ? <InstagramEmbeds urls={highlights} /> : (
       <ul className="focus-grid grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-6">
         {tiles.map((tile, i) => (
           <li key={tile.key} className="m-pop" style={{ '--i': i, '--d': 150 } as React.CSSProperties}>
@@ -96,6 +126,7 @@ const InstagramSection: React.FC = () => {
           </li>
         ))}
       </ul>
+      )}
     </Section>
   );
 };

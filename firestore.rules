@@ -1,0 +1,215 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Crunch Fitness — complete Firestore rules (the live rules merged with Events).
+// Publish in Firebase console → Firestore → Rules, or `firebase deploy --only firestore:rules`.
+//
+// Roles live in userRoles/{uid}.role: "admin" | "trainer" | "client".
+// An account with no role document has no staff rights.
+// ─────────────────────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function myRole() { return get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data; }
+    function hasRole() { return signedIn() && exists(/databases/$(database)/documents/userRoles/$(request.auth.uid)); }
+    function isAdmin() { return hasRole() && myRole().role == 'admin'; }
+    function isTrainer() { return hasRole() && myRole().role == 'trainer'; }
+    function isTrainerOf(trainerId) { return isTrainer() && myRole().trainerId == trainerId; }
+    function isClientOf(trainerId) { return hasRole() && myRole().role == 'client' && myRole().trainerId == trainerId; }
+    function eventAt(eventId) { return get(/databases/$(database)/documents/events/$(eventId)).data; }
+    function eventAfter(eventId) { return getAfter(/databases/$(database)/documents/events/$(eventId)).data; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    // True while an admin deletes an event: its records may only be removed together with it
+    function eventGone(eventId) { return !existsAfter(/databases/$(database)/documents/events/$(eventId)); }
+
+    // ── Public site content: anyone reads, admins edit ──────────────────────
+    match /posts/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /teamMembers/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /offers/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /plans/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Enquiries hold customers' phone numbers: anyone can submit, only admins read/manage
+    match /enquiries/{doc} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Duty roster — trainers read theirs, admins manage
+    match /duties/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // Class sessions — public read (needed for /checkin PIN lookup), admins manage
+    match /classSessions/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Attendance — anyone can create (member self check-in), staff read/manage
+    match /attendance/{doc} {
+      allow create: if true;
+      allow read, update, delete: if signedIn();
+    }
+
+    // ── Trainer portal ────────────────────────────────────────────────────────
+    // Trainer: full access to their own data. Client: read their trainer's data and
+    // send session requests (ClientDashboard adds to sessionRequests).
+    match /trainerData/{trainerId}/{sub}/{docId} {
+      allow read, write: if isTrainerOf(trainerId);
+      allow read: if isClientOf(trainerId);
+      allow create: if isClientOf(trainerId) && sub == 'sessionRequests';
+    }
+
+    // Progress logs: the trainer, or the client the log belongs to
+    match /trainerData/{trainerId}/clients/{clientId}/progressLogs/{logId} {
+      allow read, write: if isTrainerOf(trainerId);
+      allow read, write: if isClientOf(trainerId) && myRole().clientId == clientId;
+    }
+
+    // Conversations: a trainer with their clients; a client with their trainer
+    match /conversations/{convId}/messages/{msgId} {
+      allow read, write: if hasRole() && (
+        (myRole().role == 'trainer' && convId.matches(myRole().trainerId + '_.*'))
+        || (myRole().role == 'client' && convId == myRole().trainerId + '_' + myRole().clientId)
+      );
+    }
+
+    // ── Roles ─────────────────────────────────────────────────────────────────
+    // Everyone reads their own. Admins manage all roles. Trainers create, list and
+    // remove logins for their own clients only — nobody can give themselves a role.
+    match /userRoles/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin()
+        || (isTrainer() && resource.data.role == 'client' && resource.data.trainerId == myRole().trainerId));
+      allow create: if isAdmin()
+        || (isTrainer() && request.resource.data.role == 'client' && request.resource.data.trainerId == myRole().trainerId);
+      allow update: if isAdmin();
+      allow delete: if isAdmin()
+        || (isTrainer() && resource.data.role == 'client' && resource.data.trainerId == myRole().trainerId);
+    }
+
+    // ── Instagram highlights (staff-picked real posts, shown as official embeds) ──
+    match /socialHighlights/{id} {
+      allow read: if resource.data.visible == true || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.url is string
+        && request.resource.data.url.matches('https://www\\.instagram\\.com/(p|reel)/[A-Za-z0-9_-]+/?')
+        && request.resource.data.visible is bool;
+      allow delete: if isAdmin();
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+    // The lifecycle an admin may move an event through (plus a few safe steps back).
+    function allowedMove(from, to) {
+      return from == to
+        || [from, to] in [
+          ['draft', 'registration_open'],
+          ['registration_open', 'registration_closed'],
+          ['registration_closed', 'registration_open'],
+          ['registration_open', 'check_in'],
+          ['registration_closed', 'check_in'],
+          ['check_in', 'live'],
+          ['live', 'results_pending'],
+          ['results_pending', 'live'],
+          ['results_pending', 'results_published'],
+          ['results_published', 'results_pending'],
+          ['results_published', 'archived'],
+          ['archived', 'results_published']
+        ];
+    }
+    function validStatus(s) {
+      return s in ['draft', 'registration_open', 'registration_closed', 'check_in', 'live', 'results_pending', 'results_published', 'archived'];
+    }
+
+    match /events/{eventId} {
+      allow read: if isAdmin() || resource.data.status != 'draft';
+
+      allow create: if isAdmin()
+        && request.resource.data.status == 'draft'
+        && request.resource.data.registrationCount == 0
+        && request.resource.data.title is string && request.resource.data.title.size() > 0;
+
+      allow update: if (isAdmin()
+          && validStatus(request.resource.data.status)
+          && allowedMove(resource.data.status, request.resource.data.status)
+          // registrationCount only ever moves through registrations, never by hand
+          && request.resource.data.registrationCount == resource.data.registrationCount)
+        // Public registration: count goes up by exactly one, in the same write as the new registration
+        || (changed().hasOnly(['registrationCount'])
+          && resource.data.status == 'registration_open'
+          && resource.data.registrationEnabled == true
+          && request.resource.data.registrationCount == resource.data.registrationCount + 1
+          && (resource.data.capacity == null || request.resource.data.registrationCount <= resource.data.capacity)
+          && existsAfter(/databases/$(database)/documents/events/$(eventId)/registrations/$(string(request.resource.data.registrationCount))));
+
+      // Deleting an event removes everything under it (same batch, or after it's gone — see eventGone)
+      allow delete: if isAdmin();
+
+      // Registrations hold contact details: admins only, except the participant's own create.
+      match /registrations/{regId} {
+        allow read, update: if isAdmin();
+        allow create: if regId == string(eventAfter(eventId).registrationCount)
+          && eventAt(eventId).status == 'registration_open'
+          && eventAt(eventId).registrationCount + 1 == eventAfter(eventId).registrationCount
+          && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'categoryId', 'number', 'status', 'showName', 'passId', 'createdAt'])
+          && request.resource.data.status == 'registered'
+          && request.resource.data.number == eventAfter(eventId).registrationCount
+          && request.resource.data.name is string && request.resource.data.name.size() > 1 && request.resource.data.name.size() <= 80
+          && request.resource.data.phone is string && request.resource.data.phone.size() >= 8 && request.resource.data.phone.size() <= 20
+          && request.resource.data.email is string && request.resource.data.email.size() <= 120
+          && request.resource.data.showName is bool
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isAdmin() && eventGone(eventId);
+      }
+
+      // The participant's pass: no contact details, readable only by its unguessable id.
+      match /passes/{passId} {
+        allow get: if true;
+        allow list: if isAdmin();
+        allow create: if existsAfter(/databases/$(database)/documents/events/$(eventId)/registrations/$(request.resource.data.registrationId))
+          && getAfter(/databases/$(database)/documents/events/$(eventId)/registrations/$(request.resource.data.registrationId)).data.passId == passId
+          && request.resource.data.keys().hasOnly(['registrationId', 'number', 'name', 'categoryId', 'createdAt'])
+          && request.resource.data.number == eventAfter(eventId).registrationCount
+          && request.resource.data.createdAt == request.time;
+        allow update: if isAdmin();
+        allow delete: if isAdmin() && eventGone(eventId);
+      }
+
+      // Results: public during LIVE only when flagged for the leaderboard; all public once published.
+      match /results/{resultId} {
+        allow read: if isAdmin()
+          || (eventAt(eventId).status == 'live' && resource.data.public == true)
+          || eventAt(eventId).status in ['results_published', 'archived'];
+        allow write: if isAdmin() && !(eventAt(eventId).status in ['draft', 'archived']);
+        allow delete: if isAdmin() && eventGone(eventId);
+      }
+
+      // Media: public only when an admin has made it visible.
+      match /media/{mediaId} {
+        allow read: if isAdmin() || (resource.data.visible == true && eventAt(eventId).status != 'draft');
+        allow create, update, delete: if isAdmin();
+      }
+
+      // Activity log: append-only, admins only.
+      match /activity/{activityId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && request.resource.data.at == request.time && request.resource.data.actorUid == request.auth.uid;
+        allow update: if false;
+        allow delete: if isAdmin() && eventGone(eventId);
+      }
+    }
+  }
+}
