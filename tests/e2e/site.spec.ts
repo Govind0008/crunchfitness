@@ -242,22 +242,47 @@ test.describe('motion system', () => {
 });
 
 test.describe('cinematic chapters', () => {
-  test('training journey advances with scroll', async ({ page }) => {
+  test('01 Build film strip runs sideways on desktop and stacks on mobile', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('#hero-heading')).toBeVisible();
-    for (const i of [0, 1, 2]) {
-      await page.evaluate((i) => {
-        const s = document.querySelector(`[data-step="${i}"]`)!; const r = s.getBoundingClientRect();
-        window.scrollTo(0, scrollY + r.top + r.height / 2 - innerHeight / 2);
-      }, i);
-      await expect(page.locator('[aria-current="step"]')).toHaveAttribute('data-step', String(i));
+    const section = page.locator('#method');
+    const track = section.locator('.film-track');
+    await expect(section.locator('.film-frame')).toHaveCount(4);
+
+    if (isMobile(page)) {
+      // Vertical story: frames stack, nothing is translated
+      const [a, b] = await section.locator('.film-frame').evaluateAll((els) => els.slice(0, 2).map((el) => el.getBoundingClientRect().top));
+      expect(b).toBeGreaterThan(a);
+      expect(await track.evaluate((el) => el.style.transform)).toBe('');
+      return;
     }
-    if (!isMobile(page)) {
-      // Desktop: the image stage is pinned and shows the active set
-      await expect(page.locator('.journey-frame[data-state="active"]')).toHaveCount(1);
-      const top = await page.locator('.journey-frame').first().evaluate((el) => el.closest('.sticky')!.getBoundingClientRect().top);
-      expect(top).toBeGreaterThan(0);
-    }
+
+    // Desktop: the section pins and vertical scroll drives the track to the left
+    const top = await section.evaluate((el) => el.getBoundingClientRect().top + scrollY);
+    const height = await section.evaluate((el) => el.getBoundingClientRect().height);
+    expect(height).toBeGreaterThan(await page.evaluate(() => innerHeight * 1.5));
+    const counter = section.locator('.film-hud .hud').last();
+
+    await page.evaluate((y) => scrollTo(0, y), top + 10);
+    await expect(counter).toContainText('01');
+    await page.evaluate((y) => scrollTo(0, y), top + (height - 900) * 0.98);
+    await expect(counter).toContainText('04');
+    const x = await track.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
+    expect(x).toBeLessThan(-500);
+    const pinTop = await section.locator('.film-pin').evaluate((el) => el.getBoundingClientRect().top);
+    expect(pinTop).toBeGreaterThanOrEqual(0);
+    expect(pinTop).toBeLessThan(120);
+  });
+
+  test('keyboard focus inside the film strip brings it into view', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#hero-heading')).toBeVisible();
+    const link = page.locator('#method').getByRole('link', { name: 'Meet the coaches' });
+    await link.focus();
+    await expect.poll(() => link.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+    })).toBe(true);
   });
 
   test('facility frame opens to full-bleed at the centre of the screen', async ({ page }) => {
@@ -286,8 +311,10 @@ test.describe('cinematic chapters', () => {
     const state = await page.evaluate(() => ({
       finalSet: getComputedStyle(document.querySelector('.final-set')!).clipPath,
       hiddenFrames: [...document.querySelectorAll('.hero-lift, .m-wipe-up')].filter((el) => getComputedStyle(el).clipPath.includes('100%')).length,
-      dimmedJourney: [...document.querySelectorAll('.journey-copy')].filter((el) => getComputedStyle(el).transform !== 'none').length,
+      // The film strip falls back to a vertical story: no pin, no sideways travel
+      filmPinned: getComputedStyle(document.querySelector('.film-pin')!).position === 'sticky',
+      filmShifted: (document.querySelector('.film-track') as HTMLElement).style.transform !== '',
     }));
-    expect(state).toEqual({ finalSet: 'none', hiddenFrames: 0, dimmedJourney: 0 });
+    expect(state).toEqual({ finalSet: 'none', hiddenFrames: 0, filmPinned: false, filmShifted: false });
   });
 });

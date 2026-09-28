@@ -3,13 +3,13 @@ import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 import { useScrollVar } from '@/hooks/useScrollVar';
-import { ChapterMark } from '@/components/motion';
+import { Hud, TickRail } from '@/components/motion';
 import { SITE, whatsappLink } from '@/lib/site';
 
 interface CtaBandProps {
   title?: string;
   body?: string;
-  /** Home page only: open with the "04 Join" chapter mark */
+  /** Home page only: open with the "05 Final set" HUD mark */
   chapter?: boolean;
 }
 
@@ -26,7 +26,12 @@ const CtaBand = ({
     <section aria-labelledby="cta-heading" className="container py-section">
       {/* JOIN — the final set: a lime line draws across, the panel expands out of it, then the copy drives in */}
       <div ref={ref} className="reveal">
-        {chapter && <ChapterMark index="04" word="Join" />}
+        {chapter && (
+          <div className="mb-8 flex items-center gap-4" aria-hidden>
+            <Hud index="05" label="Final set" className="m-rise" />
+            <TickRail className="w-24 md:w-40" />
+          </div>
+        )}
         <div className="final-set relative overflow-hidden rounded-3xl bg-brand-400 px-6 py-14 text-ink-950 sm:px-12 md:py-20">
           <div ref={zoomRef} className="absolute inset-y-0 right-0 hidden w-1/2 overflow-hidden lg:block [mask-image:linear-gradient(to_right,transparent,black_40%)]">
             <img

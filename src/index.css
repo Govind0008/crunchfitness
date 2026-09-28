@@ -98,6 +98,11 @@
     border-radius: var(--radius);
   }
 
+  /* Training HUD — small instrument-style labels ("CRUNCH / 01", "SET 03") */
+  .hud {
+    @apply inline-flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.24em] text-ink-400 tabular-nums;
+  }
+
   .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .hide-scrollbar::-webkit-scrollbar { display: none; }
 }
@@ -178,18 +183,61 @@
   background-image: repeating-linear-gradient(to right, theme('colors.brand.400') 0 2px, transparent 2px 6px);
 }
 
-/* Training journey — pinned stage frames and set emphasis */
-.journey-frame { clip-path: inset(0 0 0 0); transition: clip-path 1s var(--ease-drive); }
-.journey-frame[data-state='next'] { clip-path: inset(100% 0 0 0); }
-.journey-frame img { transform: scale(1.1); transition: transform 1.8s var(--ease-settle); }
-.journey-frame[data-state='active'] img, .journey-frame[data-state='past'] img { transform: none; }
-.journey-dot { border-color: rgb(255 255 255 / 0.15); color: theme('colors.ink.500'); transition: color 400ms, border-color 400ms, background-color 400ms; }
-.journey-step[data-state='active'] .journey-dot { border-color: theme('colors.brand.400'); color: theme('colors.brand.400'); }
-.journey-step[data-state='past'] .journey-dot { border-color: theme('colors.brand.400'); background: theme('colors.brand.400'); color: theme('colors.ink.950'); }
-@media (min-width: 1024px) {
-  .journey-copy { transition: opacity 600ms var(--ease-snap), transform 800ms var(--ease-drive); }
-  .journey-step[data-state='next'] .journey-copy { opacity: 0.5; transform: translate3d(16px, 0, 0); }
-  .journey-step[data-state='past'] .journey-copy { opacity: 0.6; }
+/* ── 01 Build — the film strip ──────────────────────────────────────────────────
+   Default: a vertical story (small screens, reduced motion). Large screens with motion
+   allowed: the section pins and FilmStrip.tsx drives the track sideways. */
+.film { padding-block: theme('spacing.section'); }
+.film-track { @apply container flex flex-col gap-16 md:gap-20; }
+.film-media { aspect-ratio: 4 / 5; }
+.film-frame--wide .film-media { aspect-ratio: 16 / 10; }
+@media (min-width: 640px) { .film-media { aspect-ratio: 16 / 11; } }
+.film-num { font-size: clamp(5.5rem, 3rem + 12vw, 11rem); transform: translateY(0.1em); }
+.film-num .m-line { padding-bottom: 0.1em; }
+
+/* Reduced motion on large screens: a static two-column editorial grid instead of the pin */
+@media (min-width: 1024px) and (prefers-reduced-motion: reduce) {
+  .film-track { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; }
+  .film-intro, .film-outro { grid-column: span 2; }
+}
+
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  .film { padding-block: 0; }
+  .film-pin {
+    position: sticky;
+    top: var(--page-top);
+    height: calc(100svh - var(--page-top));
+    min-height: 560px;
+    overflow: hidden;
+    overflow: clip;   /* not scrollable: focus can't scroll the pin on top of the JS transform */
+    display: flex;
+    flex-direction: column;
+  }
+  .film-hud, .film-hint { display: flex; }
+  .film-hud { padding-top: 1.75rem; }
+  .film-track {
+    --gutter: max(2rem, calc((100vw - 1280px) / 2 + 2rem));
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+    width: max-content;
+    margin: 0;
+    gap: clamp(2.5rem, 4vw, 4.5rem);
+    padding: 4vh var(--gutter) 6vh;
+    will-change: transform;
+  }
+  .film-intro { flex: none; width: min(30rem, 36vw); }
+  .film-outro { flex: none; width: 22rem; }
+  .film-frame { flex: none; height: 100%; width: calc((100svh - var(--page-top)) * 0.56); }
+  .film-frame--wide { width: calc((100svh - var(--page-top)) * 1.05); }
+  .film-media { flex: 1; min-height: 0; aspect-ratio: auto; }
+  .film-num { font-size: clamp(7rem, 12vh, 11rem); }
+  /* Film rhythm — frames sit at different heights like a contact strip, not a card row */
+  .film-frame[data-frame='1'] { padding-top: 10vh; }
+  .film-frame[data-frame='2'] { padding-bottom: 7vh; }
+  .film-frame[data-frame='3'] { padding-top: 5vh; }
+  .film-depth { inset: 0 -7%; transform: translate3d(calc(var(--fx, 0) * -5%), 0, 0); will-change: transform; }
 }
 
 /* Facility chapter — frame opens from content width to full-bleed as it reaches centre */
@@ -201,6 +249,11 @@
 @media (max-width: 1023px) {
   .facility-open { --gutter: 1.25rem; }
 }
+
+/* Reviews — each quote rises into place; the active rail segment loads over the rotation time */
+@keyframes review-in { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
+.review-quote { animation: review-in 700ms var(--ease-drive) both; }
+.review-timer { transform-origin: left; animation: bar-load linear both; }
 
 /* Final set — a lime line draws across, then the panel expands out of it */
 @keyframes final-set {
@@ -261,19 +314,18 @@
 .hero-drift    { animation: drift 9s var(--ease-settle) both; }
 .hero-drop     { animation: drop-in 0.6s var(--ease-drive) both; animation-delay: calc(var(--d, 0) * var(--hero-tempo, 1) * 1ms); }
 
-/* Below lg the photo sits under the copy, often below the fold: the copy leads at a faster
-   tempo, and the lift from the floor plays when the photo is actually reached (scroll-triggered). */
-@media (max-width: 1023px) {
-  :root { --hero-tempo: 0.45; }
-  .hero-lift  { animation: none; clip-path: inset(100% 0 0 0); transform: translate3d(0, 7%, 0);
-                transition: clip-path 1.2s var(--ease-drive) 120ms, transform 1.2s var(--ease-drive) 120ms; }
-  .hero-settle { animation: none; transform: scale(1.2); transition: transform 2s var(--ease-settle) 120ms; }
-  .hero-floor  { animation: none; transform: scaleX(0); transition: transform 0.7s var(--ease-drive); }
-  .hero-wipe   { animation: none; clip-path: inset(0 100% 0 0); transition: clip-path 1s var(--ease-drive) 700ms; }
-  .revealed .hero-lift, .revealed .hero-settle { clip-path: inset(0 0 0 0); transform: none; }
-  .revealed .hero-floor { transform: scaleX(1); }
-  .revealed .hero-wipe  { clip-path: inset(0 0 0 0); }
+/* Hero geometry — photo on top (small screens) or the right half down to the floor line (lg+);
+   the instrument strip below the floor has a fixed height so the photo can end exactly on it. */
+.hero { --hero-photo: 60svh; --hero-strip: 7.5rem; }
+.hero-media { height: var(--hero-photo); }
+.hero-copy { margin-top: calc(var(--hero-photo) - 10rem); }
+@media (min-width: 640px) { .hero { --hero-photo: 64svh; } }
+@media (min-width: 1024px) {
+  .hero-media { height: auto; bottom: var(--hero-strip); width: 54%; }
+  .hero-copy { margin-top: auto; padding-top: 5rem; }
+  .hero-strip { height: var(--hero-strip); }
 }
+@media (max-width: 1023px) { :root { --hero-tempo: 0.6; } }
 
 /* ── Interaction language ─────────────────────────────────────────────────────
    Primary buttons: one light sweep on hover (energy), compression on press (load). */
@@ -371,14 +423,14 @@
   .parallax, .scroll-zoom, .hero-camera-in, .hero-camera-out, .chapter-word .m-line { transform: none !important; opacity: 1 !important; }
   .scroll-fill-y { transform: none !important; }
   .focus-grid .focus-item { opacity: 1 !important; transform: none !important; }
-  .journey-frame img { transform: none !important; }
   .facility-open { clip-path: inset(0 var(--gutter) round 16px) !important; }
   .final-set { clip-path: none !important; animation: none !important; }
-  .journey-copy { transform: none !important; }
   /* Entrance keyframes are removed outright so nothing flashes from its start state */
   .hero-lift, .hero-settle, .hero-line > *, .hero-rise, .hero-bar, .hero-wipe, .hero-drift, .hero-drop,
   .hero-floor, .hero-wipe-x, .hero-fade,
   .menu-curtain, .menu-curtain .menu-link, .page-transition { animation: none !important; }
   .route-bar { display: none; }
+  .review-quote { animation: none !important; }
+  .review-timer { animation: none !important; transform: none; }
   .animate-marquee { animation: none; }
 }

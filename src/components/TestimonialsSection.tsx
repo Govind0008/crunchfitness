@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Star, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { useGoogleReviews } from '@/hooks/useGoogleReviews';
 import { Section } from '@/components/site/Section';
-import { ChapterMark, TickRail } from '@/components/motion';
+import { ChapterMark, Hud, TickRail } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -40,73 +40,80 @@ const TestimonialsSection = () => {
   const count = reviews.length;
   const goTo = useCallback((i: number) => setCurrent(((i % count) + count) % count), [count]);
 
-  useEffect(() => {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (paused || count < 2 || reduce) return;
-    const id = setInterval(() => setCurrent((c) => (c + 1) % count), ROTATE_MS);
-    return () => clearInterval(id);
-  }, [paused, count]);
+  // Rotation is driven by the active rail segment's animation (see .review-timer): it pauses
+  // on hover/focus with the bar, restarts on manual navigation, and never runs under reduced motion.
+  const advance = useCallback(() => setCurrent((c) => (c + 1) % Math.max(1, count)), [count]);
 
   const review = reviews[current];
+  const pad = (n: number) => String(n).padStart(2, '0');
 
   return (
-    <Section aria-labelledby="reviews-heading" tone="raised">
+    <Section aria-labelledby="reviews-heading">
       <ChapterMark index="03" word="Transform" />
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
-        {/* Summary */}
+        {/* Summary — the real Google rating, set large */}
         <div className="lg:col-span-4">
           <p className="eyebrow mb-4">
-          <TickRail className="w-8" />
-          <span className="m-rise" style={{ '--d': 120 } as React.CSSProperties}>Member reviews</span>
+            <TickRail className="w-8" />
+            <span className="m-rise" style={{ '--d': 120 } as React.CSSProperties}>Member reviews</span>
           </p>
           <h2 id="reviews-heading" className="font-display text-display-md font-bold uppercase text-white text-balance">
             <span className="m-line"><span style={{ '--d': 80 } as React.CSSProperties}>Heard on the gym floor</span></span>
           </h2>
-          <p className="m-rise mt-4 text-ink-300" style={{ '--d': 220 } as React.CSSProperties}>Unedited reviews from members, pulled live from Google.</p>
+          <p className="m-rise mt-4 max-w-sm text-ink-300" style={{ '--d': 220 } as React.CSSProperties}>
+            Real people, real sessions. Unedited reviews from members, pulled live from Google.
+          </p>
 
           <a
             href={GOOGLE_MAPS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="group mt-8 flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-ink-950 p-5 transition-colors hover:border-white/20"
+            className="m-rise group mt-10 block w-fit"
+            style={{ '--d': 300 } as React.CSSProperties}
           >
-            <GoogleLogo className="h-9 w-9 shrink-0" />
-            <div className="min-w-0 flex-1">
-              {rating > 0 ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="font-display text-3xl font-bold text-white">{rating.toFixed(1)}</span>
+            {rating > 0 ? (
+              <>
+                <span className="flex items-end gap-4">
+                  <span className="font-display text-7xl font-extrabold leading-[0.8] text-white md:text-8xl">{rating.toFixed(1)}</span>
+                  <span className="pb-1">
                     <Stars rating={rating} />
-                  </div>
-                  <p className="text-sm text-ink-400">{total} reviews on Google</p>
-                </>
-              ) : (
-                <p className="font-semibold text-white">Read our reviews on Google</p>
-              )}
-            </div>
-            <ExternalLink className="h-4 w-4 text-ink-500 transition-colors group-hover:text-white" aria-hidden />
+                    <span className="mt-2 block text-sm text-ink-400">{total} reviews</span>
+                  </span>
+                </span>
+                <span className="link-drive mt-5 inline-flex items-center gap-2 text-sm font-semibold text-white transition-colors group-hover:text-brand-400">
+                  <GoogleLogo className="h-4 w-4" /> Read all on Google <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </span>
+              </>
+            ) : (
+              <span className="link-drive inline-flex items-center gap-2 text-sm font-semibold text-white transition-colors group-hover:text-brand-400">
+                <GoogleLogo className="h-5 w-5" /> Read our reviews on Google <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              </span>
+            )}
             <span className="sr-only">(opens in a new tab)</span>
           </a>
         </div>
 
-        {/* Review carousel */}
-        <div className="m-rise lg:col-span-8" style={{ '--d': 200 } as React.CSSProperties}>
+        {/* The quote — typography does the work; no card */}
+        <div className="m-rise lg:col-span-8 lg:border-l lg:border-white/[0.08] lg:pl-16" style={{ '--d': 200 } as React.CSSProperties}>
           {loading && (
-            <div className="rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12 animate-pulse" aria-label="Loading reviews">
+            <div className="animate-pulse" aria-label="Loading reviews">
               <div className="h-4 w-24 rounded bg-ink-800" />
-              <div className="mt-8 space-y-3">
-                <div className="h-5 w-full rounded bg-ink-800" />
-                <div className="h-5 w-11/12 rounded bg-ink-800" />
-                <div className="h-5 w-2/3 rounded bg-ink-800" />
+              <div className="mt-8 space-y-4">
+                <div className="h-7 w-full rounded bg-ink-800" />
+                <div className="h-7 w-11/12 rounded bg-ink-800" />
+                <div className="h-7 w-2/3 rounded bg-ink-800" />
               </div>
-              <div className="mt-10 h-10 w-48 rounded bg-ink-800" />
+              <div className="mt-12 h-5 w-48 rounded bg-ink-800" />
             </div>
           )}
 
           {!loading && (error || count === 0) && (
-            <div className="flex h-full flex-col items-start justify-center rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12">
-              <p className="font-display text-display-sm font-bold uppercase text-white">See what members say</p>
-              <p className="mt-3 max-w-md text-ink-400">Reviews couldn&apos;t load here right now — they&apos;re always available on our Google listing.</p>
+            <div className="flex h-full flex-col items-start justify-center">
+              <span className="font-display text-[7rem] font-extrabold leading-[0.6] text-brand-400" aria-hidden>&ldquo;</span>
+              <p className="mt-4 max-w-xl text-2xl font-medium leading-snug tracking-tight text-white md:text-4xl">
+                The best review is the one you hear in person.
+              </p>
+              <p className="mt-4 max-w-md text-ink-400">Reviews couldn&apos;t load here right now — they&apos;re always available on our Google listing.</p>
               <Button asChild variant="outline" className="mt-8">
                 <a href={GOOGLE_MAPS_URL} target="_blank" rel="noopener noreferrer">
                   Open Google reviews <ExternalLink />
@@ -117,7 +124,7 @@ const TestimonialsSection = () => {
 
           {!loading && review && (
             <figure
-              className="flex h-full flex-col rounded-2xl border border-white/[0.08] bg-ink-950 p-8 md:p-12"
+              className="flex h-full flex-col"
               onMouseEnter={() => setPaused(true)}
               onMouseLeave={() => setPaused(false)}
               onFocus={() => setPaused(true)}
@@ -125,43 +132,66 @@ const TestimonialsSection = () => {
               aria-roledescription="carousel"
               aria-label="Google member reviews"
             >
-              <Stars rating={review.rating} />
-              <blockquote
-                key={current}
-                className="mt-6 flex-1 animate-fade-in"
-                aria-live={paused ? 'polite' : 'off'}
-              >
-                <p className="text-lg leading-relaxed text-white md:text-2xl md:leading-snug line-clamp-[8]">
-                  &ldquo;{review.text}&rdquo;
+              <div className="flex items-center justify-between gap-4">
+                <Stars rating={review.rating} />
+                <Hud index={pad(current + 1)} label={`of ${pad(count)}`} />
+              </div>
+
+              <blockquote key={current} className="review-quote mt-8 flex-1" aria-live={paused ? 'polite' : 'off'}>
+                <span className="block font-display text-[6rem] font-extrabold leading-[0.55] text-brand-400 md:text-[8rem]" aria-hidden>&ldquo;</span>
+                <p className="mt-2 text-xl font-medium leading-snug tracking-tight text-white text-pretty md:text-3xl md:leading-[1.25] line-clamp-[9]">
+                  {review.text}
                 </p>
               </blockquote>
 
-              <figcaption className="mt-10 flex flex-wrap items-center justify-between gap-6 border-t border-white/[0.08] pt-6">
-                <div className="flex items-center gap-3">
-                  {review.profile_photo_url ? (
-                    <img
-                      src={review.profile_photo_url}
-                      alt=""
-                      className="h-11 w-11 rounded-full object-cover"
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink-800 font-semibold text-white" aria-hidden>
-                      {review.author_name.charAt(0)}
-                    </span>
-                  )}
-                  <div>
-                    <p className="font-semibold text-white">{review.author_name}</p>
-                    <p className="text-sm text-ink-400">Google review · {review.relative_time_description}</p>
-                  </div>
+              <figcaption key={`by-${current}`} className="review-quote mt-10 flex items-center gap-4" style={{ animationDelay: '120ms' }}>
+                {review.profile_photo_url ? (
+                  <img
+                    src={review.profile_photo_url}
+                    alt=""
+                    className="h-12 w-12 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-ink-800 font-semibold text-white" aria-hidden>
+                    {review.author_name.charAt(0)}
+                  </span>
+                )}
+                <div>
+                  <p className="font-display text-xl font-bold uppercase tracking-wide text-white">— {review.author_name}</p>
+                  <p className="text-sm text-ink-400">Google review · {review.relative_time_description}</p>
                 </div>
+              </figcaption>
 
-                {count > 1 && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm tabular-nums text-ink-400" aria-hidden>
-                      {current + 1} / {count}
-                    </span>
+              {count > 1 && (
+                <div className="mt-10 flex items-center gap-6 border-t border-white/[0.08] pt-6">
+                  {/* Set rail — one segment per review; the active one loads over the rotation time */}
+                  <div className="flex flex-1 gap-1.5" role="group" aria-label="Choose a review">
+                    {reviews.map((r, i) => (
+                      <button
+                        key={r.author_name + i}
+                        type="button"
+                        onClick={() => goTo(i)}
+                        aria-label={`Review ${i + 1} of ${count}, by ${r.author_name}`}
+                        aria-current={i === current ? 'true' : undefined}
+                        className="group/seg relative h-6 flex-1"
+                      >
+                        <span className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/15 transition-colors group-hover/seg:bg-white/30">
+                          {i < current && <span className="absolute inset-0 bg-white/50" />}
+                          {i === current && (
+                            <span
+                              key={current}
+                              className={cn('review-timer absolute inset-0 bg-brand-400', paused && '[animation-play-state:paused]')}
+                              style={{ animationDuration: `${ROTATE_MS}ms` }}
+                              onAnimationEnd={advance}
+                            />
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
                     <Button variant="secondary" size="icon" onClick={() => goTo(current - 1)} aria-label="Previous review">
                       <ChevronLeft />
                     </Button>
@@ -169,8 +199,8 @@ const TestimonialsSection = () => {
                       <ChevronRight />
                     </Button>
                   </div>
-                )}
-              </figcaption>
+                </div>
+              )}
             </figure>
           )}
         </div>

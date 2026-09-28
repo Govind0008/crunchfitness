@@ -83,7 +83,7 @@ const GallerySection = () => {
             className={cn('absolute inset-0', ['m-wipe-up', 'm-wipe-left', 'm-wipe-right', 'm-wipe-up', 'm-wipe-left'][i])}
             style={{ '--d': 150 + i * 110 } as React.CSSProperties}
           >
-            <div className="h-full w-full transition-transform duration-[900ms] ease-out-expo group-hover:scale-[1.05]">
+            <div className="h-full w-full transition-transform [transition-duration:900ms] ease-out-expo group-hover:scale-[1.05]">
             <img
               src={`/images/${t.name}-800.webp`}
               srcSet={`/images/${t.name}-800.webp 800w, /images/${t.name}-1600.webp 1600w`}

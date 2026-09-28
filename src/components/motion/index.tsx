@@ -75,6 +75,18 @@ export const CountUp = ({ value, suffix = '', duration = 1400, className, delay 
 };
 
 /**
+ * Training HUD label — the small recurring "CRUNCH / 01" mark that makes the site read like
+ * a training interface. Decorative by default; pass `as` when it carries meaning.
+ */
+export const Hud = ({ index, label, className, style }: { index?: string; label: ReactNode; className?: string; style?: CSSProperties }) => (
+  <span className={cn('hud', className)} style={style} aria-hidden>
+    {index && <span className="text-brand-400">{index}</span>}
+    {index && <span className="h-px w-5 bg-white/25" />}
+    <span>{label}</span>
+  </span>
+);
+
+/**
  * Editorial chapter opener for the homepage's signature sections (Training Journey).
  * Decorative: the section's real heading follows it. The large word drifts a little
  * against the scroll, like a title card sliding past the camera.
