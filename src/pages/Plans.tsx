@@ -1,9 +1,11 @@
 import { Clock, ShieldCheck, Dumbbell } from 'lucide-react';
 import Footer from '../components/Footer';
 import { PageHeader, Section, SectionHeader } from '@/components/site/Section';
+import MembershipFinder from '@/components/site/MembershipFinder';
 import PlanCard from '@/components/site/PlanCard';
 import CtaBand from '@/components/site/CtaBand';
 import { usePlans } from '@/hooks/usePlans';
+import Seo from '@/components/site/Seo';
 
 const INCLUDED = [
   {
@@ -28,6 +30,7 @@ const ProfessionalPlans = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo title="Membership Plans | Crunch Fitness Club, Wakad, Pune" description="Compare Crunch Fitness Club memberships — from a one-day trial to a full year. Every plan includes the full gym floor, coach guidance and a free facility tour." image="/images/floor-2-1600.webp" />
       <main>
         <PageHeader
           eyebrow="Membership plans"
@@ -37,7 +40,8 @@ const ProfessionalPlans = () => {
         />
 
         <Section aria-labelledby="plans-heading" className="pt-12 md:pt-16">
-          <h2 id="plans-heading" className="sr-only">All membership plans</h2>
+          <div className="m-rise mb-16 md:mb-20"><MembershipFinder plans={plans} /></div>
+          <h2 id="plans-heading" className="mb-8 font-display text-display-sm font-bold uppercase text-white"><span id="all-plans" />All plans</h2>
           <div
             className="flex flex-wrap justify-center gap-5 [&>*]:w-full sm:[&>*]:w-[calc(50%-0.625rem)] lg:[&>*]:w-[calc(33.333%-0.834rem)]"
             aria-busy={loading}

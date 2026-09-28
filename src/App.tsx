@@ -6,11 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
-import ProtectedRoute from "@/components/ProtectedRoute";
-import TrainerRoute from "@/components/TrainerRoute";
-import ClientRoute from "@/components/ClientRoute";
 import Navigation from "@/components/Navigation";
-import OfferBanner from "@/components/OfferBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
@@ -32,7 +28,7 @@ const GlobalUI = () => {
   return (
     <>
       {!isAdmin && <Navigation bannerVisible={bannerVisible} />}
-      {!isAdmin && <OfferBanner onVisibilityChange={handleBannerVisibility} />}
+      {!isAdmin && <Suspense fallback={null}><OfferBanner onVisibilityChange={handleBannerVisibility} /></Suspense>}
       {!isAdmin && <Suspense fallback={null}><Chatbot /></Suspense>}
       {/* Contact already offers WhatsApp inline; avoid a floating button over its form */}
       {!isAdmin && pathname !== '/contact' && <WhatsAppButton />}
@@ -40,8 +36,9 @@ const GlobalUI = () => {
   );
 };
 
-// The chat assistant is large and not needed for first paint
+// Not needed for first paint: the chat assistant is large, and the offer banner needs Firestore
 const Chatbot = lazy(() => import("@/components/Chatbot"));
+const OfferBanner = lazy(() => import("@/components/OfferBanner"));
 
 // Code-split every page — only the current route's bundle is loaded
 const Index          = lazy(() => import("./pages/Index"));
@@ -54,11 +51,11 @@ const Contact        = lazy(() => import("./pages/Contact"));
 const Blog           = lazy(() => import("./pages/Blog"));
 const BlogPost       = lazy(() => import("./pages/BlogPost"));
 const AdminLogin       = lazy(() => import("./pages/AdminLogin"));
-const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
+const AdminArea        = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.AdminArea })));
 const TrainerLogin     = lazy(() => import("./pages/TrainerLogin"));
-const TrainerDashboard = lazy(() => import("./pages/TrainerDashboard"));
+const TrainerArea      = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.TrainerArea })));
 const ClientLogin      = lazy(() => import("./pages/ClientLogin"));
-const ClientDashboard  = lazy(() => import("./pages/ClientDashboard"));
+const ClientArea       = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.ClientArea })));
 const CheckIn          = lazy(() => import("./pages/CheckIn"));
 const NotFound         = lazy(() => import("./pages/NotFound"));
 
@@ -93,11 +90,11 @@ const App = () => (
               <Route path="/blog"             element={<Blog />} />
               <Route path="/blog/:slug"       element={<BlogPost />} />
               <Route path="/admin/login"      element={<AdminLogin />} />
-              <Route path="/admin/dashboard"  element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/admin/dashboard"  element={<AdminArea />} />
               <Route path="/trainer/login"    element={<TrainerLogin />} />
-              <Route path="/trainer/dashboard" element={<TrainerRoute><TrainerDashboard /></TrainerRoute>} />
+              <Route path="/trainer/dashboard" element={<TrainerArea />} />
               <Route path="/client/login"     element={<ClientLogin />} />
-              <Route path="/client/dashboard" element={<ClientRoute><ClientDashboard /></ClientRoute>} />
+              <Route path="/client/dashboard" element={<ClientArea />} />
               <Route path="/checkin"          element={<CheckIn />} />
               <Route path="*"                 element={<NotFound />} />
             </Routes>

@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 
 export interface Plan {
   id: string;
@@ -56,18 +54,27 @@ export function usePlans() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
-    return onSnapshot(
-      q,
-      (snap) => {
-        setPlans(snap.docs.map((d) => {
-          const data = d.data();
-          return { id: d.id, ...data, features: Array.isArray(data.features) ? data.features : [] } as Plan;
-        }));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
+    // Firestore is loaded on demand so the SDK stays off the critical path of the pages
+    // that show plans (the fallback list renders meanwhile).
+    let unsub = () => {};
+    let cancelled = false;
+    Promise.all([import('firebase/firestore'), import('@/lib/firebase')])
+      .then(([{ collection, query, orderBy, onSnapshot }, { db }]) => {
+        if (cancelled) return;
+        unsub = onSnapshot(
+          query(collection(db, 'plans'), orderBy('order', 'asc')),
+          (snap) => {
+            setPlans(snap.docs.map((d) => {
+              const data = d.data();
+              return { id: d.id, ...data, features: Array.isArray(data.features) ? data.features : [] } as Plan;
+            }));
+            setLoading(false);
+          },
+          () => setLoading(false),
+        );
+      })
+      .catch(() => setLoading(false));
+    return () => { cancelled = true; unsub(); };
   }, []);
 
   return { plans: !loading && plans.length > 0 ? plans : FALLBACK_PLANS, loading };

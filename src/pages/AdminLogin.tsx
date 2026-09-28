@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth } from '../lib/firebase-auth';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 const AdminLogin = () => {

@@ -2,6 +2,7 @@
 
 export const SITE = {
   name: 'Crunch Fitness Club',
+  url: 'https://www.crunchfitness.fitness',
   phone: '+91 84830 48363',
   phoneHref: 'tel:+918483048363',
   email: 'Crunchfitness680@gmail.com',

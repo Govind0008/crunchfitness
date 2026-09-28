@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
 import { useScrollVar } from '@/hooks/useScrollVar';
 import { Hud, TickRail } from '@/components/motion';
@@ -23,7 +24,7 @@ const CtaBand = ({
   const zoomRef = useScrollVar<HTMLDivElement>();
   const d = (ms: number) => ({ '--d': ms }) as React.CSSProperties;
   return (
-    <section aria-labelledby="cta-heading" className="container py-section">
+    <section id={chapter ? 'final-set' : undefined} aria-labelledby="cta-heading" className="container py-section">
       {/* JOIN — the final set: a lime line draws across, the panel expands out of it, then the copy drives in */}
       <div ref={ref} className="reveal">
         {chapter && (
@@ -32,7 +33,7 @@ const CtaBand = ({
             <TickRail className="w-24 md:w-40" />
           </div>
         )}
-        <div className="final-set relative overflow-hidden rounded-3xl bg-brand-400 px-6 py-14 text-ink-950 sm:px-12 md:py-20">
+        <div className={cn('final-set relative overflow-hidden rounded-3xl bg-brand-400 px-6 py-14 text-ink-950 sm:px-12 md:py-20', chapter && 'flex flex-col justify-end md:min-h-[min(78svh,760px)]')}>
           <div ref={zoomRef} className="absolute inset-y-0 right-0 hidden w-1/2 overflow-hidden lg:block [mask-image:linear-gradient(to_right,transparent,black_40%)]">
             <img
               src="/images/team-960.webp"
@@ -44,7 +45,7 @@ const CtaBand = ({
             />
           </div>
           <div className="relative max-w-xl">
-            <h2 id="cta-heading" className="font-display text-display-lg font-extrabold uppercase text-balance">
+            <h2 id="cta-heading" className={cn('font-display font-extrabold uppercase text-balance', chapter ? 'text-[clamp(3.5rem,1.5rem+8vw,9rem)] leading-[0.84]' : 'text-display-lg')}>
               <span className="m-line"><span style={d(900)}>{title}</span></span>
             </h2>
             <p className="m-rise mt-5 text-base leading-relaxed text-ink-900/80 md:text-lg" style={d(1020)}>{body}</p>

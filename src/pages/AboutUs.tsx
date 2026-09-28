@@ -5,6 +5,7 @@ import Footer from '../components/Footer';
 import { PageHeader, Section } from '@/components/site/Section';
 import CtaBand from '@/components/site/CtaBand';
 import { CountUp } from '@/components/motion';
+import Seo from '@/components/site/Seo';
 
 const STATS = [
   { value: 500, suffix: '+', label: 'Active members' },
@@ -18,6 +19,7 @@ const AboutUs = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo title="About Crunch Fitness Club | Community Gym in Wakad, Pune" description="Crunch Fitness Club is a community gym in Wakad, Pune built around coaching — certified trainers, modern equipment and memberships for every goal." />
       <main>
         {/* SEO: primary H1 with brand + location keywords */}
         <PageHeader

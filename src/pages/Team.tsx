@@ -5,7 +5,8 @@ import { db } from '../lib/firebase';
 import Footer from '../components/Footer';
 import { PageHeader, Section } from '@/components/site/Section';
 import CtaBand from '@/components/site/CtaBand';
-import { Helmet } from 'react-helmet';
+import Seo from '@/components/site/Seo';
+import { cn } from '@/lib/utils';
 
 interface Member {
   id?: string;
@@ -202,10 +203,8 @@ const Team = () => {
 
   return (
     <div className="min-h-screen">
-      <Helmet>
-        <title>Our Team | Crunch Fitness Club</title>
-      </Helmet>
 
+      <Seo title="Coaches & Personal Trainers | Crunch Fitness Club, Wakad" description="Meet the certified trainers at Crunch Fitness Club, Wakad — strength, fat loss, functional training, nutrition and women's fitness specialists." image="/images/team-1920.webp" />
       <main>
         <PageHeader
           eyebrow="The team"
@@ -231,14 +230,16 @@ const Team = () => {
             <ul className="grid gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
               {displayMembers.map((member, index) => {
                 const hasInstagram = member.instagram && member.instagram !== '#';
+                // Featured treatment: the gym owner, or the only coach listed — portrait large, story beside it
+                const featured = member.isOwner || displayMembers.length === 1;
                 return (
                   <li
                     key={member.id ?? index}
-                    className="m-rise"
+                    className={cn('m-rise', featured && 'sm:col-span-2 lg:col-span-3')}
                     style={{ '--i': Math.min(index, 8) } as React.CSSProperties}
                   >
-                    <article className="group flex h-full flex-col transition-transform duration-500 ease-out-expo [@media(hover:hover)]:hover:-translate-y-1">
-                      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900 shadow-[0_0_0_rgba(0,0,0,0)] transition-shadow duration-500 group-hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.9)]">
+                    <article className={cn('group flex h-full flex-col transition-transform duration-500 ease-out-expo', featured ? 'lg:grid lg:grid-cols-12 lg:items-end lg:gap-12' : '[@media(hover:hover)]:hover:-translate-y-1')}>
+                      <div className={cn('relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900', featured && 'sm:aspect-[16/11] lg:col-span-7 lg:aspect-[5/4]')} >
                         {/* Photo drifts up and in, like a coach stepping forward */}
                         <div className="h-full w-full transition-transform [transition-duration:900ms] ease-out-expo [@media(hover:hover)]:group-hover:-translate-y-2 [@media(hover:hover)]:group-hover:scale-[1.06]">
                           <MemberPhoto member={member} />
@@ -253,7 +254,7 @@ const Team = () => {
                         )}
 
                         {/* Pointer devices: bio + action rise over the photo on hover / focus */}
-                        <div className="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-gradient-to-t from-ink-950 via-ink-950/70 to-transparent p-5 opacity-0 transition-opacity duration-500 [@media(hover:hover)]:flex group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                        <div className={cn('pointer-events-none absolute inset-0 hidden flex-col justify-end bg-gradient-to-t from-ink-950 via-ink-950/70 to-transparent p-5 opacity-0 transition-opacity duration-500 [@media(hover:hover)]:flex group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100', featured && '!hidden')}>
                           <span className="block h-px w-8 origin-left scale-x-0 bg-brand-400 transition-transform delay-100 duration-500 ease-out-expo group-hover:scale-x-100 group-focus-within:scale-x-100" aria-hidden />
                           {member.bio && (
                             <p className="mt-3 translate-y-3 text-sm leading-relaxed text-ink-200 transition-transform duration-500 ease-out-expo line-clamp-5 group-hover:translate-y-0 group-focus-within:translate-y-0">
@@ -274,8 +275,9 @@ const Team = () => {
                         </div>
                       </div>
 
-                      <div className="mt-5">
-                        <h3 className="font-display text-3xl font-bold uppercase leading-none text-white">{member.name}</h3>
+                      <div className={cn('mt-5', featured && 'lg:col-span-5 lg:mt-0 lg:pb-6')}>
+                        {featured && member.isOwner && <p className="hud mb-4 text-brand-400">Founder · Crunch Fitness</p>}
+                        <h3 className={cn('font-display font-bold uppercase leading-none text-white', featured ? 'text-display-md' : 'text-3xl')}>{member.name}</h3>
                         <p className="mt-1 text-sm font-medium text-brand-400">{member.role}</p>
                         {(member.specialization || member.experience) && (
                           <dl className="mt-4 space-y-1 text-sm">
@@ -288,8 +290,8 @@ const Team = () => {
                           </dl>
                         )}
                         {/* Touch devices: bio and Instagram stay visible below the photo */}
-                        <div className="[@media(hover:hover)]:hidden">
-                          {member.bio && <p className="mt-3 text-sm leading-relaxed text-ink-400 line-clamp-4">{member.bio}</p>}
+                        <div className={cn(!featured && '[@media(hover:hover)]:hidden')}>
+                          {member.bio && <p className={cn('mt-3 text-sm leading-relaxed text-ink-400', featured ? 'max-w-md md:text-base' : 'line-clamp-4')}>{member.bio}</p>}
                           {hasInstagram && (
                             <a
                               href={member.instagram}

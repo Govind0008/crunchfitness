@@ -6,6 +6,7 @@ import { Clock, Calendar, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
 import { PageHeader, Section } from '@/components/site/Section';
 import { cn } from '@/lib/utils';
+import Seo from '@/components/site/Seo';
 
 interface BlogPost {
   id: string;
@@ -91,6 +92,7 @@ const Blog = () => {
 
   return (
     <div className="min-h-screen">
+      <Seo title="The Crunch Journal | Training & Nutrition Articles" description="Training tips, nutrition guides and member stories from the coaches at Crunch Fitness Club, Wakad, Pune." />
       <main>
         <PageHeader
           eyebrow="Knowledge hub"

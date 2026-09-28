@@ -237,8 +237,41 @@
   .film-frame[data-frame='1'] { padding-top: 10vh; }
   .film-frame[data-frame='2'] { padding-bottom: 7vh; }
   .film-frame[data-frame='3'] { padding-top: 5vh; }
+  .film-pin { isolation: isolate; }
+  .film-track { position: relative; z-index: 1; }
+  .film-title { display: block; z-index: 0; padding-left: max(2rem, calc((100vw - 1280px) / 2 + 2rem)); }
+  .film-title-word {
+    font-family: theme('fontFamily.display'); font-weight: 800; text-transform: uppercase;
+    font-size: clamp(9rem, 24vh, 17rem); line-height: 0.8; letter-spacing: -0.01em;
+    color: transparent; -webkit-text-stroke: 1px rgb(255 255 255 / 0.09);
+    animation: line-drive 0.9s var(--ease-drive) both;
+  }
+  .film-media::after {
+    content: ''; position: absolute; inset: 0; background: theme('colors.ink.950');
+    opacity: 0; transition: opacity 700ms var(--ease-snap); pointer-events: none;
+  }
+  .film-frame[data-state='rest'] .film-media::after { opacity: 0.5; }
+  .film-frame figcaption { transition: opacity 600ms var(--ease-snap); }
+  .film-frame[data-state='rest'] figcaption { opacity: 0.45; }
   .film-depth { inset: 0 -7%; transform: translate3d(calc(var(--fx, 0) * -5%), 0, 0); will-change: transform; }
 }
+
+/* Facility explorer — switching area or photo is a camera cut: a short wipe plus settle */
+@keyframes explorer-cut { from { clip-path: inset(0 0 0 100%); transform: scale(1.06); } to { clip-path: inset(0 0 0 0); transform: none; } }
+.explorer-cut { animation: explorer-cut 900ms var(--ease-drive) both; }
+.explorer-copy { animation: rise-in 600ms var(--ease-drive) 150ms both; }
+
+.finder-result { animation: rise-in 600ms var(--ease-drive) both; }
+
+/* Chapter rail — fades in after the hero; only the current chapter shows its name */
+.chapter-rail { transition: opacity 500ms var(--ease-snap), transform 700ms var(--ease-drive); }
+.chapter-rail[data-state='off'] { opacity: 0; pointer-events: none; transform: translate3d(-12px, -50%, 0); }
+.chapter-rail .chapter-word-label { opacity: 0; transform: translate3d(-6px, 0, 0); transition: opacity 300ms var(--ease-snap), transform 400ms var(--ease-drive); }
+.chapter-rail .chapter-tick:hover .chapter-word-label,
+.chapter-rail .chapter-tick:focus-visible .chapter-word-label { opacity: 1; transform: none; }
+/* The current chapter's name only shows where the gutter is wide enough not to touch content */
+@media (min-width: 1600px) { .chapter-rail [aria-current='step'] .chapter-word-label { opacity: 1; transform: none; } }
+html { scroll-padding-top: calc(var(--page-top) + 1rem); }
 
 /* Facility chapter — frame opens from content width to full-bleed as it reaches centre */
 .facility-open {
@@ -430,7 +463,7 @@
   .hero-floor, .hero-wipe-x, .hero-fade,
   .menu-curtain, .menu-curtain .menu-link, .page-transition { animation: none !important; }
   .route-bar { display: none; }
-  .review-quote { animation: none !important; }
+  .review-quote, .explorer-cut, .explorer-copy, .film-title-word, .finder-result { animation: none !important; }
   .review-timer { animation: none !important; transform: none; }
   .animate-marquee { animation: none; }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Award, Dumbbell, BookOpen, Globe, PlayCircle } from 'lucide-react';
 import Footer from '../components/Footer';
-import { Helmet } from 'react-helmet';
+import Seo from '@/components/site/Seo';
 import { Section, SectionHeader } from '@/components/site/Section';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import CtaBand from '@/components/site/CtaBand';
@@ -110,16 +110,11 @@ const Founder = () => {
 
   return (
     <div className="min-h-screen overflow-x-hidden">
-      <Helmet>
-        <title>Meet Nilima Patil: Founder of Crunch Fitness | Inspiring Journey</title>
-        <meta name="description" content="Discover the inspiring journey of Nilima Patil, the multi-certified fitness expert and international medalist in powerlifting behind Crunch Fitness in Wakad, Pune. Explore her certifications, achievements, and dedication to holistic wellness." />
-        <meta name="keywords" content="Nilima Patil, Crunch Fitness founder, gym owner Pune, Yoga certification, Naturopathy, Power Yoga, Master Trainer, K11 Fitness Academy, National Bench Press Gold, Asia Pacific Bench Press Gold, World Bench Press Silver, powerlifting champion, fitness coach Wakad" />
-        <meta property="og:title" content="Meet Nilima Patil: Founder of Crunch Fitness | Inspiring Journey" />
-        <meta property="og:description" content="Discover the inspiring journey of Nilima Patil, the multi-certified fitness expert and international medalist in powerlifting behind Crunch Fitness in Wakad, Pune." />
-        <meta property="og:image" content={heroBackgroundImage} />
-        <meta property="og:url" content="https://www.crunchfitness.fitness/founder" />
-        <meta property="og:type" content="website" />
-      </Helmet>
+      <Seo
+        title="Meet Nilima Patil: Founder of Crunch Fitness | Inspiring Journey"
+        description="Discover the inspiring journey of Nilima Patil, the multi-certified fitness expert and international medalist in powerlifting behind Crunch Fitness in Wakad, Pune."
+        image="/images/founder-900.webp"
+      />
 
       <main>
         {/* Hero */}
