@@ -1,22 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import AdminSidebar from '@/components/admin/AdminSidebar';
+import { useSearchParams } from 'react-router-dom';
+import { logAdmin } from '@/lib/admin/activity';
+import { invalidateLookups } from '@/features/admin/members/lookups';
 import { ADMIN_TABS, type AdminTab } from '@/components/admin/tabs';
 import { uploadToCloudinary as uploadImage } from '@/lib/cloudinary';
 import {
   collection, addDoc, deleteDoc, updateDoc, where, getDocs,
   doc, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword, signOut, getAuth } from 'firebase/auth';
+import { createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { db, firebaseConfig } from '../lib/firebase';
 import { auth } from '../lib/firebase-auth';
 import { useAuth } from '../hooks/useAuth';
 import {
-  Plus, Trash2, LogOut, Eye, EyeOff, Upload,
+  Plus, Trash2, Eye, EyeOff, Upload,
   CheckCircle, XCircle, Loader, ImageIcon, Tag as TagIcon,
   Users, FileText, Edit2, Crown, Instagram, Megaphone, CreditCard,
-  Calendar, Sparkles, Inbox, Phone, Mail, ChevronDown, ChevronUp, Menu, X,
+  Calendar, Sparkles, Inbox, Phone, Mail, ChevronDown, ChevronUp, X,
 } from 'lucide-react';
 
 // ─── Blog Types ──────────────────────────────────────────────────────────────
@@ -34,6 +35,9 @@ interface BlogPost {
   readTime: number;
   tags: string[];
   published: boolean;
+  /** Optional search-engine title/description (falls back to title/excerpt) */
+  seoTitle?: string;
+  seoDescription?: string;
 }
 
 const CATEGORIES = ['Fitness Tips', 'Nutrition', 'Workout Guide', 'Success Story', 'News'];
@@ -41,7 +45,7 @@ const CATEGORIES = ['Fitness Tips', 'Nutrition', 'Workout Guide', 'Success Story
 const EMPTY_POST = {
   title: '', slug: '', excerpt: '', content: '',
   category: 'Fitness Tips', author: 'Crunch Fitness Club',
-  tags: '', published: false,
+  tags: '', published: false, seoTitle: '', seoDescription: '',
 };
 
 function slugify(text: string) {
@@ -100,7 +104,7 @@ const EMPTY_OFFER = {
 };
 
 // ─── Enquiry Types ────────────────────────────────────────────────────────────
-type EnquiryStatus = 'new' | 'contacted' | 'converted' | 'closed';
+type EnquiryStatus = 'new' | 'contacted' | 'follow_up' | 'converted' | 'closed';
 
 interface Enquiry {
   id: string;
@@ -112,19 +116,18 @@ interface Enquiry {
   submittedAt: { seconds: number } | null;
   status: EnquiryStatus;
   read: boolean;
+  notes?: string;
 }
 
 const ENQUIRY_STATUS_LABEL: Record<EnquiryStatus, string> = {
-  new: 'New Lead', contacted: 'Contacted', converted: 'Converted', closed: 'Closed',
+  new: 'New', contacted: 'Contacted', follow_up: 'Follow-up', converted: 'Converted', closed: 'Closed',
 };
 const ENQUIRY_STATUS_COLOR: Record<EnquiryStatus, string> = {
   new: 'bg-green-400/15 text-green-400 border-green-400/30',
   contacted: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
+  follow_up: 'bg-purple-400/15 text-purple-300 border-purple-400/30',
   converted: 'bg-yellow-400/15 text-yellow-400 border-yellow-400/30',
   closed: 'bg-zinc-700 text-gray-400 border-zinc-600',
-};
-const ENQUIRY_STATUS_NEXT: Record<EnquiryStatus, EnquiryStatus> = {
-  new: 'contacted', contacted: 'converted', converted: 'closed', closed: 'new',
 };
 
 // ─── Plan Types ───────────────────────────────────────────────────────────────
@@ -245,18 +248,35 @@ const AREA_COLORS: Record<string, string> = {
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
-const AdminDashboard = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+// What each section reads — a section opens only its own listeners (not all eight at once)
+const NEEDS: Record<AdminTab, ('posts' | 'team' | 'offers' | 'plans' | 'enquiries' | 'duties' | 'sessions' | 'accounts')[]> = {
+  posts: ['posts'], team: ['team'], offers: ['offers'], plans: ['plans'], enquiries: ['enquiries'],
+  roster: ['duties', 'team'], schedule: ['sessions', 'team'], accounts: ['accounts', 'team'],
+};
 
-  // ?tab= lets other admin screens (Events) link straight to a dashboard section
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
-    const t = searchParams.get('tab') as AdminTab | null;
-    return t && ADMIN_TABS.includes(t) ? t : 'posts';
-  });
+interface Props {
+  /** Show one section only, ignoring ?tab= (the marketing desk uses this for Blog, Offers, Team) */
+  lockedTab?: AdminTab;
+  /** Marketing edits public content only: no removing trainers (that also removes logins and classes) */
+  mode?: 'admin' | 'marketing';
+}
+
+const AdminDashboard = ({ lockedTab, mode = 'admin' }: Props = {}) => {
+  const { user } = useAuth();
+  const canRemoveTeam = mode === 'admin';
+  // Gym-wide activity log (System → Activity). Never blocks the action itself.
+  const audit = (action: string, refType: string, meta: Record<string, string | number | boolean | null> = {}) =>
+    logAdmin(user ? { uid: user.uid, email: user.email ?? '' } : null, action, refType, null, meta);
+
+  // The section lives in the URL (?tab=): the shared admin sidebar switches it without remounting,
+  // and Back/Forward work between sections.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as AdminTab | null;
+  const activeTab: AdminTab = lockedTab ?? (tabParam && ADMIN_TABS.includes(tabParam) ? tabParam : 'posts');
+  const needs = NEEDS[activeTab];
+  const need = (k: (typeof needs)[number]) => needs.includes(k);
+  const setActiveTab = (t: AdminTab) => setSearchParams({ tab: t });
   const [toast, setToast] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Blog state ──
   const [posts, setPosts]           = useState<BlogPost[]>([]);
@@ -267,6 +287,7 @@ const AdminDashboard = () => {
   const [postUploadProgress, setPostProgress] = useState(0);
   const [postSaving, setPostSaving] = useState(false);
   const [deletePostConfirm, setDeletePostConfirm] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const postFileRef = useRef<HTMLInputElement>(null);
 
   // ── Team state ──
@@ -328,64 +349,73 @@ const AdminDashboard = () => {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // ── Firestore listeners ──
+  // ── Firestore listeners (only for the open section; closed when you leave it) ──
+  const onErr = () => showToast('Some data couldn’t load. Check your connection and try again.');
   useEffect(() => {
+    if (!need('posts')) return;
     const q = query(collection(db, 'posts'), orderBy('publishedAt', 'desc'));
     return onSnapshot(q, (snap) =>
-      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost)))
-    );
-  }, []);
+      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost))), onErr);
+  }, [need('posts')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('team')) return;
     const q = query(collection(db, 'teamMembers'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) =>
-      setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamMember)))
-    );
-  }, []);
+    return onSnapshot(q, (snap) => {
+      setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamMember)));
+      invalidateLookups();
+    }, onErr);
+  }, [need('team')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('offers')) return;
     return onSnapshot(collection(db, 'offers'), (snap) =>
-      setOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Offer)))
-    );
-  }, []);
+      setOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Offer))), onErr);
+  }, [need('offers')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('plans')) return;
     const q = query(collection(db, 'plans'), orderBy('order', 'asc'));
-    return onSnapshot(q, (snap) =>
-      setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Plan)))
-    );
-  }, []);
+    return onSnapshot(q, (snap) => {
+      setPlans(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Plan)));
+      invalidateLookups();
+    }, onErr);
+  }, [need('plans')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('enquiries')) return;
     const q = query(collection(db, 'enquiries'), orderBy('submittedAt', 'desc'));
     return onSnapshot(q, (snap) =>
-      setEnquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Enquiry)))
-    );
-  }, []);
+      setEnquiries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Enquiry))), onErr);
+  }, [need('enquiries')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('duties')) return;
     const q = query(collection(db, 'duties'), where('weekStart', '==', rosterWeek));
     return onSnapshot(q, (snap) =>
-      setDuties(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Duty)))
-    );
-  }, [rosterWeek]);
+      setDuties(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Duty))), onErr);
+  }, [rosterWeek, need('duties')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!need('sessions')) return;
     const q = query(collection(db, 'classSessions'), where('date', '==', sessionDate), orderBy('startTime', 'asc'));
     return onSnapshot(q, (snap) =>
-      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession)))
-    );
-  }, [sessionDate]);
+      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession))), onErr);
+  }, [sessionDate, need('sessions')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return onSnapshot(collection(db, 'userRoles'), (snap) =>
-      setTrainerAccounts(
-        snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as TrainerAccount))
-          .filter((r) => r.role === 'trainer')
-      )
-    );
-  }, []);
+    if (!need('accounts')) return;
+    // Trainer logins only — not every account's role document
+    return onSnapshot(query(collection(db, 'userRoles'), where('role', '==', 'trainer')), (snap) =>
+      setTrainerAccounts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TrainerAccount))), onErr);
+  }, [need('accounts')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Arriving from a quick action (?new=1): open the section's "new" form straight away
+  useEffect(() => {
+    if (!searchParams.get('new')) return;
+    if (activeTab === 'posts') { setEditingPostId(null); setPostForm(EMPTY_POST); setPostPreview(''); setPostImageFile(null); setShowPostForm(true); }
+    if (activeTab === 'offers') { setEditingOfferId(null); setOfferForm(EMPTY_OFFER); setShowOfferForm(true); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
   // Blog handlers
@@ -423,16 +453,25 @@ const AdminDashboard = () => {
       if (postImageFile) {
         coverImage = await uploadToCloudinary(postImageFile, setPostProgress);
       }
-      await addDoc(collection(db, 'posts'), {
+      const fields = {
         title: postForm.title, slug: postForm.slug || slugify(postForm.title),
-        excerpt: postForm.excerpt, content: postForm.content, coverImage,
+        excerpt: postForm.excerpt, content: postForm.content,
         category: postForm.category, author: postForm.author || 'Crunch Fitness Club',
         tags: postForm.tags.split(',').map((t) => t.trim()).filter(Boolean),
         readTime: calcReadTime(postForm.content), published: postForm.published,
-        publishedAt: serverTimestamp(),
-      });
+        seoTitle: postForm.seoTitle.trim(), seoDescription: postForm.seoDescription.trim(),
+      };
+      if (editingPostId) {
+        // Keep the original date and cover unless a new image was chosen
+        await updateDoc(doc(db, 'posts', editingPostId), { ...fields, ...(coverImage ? { coverImage } : {}) });
+      } else {
+        await addDoc(collection(db, 'posts'), { ...fields, coverImage, publishedAt: serverTimestamp() });
+      }
       setPostForm(EMPTY_POST); setPostImageFile(null); setPostPreview(''); setPostProgress(0);
-      setShowPostForm(false); showToast('Post published successfully!');
+      setShowPostForm(false);
+      showToast(editingPostId ? 'Post updated.' : postForm.published ? 'Post published.' : 'Draft saved.');
+      audit(editingPostId ? 'Blog post updated' : postForm.published ? 'Blog post published' : 'Blog draft saved', 'post', { title: postForm.title });
+      setEditingPostId(null);
     } catch (err) { console.error(err); showToast('Error saving post. Try again.'); }
     finally { setPostSaving(false); }
   };
@@ -440,8 +479,18 @@ const AdminDashboard = () => {
   const handleDeletePost = async (post: BlogPost) => {
     try {
       await deleteDoc(doc(db, 'posts', post.id));
-      setDeletePostConfirm(null); showToast('Post deleted.');
+      setDeletePostConfirm(null); showToast('Post deleted.'); audit('Blog post deleted', 'post', {});
     } catch { showToast('Error deleting post.'); }
+  };
+
+  const openEditPost = (post: BlogPost) => {
+    setEditingPostId(post.id);
+    setPostForm({
+      title: post.title, slug: post.slug, excerpt: post.excerpt, content: post.content, category: post.category,
+      author: post.author, tags: (post.tags ?? []).join(', '), published: post.published,
+      seoTitle: post.seoTitle ?? '', seoDescription: post.seoDescription ?? '',
+    });
+    setPostPreview(post.coverImage ?? ''); setPostImageFile(null); setShowPostForm(true);
   };
 
   const togglePublished = async (post: BlogPost) =>
@@ -509,10 +558,10 @@ const AdminDashboard = () => {
 
       if (editingMemberId) {
         await updateDoc(doc(db, 'teamMembers', editingMemberId), data);
-        showToast('Member updated!');
+        showToast('Member updated!'); audit('Team profile updated', 'team', { name: memberForm.name });
       } else {
         await addDoc(collection(db, 'teamMembers'), data);
-        showToast('Member added!');
+        showToast('Member added!'); audit('Team profile added', 'team', { name: memberForm.name });
       }
 
       setShowMemberForm(false); setMemberImageFile(null); setMemberPreview('');
@@ -535,7 +584,7 @@ const AdminDashboard = () => {
         deleteDoc(doc(db, 'teamMembers', member.id)),
       ]);
       setDeleteMemberConfirm(null);
-      showToast('Member and all associated data removed.');
+      showToast('Member and all associated data removed.'); audit('Team profile removed', 'team', {});
     } catch { showToast('Error deleting member.'); }
   };
 
@@ -563,17 +612,17 @@ const AdminDashboard = () => {
     try {
       if (editingOfferId) {
         await updateDoc(doc(db, 'offers', editingOfferId), { ...offerForm });
-        showToast('Offer updated!');
+        showToast('Offer updated!'); audit('Offer updated', 'offer', { title: offerForm.title });
       } else {
         await addDoc(collection(db, 'offers'), { ...offerForm });
-        showToast('Offer created!');
+        showToast('Offer created!'); audit('Offer created', 'offer', { title: offerForm.title });
       }
       setShowOfferForm(false);
     } catch (err) { console.error(err); showToast('Error saving offer.'); }
     finally { setOfferSaving(false); }
   };
   const handleDeleteOffer = async (id: string) => {
-    try { await deleteDoc(doc(db, 'offers', id)); setDeleteOfferConfirm(null); showToast('Offer deleted.'); }
+    try { await deleteDoc(doc(db, 'offers', id)); setDeleteOfferConfirm(null); showToast('Offer deleted.'); audit('Offer deleted', 'offer', {}); }
     catch { showToast('Error deleting offer.'); }
   };
   const toggleOfferActive = (o: Offer) => updateDoc(doc(db, 'offers', o.id), { active: !o.active });
@@ -604,24 +653,24 @@ const AdminDashboard = () => {
       const data = { ...planForm, features: planForm.features.split('\n').map((f) => f.trim()).filter(Boolean) };
       if (editingPlanId) {
         await updateDoc(doc(db, 'plans', editingPlanId), data);
-        showToast('Plan updated!');
+        showToast('Plan updated!'); audit('Plan changed', 'plan', { name: planForm.duration, price: planForm.price });
       } else {
         await addDoc(collection(db, 'plans'), data);
-        showToast('Plan added!');
+        showToast('Plan added!'); audit('Plan added', 'plan', { name: planForm.duration, price: planForm.price });
       }
       setShowPlanForm(false);
     } catch (err) { console.error(err); showToast('Error saving plan.'); }
     finally { setPlanSaving(false); }
   };
   const handleDeletePlan = async (id: string) => {
-    try { await deleteDoc(doc(db, 'plans', id)); setDeletePlanConfirm(null); showToast('Plan deleted.'); }
+    try { await deleteDoc(doc(db, 'plans', id)); setDeletePlanConfirm(null); showToast('Plan deleted.'); audit('Plan deleted', 'plan', {}); }
     catch { showToast('Error deleting plan.'); }
   };
   const seedDefaultPlans = async () => {
     setSeedingPlans(true);
     try {
       await Promise.all(DEFAULT_PLANS.map((p) => addDoc(collection(db, 'plans'), p)));
-      showToast('Default plans loaded!');
+      showToast('Default plans loaded!'); audit('Default plans loaded', 'plan', {});
     } catch { showToast('Error seeding plans.'); }
     finally { setSeedingPlans(false); }
   };
@@ -632,19 +681,20 @@ const AdminDashboard = () => {
   const markEnquiryRead = (id: string) =>
     updateDoc(doc(db, 'enquiries', id), { read: true });
 
-  const cycleEnquiryStatus = async (e: Enquiry) => {
-    await updateDoc(doc(db, 'enquiries', e.id), {
-      status: ENQUIRY_STATUS_NEXT[e.status],
-      read: true,
-    });
+  // The pipeline: New → Contacted → Follow-up → Converted → Closed
+  const setEnquiryStatus = async (e: Enquiry, status: EnquiryStatus) => {
+    await updateDoc(doc(db, 'enquiries', e.id), { status, read: true });
+    audit('Enquiry status changed', 'enquiry', { name: e.name, status: ENQUIRY_STATUS_LABEL[status] });
+  };
+  const saveEnquiryNotes = (e: Enquiry, notes: string) => {
+    if ((e.notes ?? '') !== notes) updateDoc(doc(db, 'enquiries', e.id), { notes });
   };
 
   const handleDeleteEnquiry = async (id: string) => {
-    try { await deleteDoc(doc(db, 'enquiries', id)); setDeleteEnquiryConfirm(null); showToast('Enquiry deleted.'); }
+    try { await deleteDoc(doc(db, 'enquiries', id)); setDeleteEnquiryConfirm(null); showToast('Enquiry deleted.'); audit('Enquiry deleted', 'enquiry', {}); }
     catch { showToast('Error deleting enquiry.'); }
   };
 
-  const handleLogout = async () => { await signOut(auth); navigate('/admin/login'); };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Duty Roster handlers
@@ -664,10 +714,10 @@ const AdminDashboard = () => {
       };
       if (editingDutyId) {
         await updateDoc(doc(db, 'duties', editingDutyId), data);
-        showToast('Duty updated!');
+        showToast('Duty updated!'); audit('Duty roster updated', 'duty', {});
       } else {
         await addDoc(collection(db, 'duties'), data);
-        showToast('Duty assigned!');
+        showToast('Duty assigned!'); audit('Duty assigned', 'duty', {});
       }
       setShowDutyForm(false);
       setEditingDutyId(null);
@@ -677,7 +727,7 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteDuty = async (id: string) => {
-    try { await deleteDoc(doc(db, 'duties', id)); showToast('Duty removed.'); }
+    try { await deleteDoc(doc(db, 'duties', id)); showToast('Duty removed.'); audit('Duty removed', 'duty', {}); }
     catch { showToast('Error deleting duty.'); }
   };
 
@@ -702,10 +752,10 @@ const AdminDashboard = () => {
         // Don't overwrite pin on edit
         const { pin: _p, ...rest } = data as typeof data & { pin?: string };
         await updateDoc(doc(db, 'classSessions', editingSessionId), rest);
-        showToast('Session updated!');
+        showToast('Session updated!'); audit('Class updated', 'class', { title: sessionForm.title });
       } else {
         await addDoc(collection(db, 'classSessions'), data);
-        showToast('Class session created!');
+        showToast('Class session created!'); audit('Class created', 'class', { title: sessionForm.title });
       }
       setShowSessionForm(false);
       setEditingSessionId(null);
@@ -715,7 +765,7 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteSession = async (id: string) => {
-    try { await deleteDoc(doc(db, 'classSessions', id)); showToast('Session deleted.'); }
+    try { await deleteDoc(doc(db, 'classSessions', id)); showToast('Session deleted.'); audit('Class deleted', 'class', {}); }
     catch { showToast('Error deleting session.'); }
   };
 
@@ -740,7 +790,7 @@ const AdminDashboard = () => {
         name: trainer?.name ?? accountForm.name,
         email: accountForm.email,
       });
-      showToast('Trainer account created!');
+      showToast('Trainer account created!'); audit('Trainer login created', 'trainer', { email: accountForm.email });
       setShowAccountForm(false);
       setAccountForm({ email: '', password: '', name: '', trainerId: '' });
     } catch (err: unknown) {
@@ -767,7 +817,7 @@ const AdminDashboard = () => {
         sessionsSnap.docs.forEach((d) => deletes.push(deleteDoc(d.ref)));
       }
       await Promise.all(deletes);
-      showToast('Trainer account and schedule data removed.');
+      showToast('Trainer account and schedule data removed.'); audit('Trainer login removed', 'trainer', {});
     } catch { showToast('Error removing account.'); }
   };
 
@@ -775,20 +825,8 @@ const AdminDashboard = () => {
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen bg-zinc-950 text-white flex overflow-hidden">
-      <AdminSidebar
-        active={activeTab}
-        email={user?.email}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onLogout={handleLogout}
-        onSelect={setActiveTab}
-        counts={{ posts: posts.length, team: members.length, offers: offers.length, plans: plans.length, enquiries: enquiries.length, schedule: sessions.length, accounts: trainerAccounts.length }}
-        unreadEnquiries={enquiries.filter((e) => !e.read).length}
-      />
-
-      {/* ── Main content area ── */}
-      <div className="flex-1 md:ml-60 flex flex-col h-screen overflow-hidden w-full">
+    <div className="w-full text-white">
+      <div className="w-full">
         {/* Toast */}
         {toast && (
           <div className="fixed top-6 right-6 z-50 bg-green-400 text-black px-5 py-3 rounded-xl shadow-xl font-semibold text-sm animate-fade-in">
@@ -797,16 +835,10 @@ const AdminDashboard = () => {
         )}
 
         {/* Top bar */}
-        <header className="flex-shrink-0 z-30 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 md:px-6 h-16 flex items-center justify-between">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="md:hidden text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
-            >
-              <Menu size={20} />
-            </button>
             <div>
-              <h1 className="font-bold text-white text-base">
+              <h1 className="font-display text-4xl font-bold uppercase leading-none text-white sm:text-5xl">
                 {activeTab === 'posts' && 'Blog Posts'}
                 {activeTab === 'team' && 'Team & Trainers'}
                 {activeTab === 'offers' && 'Offers & Promotions'}
@@ -816,12 +848,11 @@ const AdminDashboard = () => {
                 {activeTab === 'schedule' && 'Class Schedule'}
                 {activeTab === 'accounts' && 'Trainer Accounts'}
               </h1>
-              <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {activeTab === 'posts' && (
-              <button onClick={() => { setShowPostForm(true); setPostForm(EMPTY_POST); setPostPreview(''); setPostImageFile(null); }}
+              <button onClick={() => { setEditingPostId(null); setShowPostForm(true); setPostForm(EMPTY_POST); setPostPreview(''); setPostImageFile(null); }}
                 className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-300 text-black font-bold rounded-xl text-sm transition-all duration-200 hover:scale-105">
                 <Plus size={16} /> New Post
               </button>
@@ -863,9 +894,9 @@ const AdminDashboard = () => {
               </button>
             )}
           </div>
-        </header>
+        </div>
 
-        <main className="flex-1 overflow-y-auto px-6 py-6 w-full">
+        <div className="w-full">
 
         {/* ── Blog Posts Tab ── */}
         {activeTab === 'posts' && (
@@ -897,14 +928,23 @@ const AdminDashboard = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
+                        onClick={() => openEditPost(post)}
+                        aria-label={`Edit ${post.title}`}
+                        className="p-2 rounded-xl bg-zinc-800 text-gray-400 hover:bg-blue-400/15 hover:text-blue-400 transition-colors"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
                         onClick={() => togglePublished(post)}
                         title={post.published ? 'Unpublish' : 'Publish'}
+                        aria-label={post.published ? `Unpublish ${post.title}` : `Publish ${post.title}`}
                         className={`p-2 rounded-xl transition-colors ${post.published ? 'bg-green-400/15 text-green-400 hover:bg-green-400/25' : 'bg-zinc-800 text-gray-500 hover:bg-zinc-700'}`}
                       >
                         {post.published ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
                       <button
                         onClick={() => setDeletePostConfirm(post.id)}
+                        aria-label={`Delete ${post.title}`}
                         className="p-2 rounded-xl bg-zinc-800 text-gray-500 hover:bg-red-400/15 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={16} />
@@ -968,16 +1008,20 @@ const AdminDashboard = () => {
                       </button>
                       <button
                         onClick={() => openEditMember(member)}
+                        aria-label={`Edit ${member.name}`}
                         className="p-2 rounded-xl bg-zinc-800 text-gray-400 hover:bg-blue-400/15 hover:text-blue-400 transition-colors"
                       >
                         <Edit2 size={16} />
                       </button>
-                      <button
-                        onClick={() => setDeleteMemberConfirm(member.id)}
-                        className="p-2 rounded-xl bg-zinc-800 text-gray-500 hover:bg-red-400/15 hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {canRemoveTeam && (
+                        <button
+                          onClick={() => setDeleteMemberConfirm(member.id)}
+                          aria-label={`Remove ${member.name}`}
+                          className="p-2 rounded-xl bg-zinc-800 text-gray-500 hover:bg-red-400/15 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1004,8 +1048,11 @@ const AdminDashboard = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-white font-semibold text-sm truncate">{offer.title}</p>
-                          {isLive && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full flex-shrink-0">LIVE</span>}
-                          {!offer.active && <span className="text-xs text-gray-500 bg-zinc-800 px-2 py-0.5 rounded-full flex-shrink-0">Inactive</span>}
+                          {/* Same rule the public banner uses: active and within its dates */}
+                          {isLive && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full flex-shrink-0">Live</span>}
+                          {offer.active && offer.startDate > todayStr && <span className="text-xs text-sky-300 bg-sky-400/10 px-2 py-0.5 rounded-full flex-shrink-0">Scheduled</span>}
+                          {offer.endDate < todayStr && <span className="text-xs text-gray-400 bg-zinc-800 px-2 py-0.5 rounded-full flex-shrink-0">Expired</span>}
+                          {!offer.active && offer.endDate >= todayStr && <span className="text-xs text-gray-500 bg-zinc-800 px-2 py-0.5 rounded-full flex-shrink-0">Switched off</span>}
                         </div>
                         {offer.description && <p className="text-gray-500 text-xs mt-0.5 truncate">{offer.description}</p>}
                         <div className="flex items-center gap-2 mt-1">
@@ -1091,6 +1138,7 @@ const AdminDashboard = () => {
             all: enquiries.length,
             new: enquiries.filter((e) => e.status === 'new').length,
             contacted: enquiries.filter((e) => e.status === 'contacted').length,
+            follow_up: enquiries.filter((e) => e.status === 'follow_up').length,
             converted: enquiries.filter((e) => e.status === 'converted').length,
             closed: enquiries.filter((e) => e.status === 'closed').length,
           };
@@ -1107,7 +1155,7 @@ const AdminDashboard = () => {
                 </div>
                 {/* Filter pills */}
                 <div className="flex flex-wrap gap-2">
-                  {(['all', 'new', 'contacted', 'converted', 'closed'] as const).map((s) => (
+                  {(['all', 'new', 'contacted', 'follow_up', 'converted', 'closed'] as const).map((s) => (
                     <button
                       key={s}
                       onClick={() => setEnquiryFilter(s)}
@@ -1180,25 +1228,40 @@ const AdminDashboard = () => {
                                 {enq.message}
                               </p>
                             )}
+                            {isExpanded && (
+                              <label className="mt-3 block" onClick={(ev) => ev.stopPropagation()}>
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Staff notes</span>
+                                <textarea
+                                  defaultValue={enq.notes ?? ''}
+                                  onBlur={(ev) => saveEnquiryNotes(enq, ev.target.value)}
+                                  rows={2}
+                                  placeholder="e.g. Called on Monday — visiting Saturday for a tour"
+                                  className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-green-400 focus:outline-none"
+                                />
+                              </label>
+                            )}
+                            {!isExpanded && enq.notes && <p className="mt-2 text-[11px] text-gray-500 line-clamp-1">Note: {enq.notes}</p>}
                           </div>
                           {/* Actions */}
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            {enq.message && (
-                              <button
-                                onClick={(ev) => { ev.stopPropagation(); setExpandedEnquiry(isExpanded ? null : enq.id); }}
-                                className="p-2 rounded-xl bg-zinc-800 text-gray-400 hover:bg-zinc-700 transition-colors"
-                                title={isExpanded ? 'Collapse' : 'Expand message'}
-                              >
-                                {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                              </button>
-                            )}
                             <button
-                              onClick={(ev) => { ev.stopPropagation(); cycleEnquiryStatus(enq); }}
-                              className="px-3 py-1.5 rounded-xl bg-zinc-800 text-gray-300 hover:bg-zinc-700 text-xs font-semibold transition-colors whitespace-nowrap"
-                              title={`Move to: ${ENQUIRY_STATUS_LABEL[ENQUIRY_STATUS_NEXT[enq.status]]}`}
+                              onClick={(ev) => { ev.stopPropagation(); setExpandedEnquiry(isExpanded ? null : enq.id); }}
+                              className="p-2 rounded-xl bg-zinc-800 text-gray-400 hover:bg-zinc-700 transition-colors"
+                              title={isExpanded ? 'Collapse' : 'Open message and notes'}
+                              aria-label={isExpanded ? 'Collapse enquiry' : 'Open message and notes'}
                             >
-                              → {ENQUIRY_STATUS_LABEL[ENQUIRY_STATUS_NEXT[enq.status]]}
+                              {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                             </button>
+                            <label onClick={(ev) => ev.stopPropagation()}>
+                              <span className="sr-only">Status for {enq.name}</span>
+                              <select
+                                value={enq.status}
+                                onChange={(ev) => setEnquiryStatus(enq, ev.target.value as EnquiryStatus)}
+                                className="h-9 rounded-xl border border-zinc-700 bg-zinc-800 px-2 text-xs font-semibold text-gray-200 focus:border-green-400 focus:outline-none"
+                              >
+                                {(['new', 'contacted', 'follow_up', 'converted', 'closed'] as const).map((st) => <option key={st} value={st}>{ENQUIRY_STATUS_LABEL[st]}</option>)}
+                              </select>
+                            </label>
                             <button
                               onClick={(ev) => { ev.stopPropagation(); setDeleteEnquiryConfirm(enq.id); }}
                               className="p-2 rounded-xl bg-zinc-800 text-gray-500 hover:bg-red-400/15 hover:text-red-400 transition-colors"
@@ -1372,8 +1435,8 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        </main>
-      </div> {/* end main content area */}
+        </div>
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           Blog Post Form Modal
@@ -1382,7 +1445,7 @@ const AdminDashboard = () => {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-              <h3 className="font-heading font-bold text-lg">New Blog Post</h3>
+              <h3 className="font-heading font-bold text-lg">{editingPostId ? 'Edit Blog Post' : 'New Blog Post'}</h3>
               <button onClick={() => setShowPostForm(false)} className="text-gray-400 hover:text-white transition-colors">
                 <XCircle size={22} />
               </button>
@@ -1457,6 +1520,20 @@ const AdminDashboard = () => {
                 </label>
                 <input name="tags" value={postForm.tags} onChange={handlePostFormChange} placeholder="fitness, weight loss, gym tips"
                   className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-green-400 text-sm transition-colors" />
+              </div>
+              {/* Search engines (optional) */}
+              <div className="grid gap-4 rounded-xl border border-zinc-800 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Google preview (optional)</p>
+                <div>
+                  <label htmlFor="post-seo-title" className="block text-sm font-semibold text-gray-300 mb-1.5">SEO title <span className="font-normal text-gray-500">— defaults to the title</span></label>
+                  <input id="post-seo-title" name="seoTitle" value={postForm.seoTitle} onChange={handlePostFormChange} maxLength={70} placeholder={postForm.title}
+                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-green-400 text-sm transition-colors" />
+                </div>
+                <div>
+                  <label htmlFor="post-seo-desc" className="block text-sm font-semibold text-gray-300 mb-1.5">SEO description <span className="font-normal text-gray-500">— defaults to the excerpt · {postForm.seoDescription.length}/160</span></label>
+                  <textarea id="post-seo-desc" name="seoDescription" value={postForm.seoDescription} onChange={handlePostFormChange} maxLength={160} rows={2} placeholder={postForm.excerpt}
+                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-green-400 text-sm transition-colors resize-none" />
+                </div>
               </div>
               {/* Publish toggle */}
               <label className="flex items-center gap-3 cursor-pointer select-none">

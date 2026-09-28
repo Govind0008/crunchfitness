@@ -4,8 +4,10 @@ rules_version = '2';
 // Crunch Fitness — complete Firestore rules (the live rules merged with Events).
 // Publish in Firebase console → Firestore → Rules, or `firebase deploy --only firestore:rules`.
 //
-// Roles live in userRoles/{uid}.role: "admin" | "trainer" | "client".
-// An account with no role document has no staff rights.
+// Roles live in userRoles/{uid}.role: "admin" | "marketing" | "trainer" | "client".
+// An account with no role document has no staff rights. Only admins change roles.
+// "marketing" manages public content only (blog, offers, team profiles, event content/media,
+// Instagram highlights) — never members, phone numbers, payments, check-ins or roles.
 // ─────────────────────────────────────────────────────────────────────────────
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -14,6 +16,9 @@ service cloud.firestore {
     function myRole() { return get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data; }
     function hasRole() { return signedIn() && exists(/databases/$(database)/documents/userRoles/$(request.auth.uid)); }
     function isAdmin() { return hasRole() && myRole().role == 'admin'; }
+    function isMarketing() { return hasRole() && myRole().role == 'marketing'; }
+    // Staff who may edit what the public sees
+    function isContentStaff() { return isAdmin() || isMarketing(); }
     function isTrainer() { return hasRole() && myRole().role == 'trainer'; }
     function isTrainerOf(trainerId) { return isTrainer() && myRole().trainerId == trainerId; }
     function isClientOf(trainerId) { return hasRole() && myRole().role == 'client' && myRole().trainerId == trainerId; }
@@ -23,19 +28,25 @@ service cloud.firestore {
     // True while an admin deletes an event: its records may only be removed together with it
     function eventGone(eventId) { return !existsAfter(/databases/$(database)/documents/events/$(eventId)); }
 
-    // ── Public site content: anyone reads, admins edit ──────────────────────
+    // ── Public site content: anyone reads, admins and marketing edit ─────────
+    // Drafts stay private until published
     match /posts/{doc} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read: if resource.data.published == true || isContentStaff();
+      allow write: if isContentStaff();
     }
+    // Team profiles: marketing edits the public profile; removing a trainer (which also removes
+    // their login, roster and classes) stays with admins.
     match /teamMembers/{doc} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if isContentStaff();
+      allow delete: if isAdmin();
     }
+    // Offers are promotional banners only — they never change a plan's price or a payment
     match /offers/{doc} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isContentStaff();
     }
+    // Plan prices are business data: admins only
     match /plans/{doc} {
       allow read: if true;
       allow write: if isAdmin();
@@ -49,26 +60,104 @@ service cloud.firestore {
 
     // Duty roster — trainers read theirs, admins manage
     match /duties/{doc} {
-      allow read: if signedIn();
+      allow read: if isAdmin() || isTrainer();
       allow write: if isAdmin();
     }
 
-    // Class sessions — public read (needed for /checkin PIN lookup), admins manage
-    match /classSessions/{doc} {
+    // Class sessions — public read (needed for /checkin PIN lookup), admins manage.
+    // The public may only move the check-in counter up by one, within capacity (see attendance).
+    match /classSessions/{sessionId} {
       allow read: if true;
       allow write: if isAdmin();
+      allow update: if changed().hasOnly(['checkedInCount'])
+        && request.resource.data.checkedInCount == resource.data.get('checkedInCount', 0) + 1
+        && request.resource.data.checkedInCount <= resource.data.capacity;
     }
 
-    // Attendance — anyone can create (member self check-in), staff read/manage
-    match /attendance/{doc} {
-      allow create: if true;
-      allow read, update, delete: if signedIn();
+    // Attendance — members self check-in at /checkin: one document per person per class
+    // ({sessionId}_{phoneKey}, never overwritten), counted on the session in the same write.
+    // Phone numbers are visible to staff only.
+    match /attendance/{attId} {
+      allow create: if attId == request.resource.data.sessionId + '_' + request.resource.data.memberPhoneKey
+        && request.resource.data.keys().hasOnly(['sessionId', 'memberName', 'memberPhone', 'memberPhoneKey', 'checkedInAt'])
+        && request.resource.data.memberPhoneKey.matches('[0-9]{10}')
+        && request.resource.data.memberName is string && request.resource.data.memberName.size() > 0 && request.resource.data.memberName.size() <= 80
+        && request.resource.data.checkedInAt == request.time
+        && exists(/databases/$(database)/documents/classSessions/$(request.resource.data.sessionId))
+        && getAfter(/databases/$(database)/documents/classSessions/$(request.resource.data.sessionId)).data.get('checkedInCount', 0)
+           == get(/databases/$(database)/documents/classSessions/$(request.resource.data.sessionId)).data.get('checkedInCount', 0) + 1;
+      allow read: if isAdmin() || isTrainer();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Members — the gym's membership list ──────────────────────────────────
+    // Admins manage; a trainer can see the members assigned to them.
+    match /members/{memberId} {
+      allow read: if isAdmin() || (isTrainer() && resource.data.trainerId == myRole().trainerId);
+      allow create, update: if isAdmin()
+        && request.resource.data.name is string && request.resource.data.name.size() > 1
+        && request.resource.data.phoneKey is string && request.resource.data.phoneKey.matches('[0-9]{10}')
+        && request.resource.data.status in ['active', 'inactive']
+        && request.resource.data.activeUntil is string;
+      allow delete: if isAdmin();
+    }
+
+    // Gym-wide admin activity log: append-only
+    match /activity/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isContentStaff() && request.resource.data.at == request.time && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── Payments — money actually received ────────────────────────────────────
+    // Admins only. Each payment takes the next receipt number (counter moves by exactly one in
+    // the same transaction), is never edited, and can only be voided — with a reason. No deletes.
+    match /payments/{paymentId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.amountPaise is int && request.resource.data.amountPaise > 0
+        && request.resource.data.countedPaise == request.resource.data.amountPaise
+        && request.resource.data.status == 'paid'
+        && request.resource.data.method in ['cash', 'upi', 'card', 'bank_transfer', 'other']
+        && request.resource.data.paidOn is string && request.resource.data.paidOn.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.memberId is string
+        // Optional discount snapshot: whole paise, never negative
+        && (!('discountPaise' in request.resource.data) || (request.resource.data.discountPaise is int && request.resource.data.discountPaise >= 0))
+        && (!('listPricePaise' in request.resource.data) || request.resource.data.listPricePaise == null || (request.resource.data.listPricePaise is int && request.resource.data.listPricePaise >= 0))
+        && request.resource.data.receiptSeq == getAfter(/databases/$(database)/documents/counters/receipts).data.next
+        // …and the counter moved in this same write (so a number can never be reused)
+        && ((!exists(/databases/$(database)/documents/counters/receipts) && request.resource.data.receiptSeq == 1)
+          || (exists(/databases/$(database)/documents/counters/receipts)
+            && request.resource.data.receiptSeq == get(/databases/$(database)/documents/counters/receipts).data.next + 1))
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAdmin()
+        && resource.data.status == 'paid'
+        && changed().hasOnly(['status', 'countedPaise', 'voidReason', 'voidedBy', 'voidedAt'])
+        && request.resource.data.status == 'void'
+        && request.resource.data.countedPaise == 0
+        && request.resource.data.voidReason is string && request.resource.data.voidReason.size() > 2;
+      allow delete: if false;
+    }
+
+    // Receipt numbering: only ever moves up by one
+    match /counters/{counterId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.next == 1;
+      allow update: if isAdmin() && request.resource.data.next == resource.data.next + 1;
+      allow delete: if false;
+    }
+
+    // Admin settings (e.g. the "expiring soon" window)
+    match /settings/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // ── Trainer portal ────────────────────────────────────────────────────────
     // Trainer: full access to their own data. Client: read their trainer's data and
     // send session requests (ClientDashboard adds to sessionRequests).
     match /trainerData/{trainerId}/{sub}/{docId} {
+      allow read: if isAdmin();
       allow read, write: if isTrainerOf(trainerId);
       allow read: if isClientOf(trainerId);
       allow create: if isClientOf(trainerId) && sub == 'sessionRequests';
@@ -76,6 +165,7 @@ service cloud.firestore {
 
     // Progress logs: the trainer, or the client the log belongs to
     match /trainerData/{trainerId}/clients/{clientId}/progressLogs/{logId} {
+      allow read: if isAdmin();
       allow read, write: if isTrainerOf(trainerId);
       allow read, write: if isClientOf(trainerId) && myRole().clientId == clientId;
     }
@@ -96,19 +186,20 @@ service cloud.firestore {
         || (isTrainer() && resource.data.role == 'client' && resource.data.trainerId == myRole().trainerId));
       allow create: if isAdmin()
         || (isTrainer() && request.resource.data.role == 'client' && request.resource.data.trainerId == myRole().trainerId);
-      allow update: if isAdmin();
-      allow delete: if isAdmin()
+      // An admin can't demote or remove their own account (so the gym is never locked out by accident)
+      allow update: if isAdmin() && (uid != request.auth.uid || request.resource.data.role == 'admin');
+      allow delete: if (isAdmin() && uid != request.auth.uid)
         || (isTrainer() && resource.data.role == 'client' && resource.data.trainerId == myRole().trainerId);
     }
 
     // ── Instagram highlights (staff-picked real posts, shown as official embeds) ──
     match /socialHighlights/{id} {
-      allow read: if resource.data.visible == true || isAdmin();
-      allow create, update: if isAdmin()
+      allow read: if resource.data.visible == true || isContentStaff();
+      allow create, update: if isContentStaff()
         && request.resource.data.url is string
         && request.resource.data.url.matches('https://www\\.instagram\\.com/(p|reel)/[A-Za-z0-9_-]+/?')
         && request.resource.data.visible is bool;
-      allow delete: if isAdmin();
+      allow delete: if isContentStaff();
     }
 
     // ── Events ────────────────────────────────────────────────────────────────
@@ -134,10 +225,23 @@ service cloud.firestore {
       return s in ['draft', 'registration_open', 'registration_closed', 'check_in', 'live', 'results_pending', 'results_published', 'archived'];
     }
 
-    match /events/{eventId} {
-      allow read: if isAdmin() || resource.data.status != 'draft';
+    // A member's registrations across all events (member profile) — one collection-group query
+    // instead of one per event. Same audience as the per-event rule: admins only.
+    match /{path=**}/registrations/{regId} {
+      allow read: if isAdmin();
+    }
 
-      allow create: if isAdmin()
+    // Public-facing event fields marketing may edit on any event (never status, dates,
+    // registration, capacity or counts — those stay with admins)
+    function eventContentOnly() {
+      return changed().hasOnly(['title', 'shortDescription', 'description', 'coverImage', 'location', 'eligibility', 'rules', 'updatedAt']);
+    }
+
+    match /events/{eventId} {
+      allow read: if isContentStaff() || resource.data.status != 'draft';
+
+      // Marketing may create drafts too; only an admin opens registration
+      allow create: if isContentStaff()
         && request.resource.data.status == 'draft'
         && request.resource.data.registrationCount == 0
         && request.resource.data.title is string && request.resource.data.title.size() > 0;
@@ -147,6 +251,10 @@ service cloud.firestore {
           && allowedMove(resource.data.status, request.resource.data.status)
           // registrationCount only ever moves through registrations, never by hand
           && request.resource.data.registrationCount == resource.data.registrationCount)
+        // Marketing: public content on any event, or any detail of a draft that stays a draft
+        || (isMarketing() && (eventContentOnly()
+          || (resource.data.status == 'draft' && request.resource.data.status == 'draft'
+            && request.resource.data.registrationCount == 0 && request.resource.data.checkedInCount == resource.data.checkedInCount)))
         // Public registration: count goes up by exactly one, in the same write as the new registration
         || (changed().hasOnly(['registrationCount'])
           && resource.data.status == 'registration_open'
@@ -164,7 +272,7 @@ service cloud.firestore {
         allow create: if regId == string(eventAfter(eventId).registrationCount)
           && eventAt(eventId).status == 'registration_open'
           && eventAt(eventId).registrationCount + 1 == eventAfter(eventId).registrationCount
-          && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'categoryId', 'number', 'status', 'showName', 'passId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['name', 'phone', 'phoneKey', 'email', 'categoryId', 'number', 'status', 'showName', 'passId', 'createdAt'])
           && request.resource.data.status == 'registered'
           && request.resource.data.number == eventAfter(eventId).registrationCount
           && request.resource.data.name is string && request.resource.data.name.size() > 1 && request.resource.data.name.size() <= 80
@@ -197,16 +305,16 @@ service cloud.firestore {
         allow delete: if isAdmin() && eventGone(eventId);
       }
 
-      // Media: public only when an admin has made it visible.
+      // Media: public only when staff have made it visible.
       match /media/{mediaId} {
-        allow read: if isAdmin() || (resource.data.visible == true && eventAt(eventId).status != 'draft');
-        allow create, update, delete: if isAdmin();
+        allow read: if isContentStaff() || (resource.data.visible == true && eventAt(eventId).status != 'draft');
+        allow create, update, delete: if isContentStaff();
       }
 
       // Activity log: append-only, admins only.
       match /activity/{activityId} {
         allow read: if isAdmin();
-        allow create: if isAdmin() && request.resource.data.at == request.time && request.resource.data.actorUid == request.auth.uid;
+        allow create: if isContentStaff() && request.resource.data.at == request.time && request.resource.data.actorUid == request.auth.uid;
         allow update: if false;
         allow delete: if isAdmin() && eventGone(eventId);
       }

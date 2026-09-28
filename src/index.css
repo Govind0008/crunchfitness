@@ -426,6 +426,15 @@ html { scroll-padding-top: calc(var(--page-top) + 1rem); }
   animation-delay: calc(120ms + var(--i, 0) * 45ms);
 }
 
+/* ── Printing a receipt: only the receipt, full size, no admin shell ────────── */
+@media print {
+  [data-admin-shell], [data-admin-shell] main { height: auto !important; overflow: visible !important; display: block !important; }
+  body * { visibility: hidden; }
+  .receipt-area, .receipt-area * { visibility: visible; }
+  .receipt-area { position: absolute; inset: 0 auto auto 0; width: 100%; }
+  body { background: #fff !important; }
+}
+
 /* ── Page transitions ──────────────────────────────────────────────────────── */
 @keyframes pageEnter {
   from { opacity: 0; transform: translate3d(0, 10px, 0); }

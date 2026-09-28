@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Hud, TickRail } from '@/components/motion';
 import { useRevealOnMount } from '@/hooks/useScrollReveal';
 import { cn } from '@/lib/utils';
+import { GYM } from '@/lib/gym';
 import { SITE } from '@/lib/site';
 import {
   formatEventDate, formatScore, formatTime, getPublicMedia, passNumber, rankCategory, register, registrationBlocker, winsLabel,
@@ -217,7 +218,7 @@ const EventPage = () => {
     endDate: ev.endTime ? `${ev.eventDate}T${ev.endTime}:00+05:30` : undefined,
     eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     image: ev.coverImage ? [ev.coverImage] : undefined,
-    location: { '@type': 'Place', name: ev.location, address: { '@type': 'PostalAddress', streetAddress: SITE.address.slice(0, 2).join(', '), addressLocality: 'Pune', addressRegion: 'Maharashtra', postalCode: '411050', addressCountry: 'IN' } },
+    location: { '@type': 'Place', name: ev.location, address: { '@type': 'PostalAddress', streetAddress: SITE.address.slice(0, 2).join(', '), addressLocality: 'Pune', addressRegion: 'Maharashtra', postalCode: GYM.postalCode, addressCountry: 'IN' } },
     organizer: { '@type': 'Organization', name: SITE.name, url: SITE.url },
     url: `${SITE.url}/events/${ev.slug}`,
   };

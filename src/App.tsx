@@ -12,7 +12,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
 const GlobalUI = () => {
   const { pathname } = useLocation();
-  const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/trainer') || pathname.startsWith('/client') || pathname === '/checkin';
+  const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/marketing') || pathname.startsWith('/trainer') || pathname.startsWith('/client') || pathname === '/checkin';
   const [bannerVisible, setBannerVisible] = useState(false);
 
   // Admin/portal pages render without the public navbar, so they need no top offset.
@@ -51,7 +51,8 @@ const Contact        = lazy(() => import("./pages/Contact"));
 const Blog           = lazy(() => import("./pages/Blog"));
 const BlogPost       = lazy(() => import("./pages/BlogPost"));
 const AdminLogin       = lazy(() => import("./pages/AdminLogin"));
-const AdminArea        = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.AdminArea })));
+const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
+const AdminLayout      = lazy(() => import("./features/admin/AdminLayout"));
 const TrainerLogin     = lazy(() => import("./pages/TrainerLogin"));
 const TrainerArea      = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.TrainerArea })));
 const ClientLogin      = lazy(() => import("./pages/ClientLogin"));
@@ -62,6 +63,10 @@ const EventsPage       = lazy(() => import("./features/events/public/EventsPage"
 const EventPage        = lazy(() => import("./features/events/public/EventPage"));
 const PassPage         = lazy(() => import("./features/events/public/PassPage"));
 const EventsAdmin      = lazy(() => import("./features/events/admin"));
+const AdminApp         = lazy(() => import("./features/admin"));
+const MarketingLogin   = lazy(() => import("./features/marketing/MarketingLogin"));
+const MarketingLayout  = lazy(() => import("./features/marketing/MarketingLayout"));
+const MarketingApp     = lazy(() => import("./features/marketing"));
 
 // Minimal dark spinner shown while a lazy chunk is loading
 const PageLoader = () => (
@@ -97,8 +102,19 @@ const App = () => (
               <Route path="/events/:slug"     element={<EventPage />} />
               <Route path="/events/:slug/pass/:passId" element={<PassPage />} />
               <Route path="/admin/login"      element={<AdminLogin />} />
-              <Route path="/admin/events/*"   element={<EventsAdmin />} />
-              <Route path="/admin/dashboard"  element={<AdminArea />} />
+              {/* One persistent admin shell: sidebar, header and auth stay mounted; only content changes */}
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index            element={<AdminApp />} />
+                <Route path="dashboard" element={<AdminDashboard />} />
+                <Route path="events/*"  element={<EventsAdmin />} />
+                <Route path="*"         element={<AdminApp />} />
+              </Route>
+              {/* The marketing team's workspace — same sign-in, its own persistent shell */}
+              <Route path="/marketing/login"  element={<MarketingLogin />} />
+              <Route path="/marketing" element={<MarketingLayout />}>
+                <Route index    element={<MarketingApp />} />
+                <Route path="*" element={<MarketingApp />} />
+              </Route>
               <Route path="/trainer/login"    element={<TrainerLogin />} />
               <Route path="/trainer/dashboard" element={<TrainerArea />} />
               <Route path="/client/login"     element={<ClientLogin />} />

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import {
-  collection, query, where, getDocs, addDoc, serverTimestamp,
+  collection, query, where, getDocs,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { selfCheckIn } from '@/lib/admin/attendance';
+import { todayIST } from '@/lib/admin/members';
 import { QrCode, User, Phone, CheckCircle, XCircle, Loader, Dumbbell } from 'lucide-react';
 
 type Step = 'pin' | 'details' | 'success' | 'error';
@@ -41,7 +43,7 @@ const CheckIn = () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayIST(); // the gym's date (Pune), not UTC
       const now = new Date();
 
       // Find session by PIN + today's date
@@ -84,33 +86,9 @@ const CheckIn = () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      // Check capacity
-      const existingQ = query(
-        collection(db, 'attendance'),
-        where('sessionId', '==', session.id),
-      );
-      const existing = await getDocs(existingQ);
-
-      // Check if already checked in by phone
-      const duplicate = existing.docs.find((d) => d.data().memberPhone === phone.trim());
-      if (duplicate) {
-        setAlreadyCheckedIn(true);
-        setStep('success');
-        return;
-      }
-
-      if (existing.size >= session.capacity) {
-        setErrorMsg('This class is at full capacity.');
-        return;
-      }
-
-      await addDoc(collection(db, 'attendance'), {
-        sessionId: session.id,
-        memberName: name.trim(),
-        memberPhone: phone.trim(),
-        checkedInAt: serverTimestamp(),
-      });
-
+      const result = await selfCheckIn(session, name, phone);
+      if (result === 'full') { setErrorMsg('This class is at full capacity.'); return; }
+      if (result === 'duplicate') { setAlreadyCheckedIn(true); setStep('success'); return; }
       setStep('success');
     } catch {
       setErrorMsg('Could not record your check-in. Please try again.');
@@ -139,10 +117,11 @@ const CheckIn = () => {
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
             <form onSubmit={handlePinSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Class PIN</label>
+                <label htmlFor="checkin-pin" className="block text-sm font-semibold text-gray-300 mb-1.5">Class PIN</label>
                 <div className="relative">
                   <QrCode size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
+                    id="checkin-pin"
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
@@ -184,13 +163,14 @@ const CheckIn = () => {
 
             <form onSubmit={handleDetailsSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Your Name</label>
+                <label htmlFor="checkin-name" className="block text-sm font-semibold text-gray-300 mb-1.5">Your Name</label>
                 <div className="relative">
                   <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    id="checkin-name"
                     placeholder="Full name"
                     required
                     className="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-green-400 transition-colors text-sm"
@@ -199,7 +179,7 @@ const CheckIn = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Phone Number</label>
+                <label htmlFor="checkin-phone" className="block text-sm font-semibold text-gray-300 mb-1.5">Phone Number</label>
                 <div className="relative">
                   <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
@@ -207,6 +187,7 @@ const CheckIn = () => {
                     inputMode="numeric"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    id="checkin-phone"
                     placeholder="10-digit mobile number"
                     required
                     className="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-green-400 transition-colors text-sm"

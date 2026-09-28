@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth } from '../lib/firebase-auth';
+import { db } from '../lib/firebase';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 const AdminLogin = () => {
@@ -17,8 +19,10 @@ const AdminLogin = () => {
     setError('');
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate('/admin/dashboard');
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      // Marketing accounts belong in the Creative Desk, not the operations admin
+      const role = await getDoc(doc(db, 'userRoles', cred.user.uid)).then((d) => d.data()?.role).catch(() => null);
+      navigate(role === 'marketing' ? '/marketing' : '/admin');
     } catch {
       setError('Invalid email or password. Please try again.');
     } finally {
@@ -38,7 +42,7 @@ const AdminLogin = () => {
         <div className="text-center mb-8">
           <img src="/lovable-uploads/crunch.png" alt="Crunch Fitness" className="h-16 w-auto object-contain mx-auto mb-4" />
           <h1 className="text-2xl font-heading font-bold text-white">Admin Access</h1>
-          <p className="text-gray-500 text-sm mt-1">Sign in to manage blog posts</p>
+          <p className="text-gray-500 text-sm mt-1">Sign in to run the gym — members, payments, check-ins and more</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
@@ -79,6 +83,7 @@ const AdminLogin = () => {
                 <button
                   type="button"
                   onClick={() => setShowPw(!showPw)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}

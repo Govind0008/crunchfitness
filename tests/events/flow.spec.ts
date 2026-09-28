@@ -32,9 +32,9 @@ async function adminPage(browser: Browser) {
   });
   await page.goto('/admin/login');
   await page.getByLabel(/email/i).fill(ADMIN.email);
-  await page.getByLabel(/password/i).fill(ADMIN.password);
+  await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
   await page.getByRole('button', { name: /sign in|log in|login/i }).click();
-  await page.waitForURL(/\/admin\/dashboard/);
+  await page.waitForURL(/\/admin\/?$/);
   await page.goto('/admin/events');
   await expect(page.getByRole('heading', { name: 'Events', level: 1 })).toBeVisible();
   return page;
@@ -49,11 +49,11 @@ test('a role-less account is told it cannot manage events', async ({ page }) => 
   await ensureUser('staff-norole@crunch.test');
   await page.goto('/admin/login');
   await page.getByLabel(/email/i).fill('staff-norole@crunch.test');
-  await page.getByLabel(/password/i).fill('crunch-test-pass');
+  await page.getByLabel('Password', { exact: true }).fill('crunch-test-pass');
   await page.getByRole('button', { name: /sign in|log in|login/i }).click();
-  await page.waitForURL(/\/admin\/dashboard/);
+  await page.waitForURL(/\/admin\/?$/);
   await page.goto('/admin/events');
-  await expect(page.getByRole('heading', { name: /can’t manage events yet/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /can’t use the admin yet/i })).toBeVisible();
 });
 
 test('public events page shows an intentional empty state', async ({ page }) => {
@@ -294,11 +294,11 @@ test('archive: the event moves into Past events', async ({ browser }) => {
 test('events live inside the admin layout, with the shared sidebar', async ({ browser }) => {
   const admin = await adminPage(browser);
   const nav = admin.getByRole('navigation', { name: 'Admin' });
-  await expect(nav.getByRole('link', { name: /Events & competitions/ })).toHaveAttribute('aria-current', 'page');
-  await nav.getByRole('link', { name: /Blog Posts/ }).click();
+  await expect(nav.getByRole('link', { name: 'Events', exact: true })).toHaveAttribute('aria-current', 'page');
+  await nav.getByRole('link', { name: 'Blog', exact: true }).click();
   await expect(admin).toHaveURL(/\/admin\/dashboard\?tab=posts$/);
   await expect(admin.getByRole('heading', { name: 'Blog Posts' })).toBeVisible();
-  await admin.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: /Events & competitions/ }).click();
+  await admin.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Events', exact: true }).click();
   await expect(admin).toHaveURL(/\/admin\/events$/);
 });
 
