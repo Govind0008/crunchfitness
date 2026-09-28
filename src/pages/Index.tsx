@@ -1,5 +1,5 @@
 import HeroSection from '../components/HeroSection';
-import WhyCrunchSection from '../components/WhyCrunchSection';
+import FilmStrip from '../components/FilmStrip';
 import MembershipSection from '../components/MembershipSection';
 import GallerySection from '../components/GallerySection';
 import TestimonialsSection from '../components/TestimonialsSection';
@@ -9,16 +9,16 @@ import FAQSection from '../components/FAQSection';
 import CtaBand from '../components/site/CtaBand';
 import Footer from '../components/Footer';
 
-// Order follows the visitor's decision path: what it is → why here → cost →
-// proof (space, reviews) → engagement (tools, community) → objections → act.
+// The page is one training session: ARRIVE (hero) → 01 BUILD (method) → 02 PERFORM (facility)
+// → 03 TRANSFORM (reviews) → 04 COMMIT (plans) → tools, community, objections → FINAL SET.
 const Index = () => (
   <div className="min-h-screen overflow-x-clip">
     <main>
       <HeroSection />
-      <WhyCrunchSection />
-      <MembershipSection />
+      <FilmStrip />
       <GallerySection />
       <TestimonialsSection />
+      <MembershipSection />
       <FreeToolsSection />
       <InstagramSection />
       <FAQSection />

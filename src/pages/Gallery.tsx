@@ -46,6 +46,33 @@ const FEATURES = [
   { icon: Users, title: 'Community hub', description: 'Join our powerlifting community and train with like-minded athletes.' },
 ];
 
+// Contact-sheet rhythm, 7 tiles per cycle. Tiles are grouped so every group fills whole rows
+// (desktop: 6 columns — [large, tall] [small ×3] [wide ×2]; mobile: 2 columns — [large] [tall pair]
+// [wide] [pair] [wide]), so photos stay in reading order with no dense re-packing.
+const SHEET = [
+  'col-span-2 row-span-2 md:col-span-4',
+  'col-span-1 row-span-2 md:col-span-2',
+  'col-span-1 row-span-2 md:row-span-1 md:col-span-2',
+  'col-span-2 md:col-span-2',
+  'col-span-1 md:col-span-2',
+  'col-span-1 md:col-span-3',
+  'col-span-2 md:col-span-3',
+];
+const DESK_W = [4, 2, 2, 2, 2, 3, 3];
+const DESK_GROUPS = [[0, 1], [2, 3, 4], [5, 6]];
+const DESK_FILL: Record<number, string> = { 2: '', 4: 'md:!col-span-4', 6: 'md:!col-span-6' };
+
+/** Span classes for tile i of n; the last tile of an unfinished group stretches to close the row. */
+const sheetSpan = (i: number, n: number) => {
+  const k = i % SHEET.length;
+  if (i !== n - 1) return SHEET[k];
+  const group = DESK_GROUPS.find((g) => g.includes(k))!;
+  const used = group.filter((j) => j < k).reduce((sum, j) => sum + DESK_W[j], 0);
+  const desk = k === group[group.length - 1] ? '' : DESK_FILL[6 - used] ?? '';
+  const mobile = k === 1 || k === 4 ? '!col-span-2' : ''; // first of a mobile pair, left alone
+  return cn(SHEET[k], desk, mobile);
+};
+
 const CATEGORIES = ['All', 'Equipment', 'Facilities', 'Training'] as const;
 
 const Gallery = () => {
@@ -150,21 +177,29 @@ const Gallery = () => {
             }
           />
 
-          <ul className="focus-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Contact sheet — a repeating editorial rhythm of wide, tall and small frames */}
+          <ul className="focus-grid grid auto-rows-[10rem] grid-cols-2 gap-3 sm:auto-rows-[12rem] md:grid-cols-6 lg:auto-rows-[14rem]">
             {filtered.map((image, i) => (
-              <li key={image.src} className="animate-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
+              <li
+                key={image.src}
+                className={cn('animate-fade-up', sheetSpan(i, filtered.length))}
+                style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
+              >
                 <button
                   type="button"
                   onClick={(e) => openAt(filtered, i, e)}
-                  className="focus-item group relative block w-full overflow-hidden rounded-2xl bg-ink-800"
+                  className="focus-item group relative block h-full w-full overflow-hidden rounded-2xl bg-ink-800"
                   aria-label={`View larger: ${image.title}`}
                 >
                   <img
                     src={image.thumb}
                     alt=""
                     loading="lazy"
-                    className="aspect-[4/3] w-full object-cover object-[center_30%] transition-transform duration-[900ms] ease-out-expo group-hover:scale-[1.05]"
+                    className="h-full w-full object-cover object-[center_35%] transition-transform [transition-duration:900ms] ease-out-expo group-hover:scale-[1.05]"
                   />
+                  <span className="hud absolute left-3 top-3 rounded-full bg-ink-950/60 px-2.5 py-1.5 text-white/80 backdrop-blur-sm" aria-hidden>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                   {/* Metadata rises with a short rail as the photo comes forward */}
                   <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink-950/90 to-transparent p-4 pt-12 text-left opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
                     <span className="flex translate-y-2 items-center gap-2 transition-transform duration-500 ease-out-expo group-hover:translate-y-0 group-focus-visible:translate-y-0">

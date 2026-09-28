@@ -218,7 +218,7 @@ const Team = () => {
           <h2 id="our-trainers-heading" className="sr-only">Our certified trainers</h2>
 
           {loadingFirestore ? (
-            <ul className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading trainers">
+            <ul className="grid gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading trainers">
               {Array.from({ length: 4 }).map((_, i) => (
                 <li key={i} className="animate-pulse">
                   <div className="aspect-[4/5] rounded-2xl bg-ink-900" />
@@ -228,7 +228,7 @@ const Team = () => {
               ))}
             </ul>
           ) : (
-            <ul className="grid gap-x-5 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <ul className="grid gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
               {displayMembers.map((member, index) => {
                 const hasInstagram = member.instagram && member.instagram !== '#';
                 return (
@@ -240,9 +240,12 @@ const Team = () => {
                     <article className="group flex h-full flex-col transition-transform duration-500 ease-out-expo [@media(hover:hover)]:hover:-translate-y-1">
                       <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900 shadow-[0_0_0_rgba(0,0,0,0)] transition-shadow duration-500 group-hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.9)]">
                         {/* Photo drifts up and in, like a coach stepping forward */}
-                        <div className="h-full w-full transition-transform duration-[900ms] ease-out-expo [@media(hover:hover)]:group-hover:-translate-y-2 [@media(hover:hover)]:group-hover:scale-[1.06]">
+                        <div className="h-full w-full transition-transform [transition-duration:900ms] ease-out-expo [@media(hover:hover)]:group-hover:-translate-y-2 [@media(hover:hover)]:group-hover:scale-[1.06]">
                           <MemberPhoto member={member} />
                         </div>
+                        <span className="hud absolute right-3 top-3 rounded-full bg-ink-950/60 px-2.5 py-1.5 text-white/80 backdrop-blur-sm">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
                         {member.isOwner && (
                           <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-brand-400 px-3 py-1 text-xs font-semibold text-ink-950">
                             <Crown className="h-3.5 w-3.5" aria-hidden /> Gym owner
@@ -272,7 +275,7 @@ const Team = () => {
                       </div>
 
                       <div className="mt-5">
-                        <h3 className="font-display text-2xl font-bold uppercase leading-tight text-white">{member.name}</h3>
+                        <h3 className="font-display text-3xl font-bold uppercase leading-none text-white">{member.name}</h3>
                         <p className="mt-1 text-sm font-medium text-brand-400">{member.role}</p>
                         {(member.specialization || member.experience) && (
                           <dl className="mt-4 space-y-1 text-sm">

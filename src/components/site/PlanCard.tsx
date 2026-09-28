@@ -15,6 +15,29 @@ interface PlanCardProps {
   levels?: number;
 }
 
+/**
+ * The commitment motif: one plate per step of plan length, each a little heavier, racked
+ * onto a bar sleeve. Longer plans literally carry more weight.
+ */
+export const PlateStack = ({ level, featured, className, label }: { level: number; featured?: boolean; className?: string; label?: string }) => (
+  <span
+    className={cn('flex items-center gap-[3px]', className)}
+    {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+  >
+    {Array.from({ length: level + 1 }).map((_, j) => (
+      <span
+        key={j}
+        className={cn(
+          'plate m-rack w-[7px] rounded-[2px] transition-colors duration-300',
+          featured ? 'bg-brand-400' : 'bg-white/45 group-hover/plan:bg-white/80 group-hover/slot:bg-brand-400',
+        )}
+        style={{ height: `${46 + j * 13.5}%`, '--i': j, '--d': 250 } as React.CSSProperties}
+      />
+    ))}
+    <span className="h-[18%] w-2 rounded-r-sm bg-white/30" />
+  </span>
+);
+
 const PlanCard = ({ plan, maxFeatures, className, style, level, levels }: PlanCardProps) => {
   const navigate = useNavigate();
   const featured = !!plan.isPopular;
@@ -48,18 +71,7 @@ const PlanCard = ({ plan, maxFeatures, className, style, level, levels }: PlanCa
         )}
       </p>
       {level !== undefined && levels ? (
-        <div className="mt-5 flex gap-1" role="img" aria-label={`Plan length ${level + 1} of ${levels}`}>
-          {Array.from({ length: levels }).map((_, i) => (
-            <span key={i} className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
-              {i <= level && (
-                <span
-                  className={cn('m-fill-x block h-full', featured ? 'bg-brand-400' : 'bg-white/60')}
-                  style={{ '--d': 400 + i * 90 } as React.CSSProperties}
-                />
-              )}
-            </span>
-          ))}
-        </div>
+        <PlateStack level={level} featured={featured} className="mt-5 h-7" label={`Plan length ${level + 1} of ${levels}`} />
       ) : null}
       <h3 className="mt-4 font-display text-2xl font-bold uppercase tracking-wide text-white">{plan.duration}</h3>
       {plan.description && <p className="mt-1.5 text-sm text-ink-400">{plan.description}</p>}

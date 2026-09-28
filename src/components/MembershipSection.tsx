@@ -1,20 +1,26 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Section, SectionHeader } from '@/components/site/Section';
-import PlanCard from '@/components/site/PlanCard';
+import PlanCard, { PlateStack } from '@/components/site/PlanCard';
+import { Hud } from '@/components/motion';
 import { usePlans } from '@/hooks/usePlans';
 import { cn } from '@/lib/utils';
 
+/**
+ * COMMIT — plans as a commitment timeline. One bar runs under the whole row; each plan racks
+ * its own plates onto it (one more, and heavier, per step of length). Prices, features and
+ * badges are the live Firestore plans, untouched.
+ */
 const MembershipSection = () => {
   const { plans } = usePlans();
 
   return (
     <Section id="membership" tone="raised" aria-labelledby="membership-heading">
+      <Hud index="04" label="Commit" className="m-rise mb-6" />
       <SectionHeader
         id="membership-heading"
-        eyebrow="Membership"
-        title={<>Plans that fit <span className="text-brand-400">your pace</span></>}
-        lede="Every plan includes the full gym floor, coach guidance and a free facility tour. Commit longer, save more."
+        title={<>Choose your <span className="text-brand-400">commitment</span></>}
+        lede="Every plan includes the full gym floor, coach guidance and a free facility tour."
         action={
           <Link
             to="/plans"
@@ -25,42 +31,37 @@ const MembershipSection = () => {
         }
       />
 
-      {/* The bar: one plate per plan racks on in step with its card (taller = longer plan) */}
-      <div className="mb-6 flex h-10 items-center" aria-hidden>
-        <span className="h-4 w-1 rounded-sm bg-white/30" />
-        <span className="m-fill-x h-1 w-6 bg-white/25" style={{ '--d': 100 } as React.CSSProperties} />
-        <span className="flex items-center gap-1">
-          {plans.map((plan, i) => (
-            <span
-              key={plan.id}
-              className={cn('m-rack w-2 rounded-[3px]', plan.isPopular ? 'bg-brand-400' : 'bg-white/45')}
-              style={{ height: `${14 + (i / Math.max(1, plans.length - 1)) * 26}px`, '--i': i, '--d': 200 } as React.CSSProperties}
-            />
-          ))}
-        </span>
-        <span className="h-3 w-1.5 bg-white/30" />
-        <span className="m-fill-x h-1 flex-1 bg-gradient-to-r from-white/25 to-white/5" style={{ '--d': 150 } as React.CSSProperties} />
-      </div>
-
-      {/* Horizontal snap row below xl; five-column grid on wide screens */}
+      {/* Horizontal snap row below xl; five columns on wide screens */}
       <div
         className="-mx-5 sm:-mx-6 lg:-mx-8 xl:mx-0 overflow-x-auto xl:overflow-visible snap-x snap-mandatory hide-scrollbar scroll-px-5 sm:scroll-px-6"
         tabIndex={0}
         role="region"
         aria-label="Membership plans — scroll horizontally"
       >
-        <div className="flex gap-4 px-5 sm:px-6 lg:px-8 pb-4 pt-3 xl:grid xl:grid-cols-5 xl:px-0">
-          {/* Plates onto the bar: cards rack in horizontally, one after another */}
+        <ol className="flex gap-4 px-5 sm:px-6 lg:px-8 pb-4 xl:grid xl:grid-cols-5 xl:px-0">
           {plans.map((plan, i) => (
-            <div
+            <li
               key={plan.id}
-              className="m-rack w-[82vw] max-w-[320px] shrink-0 snap-start xl:w-auto xl:max-w-none"
-              style={{ '--i': i, '--d': 200 } as React.CSSProperties}
+              className="group/slot w-[82vw] max-w-[320px] shrink-0 snap-start xl:w-auto xl:max-w-none"
             >
-              <PlanCard plan={plan} maxFeatures={4} level={i} levels={plans.length} className="h-full" />
-            </div>
+              {/* The bar: a continuous line through every slot, loaded plate by plate */}
+              <div className="relative mb-4 flex h-12 items-center gap-3" aria-hidden>
+                <span
+                  className={cn('m-fill-x absolute top-1/2 h-[3px] -translate-y-1/2 bg-white/15', i === plans.length - 1 ? 'inset-x-0' : 'left-0 -right-4')}
+                  style={{ '--d': 100 + i * 80 } as React.CSSProperties}
+                />
+                {i === 0 && <span className="relative h-5 w-1.5 rounded-sm bg-white/40" />}
+                <PlateStack level={i} featured={!!plan.isPopular} className="relative h-full" />
+                <span className={cn('hud relative bg-ink-900 pr-2', plan.isPopular ? 'text-brand-400' : 'text-white/70')}>
+                  {plan.duration}
+                </span>
+              </div>
+              <div className="m-rack" style={{ '--i': i, '--d': 200 } as React.CSSProperties}>
+                <PlanCard plan={plan} maxFeatures={4} className="h-full" />
+              </div>
+            </li>
           ))}
-        </div>
+        </ol>
       </div>
     </Section>
   );
