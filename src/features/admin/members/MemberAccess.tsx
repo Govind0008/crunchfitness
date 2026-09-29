@@ -105,7 +105,7 @@ const MemberAccess = ({ m, identities, onChange, startEnrol }: { m: Member; iden
                   <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <dt className="text-ink-500">Device user ID</dt><dd className="font-mono text-white">{i.deviceUserId}</dd>
                     <dt className="text-ink-500">Enrolled</dt><dd className="text-ink-200">{i.enrolledAt ? fmtTime(i.enrolledAt as never) : '—'}</dd>
-                    <dt className="text-ink-500">Last sync</dt><dd className="text-ink-200">{i.lastSyncedAt ? fmtTime(i.lastSyncedAt as never) : 'Not yet — the access reader confirms it'}</dd>
+                    <dt className="text-ink-500">Last sync</dt><dd className="text-ink-200">{i.lastSyncedAt ? fmtTime(i.lastSyncedAt as never) : 'Not yet — confirmed when the device reports it'}</dd>
                     {i.status === 'SYNC_FAILED' && <><dt className="text-ink-500">Last attempt</dt><dd className="text-red-200">{i.lastSyncAttemptAt ? fmtTime(i.lastSyncAttemptAt as never) : '—'}{i.lastSyncError ? ` · ${i.lastSyncError}` : ''}</dd></>}
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">

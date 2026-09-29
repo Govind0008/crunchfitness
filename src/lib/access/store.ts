@@ -3,7 +3,7 @@
 // was saved on the device, disable/remove, and block someone. Online status, sync results and
 // scans are written only by the integration service (the rules refuse them from the browser).
 import {
-  collection, doc, getCountFromServer, getDocs, limit, orderBy, query, runTransaction, serverTimestamp, where,
+  collection, doc, getCountFromServer, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where,
   writeBatch, type DocumentData,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -47,7 +47,7 @@ export async function setDeviceEnabled(d: AccessDevice, enabled: boolean, actor:
 }
 
 // ── Member ↔ device user ─────────────────────────────────────────────────────
-/** The device's own user list, as uploaded by the access reader on the gym PC (IDs and names only). */
+/** The device's own user list, as reported by the device through the relay (IDs and names only). */
 export interface DeviceUserRow { id: string; deviceUserId: string; name: string; admin: boolean; hasCard: boolean }
 export async function deviceUsersOf(deviceId: string): Promise<DeviceUserRow[]> {
   const snap = await getDocs(collection(db, 'gyms', gymId, 'devices', deviceId, 'deviceUsers'));
@@ -98,9 +98,13 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'>, devi
     let next = (d.data().nextUserId as number) ?? 1;
     if (!userId) {
       // First free number from the device's counter (skips any IDs typed in by hand)
+      // Skips IDs linked in the CRM and IDs already used on the device itself (its user list)
       for (let tries = 0; tries < 50; tries++) {
-        const snap = await tx.get(doc(idCol(), identityId(device.id, String(next))));
-        if (!snap.exists()) break;
+        const [linked, onDevice] = await Promise.all([
+          tx.get(doc(idCol(), identityId(device.id, String(next)))),
+          tx.get(doc(db, 'gyms', gymId, 'devices', device.id, 'deviceUsers', String(next))),
+        ]);
+        if (!linked.exists() && !onDevice.exists()) break;
         next++;
       }
       userId = String(next);
@@ -186,4 +190,22 @@ export async function deviceCounts(deviceId: string) {
   const c = (statuses: BiometricStatus[]) => getCountFromServer(query(idCol(), where('gymId', '==', gymId), where('deviceId', '==', deviceId), where('status', 'in', statuses))).then((s) => s.data().count);
   const [enrolled, pending, errors] = await Promise.all([c(['ENROLLED', 'SYNCED']), c(['PENDING', 'SYNCING']), c(['SYNC_FAILED'])]);
   return { enrolled, pending, errors };
+}
+
+// ── Requests to the device (sent through the relay on its next poll, every few seconds) ──
+export type DeviceCommandType = 'query_users' | 'add_user' | 'enroll_fp';
+export interface DeviceCommand { id: string; type: DeviceCommandType; deviceUserId?: string; name?: string; status: 'queued' | 'sent' | 'done' | 'failed'; returnCode?: string }
+const commandsCol = (deviceId: string) => collection(db, 'gyms', gymId, 'devices', deviceId, 'commands');
+export async function queueDeviceCommand(deviceId: string, c: { type: DeviceCommandType; deviceUserId?: string; name?: string }, actor: AdminActor) {
+  const ref = doc(commandsCol(deviceId));
+  await setDoc(ref, { type: c.type, ...(c.deviceUserId ? { deviceUserId: c.deviceUserId } : {}), ...(c.name ? { name: c.name.slice(0, 40) } : {}), status: 'queued', createdBy: actor.email, createdAt: serverTimestamp() });
+  return ref.id;
+}
+/** Live status of one request (queued → sent → done / failed). */
+export function watchDeviceCommand(deviceId: string, commandId: string, cb: (c: DeviceCommand | null) => void) {
+  return onSnapshot(doc(commandsCol(deviceId), commandId), (s) => cb(s.exists() ? ({ id: s.id, ...s.data() } as DeviceCommand) : null), () => cb(null));
+}
+/** Live identity (so the enrolment screen can show "fingerprint saved" when the device reports it). */
+export function watchIdentity(id: string, cb: (i: BiometricIdentity | null) => void) {
+  return onSnapshot(doc(idCol(), id), (s) => cb(s.exists() ? withId<BiometricIdentity>(s) : null), () => cb(null));
 }

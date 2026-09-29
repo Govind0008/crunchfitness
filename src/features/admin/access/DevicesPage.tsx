@@ -46,10 +46,10 @@ const DevicesPage = () => {
     setDevices((all) => all?.map((x) => (x.id === d.id ? fresh : x)) ?? all);
     const h = deviceHealth(fresh);
     const ago = fresh.lastSeenAt ? Math.round((Date.now() - fresh.lastSeenAt.toDate().getTime()) / 1000) : null;
-    setNote(h === 'online' ? `${fresh.name} is online — the reader heard from it ${ago! < 90 ? `${ago} seconds` : `${Math.round(ago! / 60)} minutes`} ago`
-      : h === 'never_connected' ? `${fresh.name} hasn’t reported in yet. Start the access reader on the gym PC`
+    setNote(h === 'online' ? `${fresh.name} is online — it reported in ${ago! < 90 ? `${ago} seconds` : `${Math.round(ago! / 60)} minutes`} ago`
+      : h === 'never_connected' ? `${fresh.name} hasn’t reported in yet. Check its Cloud Server Setting points to this CRM`
       : h === 'disabled' ? `${fresh.name} is disabled here`
-      : `${fresh.name} is offline — last heard ${fresh.lastSeenAt ? fmtTime(fresh.lastSeenAt as never) : 'never'}. Check the gym PC is on and the reader is running${fresh.lastError ? ` (${fresh.lastError})` : ''}`);
+      : `${fresh.name} is offline — last heard ${fresh.lastSeenAt ? fmtTime(fresh.lastSeenAt as never) : 'never'}. Check the device has power and internet${fresh.lastError ? ` (${fresh.lastError})` : ''}`);
   };
 
   return (
@@ -58,7 +58,7 @@ const DevicesPage = () => {
       <p className="-mt-4 mb-6 max-w-2xl text-sm text-ink-400">The biometric devices at {GYM.name}. Adding a device here doesn’t change anything on the device itself.</p>
       <div role="status" className="mb-6 max-w-3xl rounded-xl border border-white/[0.08] bg-ink-900 p-4 text-sm text-ink-300">
         <p className="font-semibold text-white">How devices connect</p>
-        <p className="mt-1">The <strong className="text-white">access reader</strong> on the gym PC reads each device over the gym network and reports here: online status, its user list and every scan. It only reads — nothing on the device changes, so the old system keeps working. A device shows “Online” only when the reader has actually heard from it.</p>
+        <p className="mt-1">Each device sends its scans over the internet to this CRM (Menu → Comm. → Cloud Server Setting on the device). Everything is passed on unchanged to the old attendance server, so the old system keeps working. The CRM records scans of linked members, keeps the device’s user list for matching, and can add new members to the device. A device shows “Online” only when it has actually reported in.</p>
       </div>
       {note && <p role="status" className="mb-4 text-sm text-ink-200">{note}.</p>}
 
