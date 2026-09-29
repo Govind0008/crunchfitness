@@ -1,0 +1,8 @@
+{
+  "deviceIp": "192.168.1.4",
+  "devicePort": 4370,
+  "commKey": 0,
+  "gymId": "crunch-wakad",
+  "serviceAccount": "serviceAccount.json",
+  "pollSeconds": 15
+}

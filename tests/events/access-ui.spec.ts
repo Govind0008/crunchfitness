@@ -36,7 +36,6 @@ test('devices: add the F22 — it waits for first contact, nothing claims to be 
   await login(page);
   await page.goto('/admin/access');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Access control');
-  await expect(page.getByRole('status').filter({ hasText: 'Device integration not configured' })).toBeVisible();
   await page.getByRole('link', { name: 'Devices' }).click();
   await page.getByRole('button', { name: 'Add device' }).click();
   await page.getByLabel('Name').fill('Main entrance');
@@ -44,11 +43,11 @@ test('devices: add the F22 — it waits for first contact, nothing claims to be 
   await page.getByRole('form', { name: 'New device' }).getByRole('button', { name: 'Add device' }).click();
   const list = page.getByRole('list', { name: 'Devices' });
   await expect(list).toContainText('Main entrance');
-  await expect(list).toContainText('eSSL F22 · Serial BOCD201460001');
-  await expect(list).toContainText('Integration not configured');
+  await expect(list).toContainText('eSSL X2008 · Serial BOCD201460001');
+  await expect(list).toContainText('Waiting for first contact');                     // online only once the reader reports it
   await expect(list).toContainText('Never');
   await list.getByRole('button', { name: 'Test connection' }).click();
-  await expect(page.getByText('Test connection: Device integration not configured.')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'hasn’t reported in yet' })).toBeVisible();
 });
 
 test('enrolment: reserve an ID, staff confirm the fingerprint — never “synced” without the device', async ({ page, isMobile }) => {
@@ -65,7 +64,7 @@ test('enrolment: reserve an ID, staff confirm the fingerprint — never “synce
   await wiz.getByRole('button', { name: 'Continue' }).click();
   const enrol = wiz.getByRole('region', { name: 'Enrol on device' });
   await expect(enrol).toContainText('Waiting for device');
-  await expect(enrol).toContainText('Device integration isn’t connected yet');
+  await expect(enrol).toContainText('the access reader confirms this against the device');
   await expect(enrol.getByLabel('Device user ID 1')).toBeVisible();
   await enrol.getByRole('button', { name: 'Fingerprint saved on device' }).click();
   await expect(enrol).toContainText('Fingerprint enrolled');
@@ -74,7 +73,7 @@ test('enrolment: reserve an ID, staff confirm the fingerprint — never “synce
   await page.getByRole('tab', { name: 'Access', exact: true }).click();
   const users = page.getByRole('region', { name: 'Biometric' }).getByRole('list', { name: 'Device users' });
   await expect(users).toContainText('Enrolled on device (confirmed by staff)');
-  await expect(users).toContainText('Never — integration not configured');
+  await expect(users).toContainText('Not yet — the access reader confirms it');
   await expect(users).not.toContainText('Synced with device');
   // The old CRM's ID for another member: typed in, and it can't be given twice
   await page.goto('/admin/members/ac2');
@@ -178,7 +177,7 @@ test('dashboard: access widget, attention and quick actions from real records', 
   await expect(page.getByRole('region', { name: 'Needs attention' })).toContainText('biometric enrolment is waiting for the device');
   const acc = page.getByRole('region', { name: 'Access control' });
   await expect(acc).toContainText('0 / 1');
-  await expect(acc).toContainText('Device integration not configured');
+  await expect(acc).toContainText('enrolment');
   await expect(page.getByRole('region', { name: 'Recent activity' })).toContainText('Payment recorded');
 });
 
@@ -218,4 +217,26 @@ test('navigation: grouped sidebar collapses; phones get the bottom bar', async (
   await page.goto('/admin/dashboard?tab=posts');
   await expect(page).toHaveURL(/\/admin\/blog$/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Blog');
+});
+
+test('match device users: the reader’s user list, clear suggestions, link without touching the device', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'desktop');
+  // What the access reader on the gym PC uploads: the device and its own user list
+  await seedDoc('gyms/crunch-wakad/devices/devM', { gymId: 'crunch-wakad', name: 'Gym door', model: 'eSSL X2008', serialNumber: 'JJA1254700696', location: '', protocol: 'sdk', enabled: true, nextUserId: 1, lastSeenAt: null, lastSyncAt: null, firmware: null, lastError: null });
+  await seedDoc('gyms/crunch-wakad/devices/devM/deviceUsers/501', { deviceUserId: '501', name: 'MEERA I', admin: false, hasCard: false });
+  await seedDoc('gyms/crunch-wakad/devices/devM/deviceUsers/502', { deviceUserId: '502', name: 'ZZ NOBODY', admin: false, hasCard: false });
+  await member('mm1', 'Meera Iyer', '9000000501', '2099-12-31');
+  await login(page);
+  await page.goto('/admin/settings/access/devM/users');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Match device users');
+  const list = page.getByRole('list', { name: 'Device users' });
+  const meera = list.getByRole('listitem').filter({ hasText: '#501' });
+  await expect(meera).toContainText('Suggested:');
+  await expect(meera).toContainText('Meera Iyer');
+  await expect(list.getByRole('listitem').filter({ hasText: '#502' })).toContainText('No matching member');   // never guessed
+  await meera.getByRole('button', { name: 'Link' }).click();
+  await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toHaveCount(0);   // done: it leaves "Not linked"
+  await page.getByRole('group', { name: 'Filter device users' }).getByRole('button', { name: /Linked/ }).click();
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toContainText('Waiting for the device');   // the reader confirms it
 });

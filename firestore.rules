@@ -243,6 +243,13 @@ service cloud.firestore {
           && request.resource.data.enabled is bool
           && request.resource.data.nextUserId is int && request.resource.data.nextUserId >= resource.data.nextUserId;
         allow delete: if false;
+
+        // The device's own user list (IDs and names, never fingerprints), uploaded by the
+        // access reader on the gym PC so staff can match device users to members
+        match /deviceUsers/{deviceUserId} {
+          allow read: if isGymAdmin(gymId);
+          allow write: if false;
+        }
       }
     }
 

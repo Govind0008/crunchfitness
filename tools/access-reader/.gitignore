@@ -1,0 +1,7 @@
+# Never commit these: the reader's Firebase key, local config, progress and logs
+serviceAccount.json
+config.json
+state.json
+state.json.tmp
+reader.log*
+__pycache__/

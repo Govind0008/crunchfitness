@@ -115,7 +115,7 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
           <ol className="mt-4 space-y-2 text-sm" aria-label="Enrolment status">
             <li className="flex items-center gap-2 text-white"><Check size={16} className="text-brand-400" aria-hidden /> User ID reserved</li>
             <li className={cn('flex items-center gap-2', identity.status === 'ENROLLED' ? 'text-white' : 'text-amber-100')}>{identity.status === 'ENROLLED' ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Fingerprint saved on device{identity.status === 'ENROLLED' ? ' (confirmed by staff)' : ' — waiting'}</li>
-            <li className="flex items-center gap-2 text-ink-500"><span className="ml-1 h-2 w-2 rounded-full bg-ink-600" aria-hidden /> Synced with device — {ACCESS_CONNECTED ? 'waiting' : 'device integration isn’t connected yet'}</li>
+            <li className="flex items-center gap-2 text-ink-500"><span className="ml-1 h-2 w-2 rounded-full bg-ink-600" aria-hidden /> Synced with device — {ACCESS_CONNECTED ? 'the access reader confirms this against the device' : 'device integration isn’t connected yet'}</li>
           </ol>
           {!ACCESS_CONNECTED && <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] p-3 text-xs text-amber-100">Device integration isn’t connected yet, so this screen can’t see the device. When the F22 shows the fingerprint saved, confirm it here.</p>}
           {identity.status === 'PENDING' && <Button size="lg" className="mt-5" disabled={busy} onClick={confirm}>{busy ? 'Saving…' : 'Fingerprint saved on device'}</Button>}

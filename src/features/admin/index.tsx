@@ -11,6 +11,7 @@ import SettingsPage from './SettingsPage';
 import GymSetup from './GymSetup';
 import AccessPage from './access/AccessPage';
 import DevicesPage from './access/DevicesPage';
+import DeviceUsersPage from './access/DeviceUsersPage';
 import PaymentsPage from './payments/PaymentsPage';
 import RecordPayment from './payments/RecordPayment';
 import PaymentDetail from './payments/PaymentDetail';
@@ -48,6 +49,7 @@ const AdminApp = () => (
       <Route path="settings" element={<SettingsPage />} />
       <Route path="settings/setup" element={<GymSetup />} />
       <Route path="settings/access" element={<DevicesPage />} />
+      <Route path="settings/access/:deviceId/users" element={<DeviceUsersPage />} />
       <Route path="access" element={<AccessPage />} />
       <Route path="payments" element={<PaymentsPage />} />
       <Route path="payments/new" element={<RecordPayment />} />

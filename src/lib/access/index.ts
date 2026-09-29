@@ -213,6 +213,9 @@ export class NotConfiguredProvider implements AccessControlProvider {
   async healthCheck(): Promise<ProviderHealth> { return { ok: false, message: 'Device integration not configured' }; }
 }
 
-/** Whether a real integration service is connected. Stays false until the F22 pilot is set up. */
-export const ACCESS_CONNECTED = false;
+/**
+ * The access reader (tools/access-reader, on the gym PC) is the integration. Whether a given
+ * device is actually connected is shown per device from its lastSeenAt — never assumed.
+ */
+export const ACCESS_CONNECTED = true;
 export const accessProvider: AccessControlProvider = new NotConfiguredProvider();
