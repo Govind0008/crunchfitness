@@ -64,16 +64,16 @@ test('enrolment: reserve an ID, staff confirm the fingerprint — never “synce
   await wiz.getByRole('button', { name: 'Continue' }).click();
   const enrol = wiz.getByRole('region', { name: 'Enrol on device' });
   await expect(enrol).toContainText('Waiting for device');
-  await expect(enrol).toContainText('the access reader confirms this against the device');
+  await expect(enrol).toContainText('enrol user ID 1');                                  // not connected: enrolled by hand on the device
   await expect(enrol.getByLabel('Device user ID 1')).toBeVisible();
   await enrol.getByRole('button', { name: 'Fingerprint saved on device' }).click();
-  await expect(enrol).toContainText('Fingerprint enrolled');
+  await expect(enrol).toContainText('Fingerprint saved');
   await expect(enrol).not.toContainText('Synced with device —' + ' waiting');
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: 'Access', exact: true }).click();
   const users = page.getByRole('region', { name: 'Biometric' }).getByRole('list', { name: 'Device users' });
   await expect(users).toContainText('Enrolled on device (confirmed by staff)');
-  await expect(users).toContainText('Not yet — the access reader confirms it');
+  await expect(users).toContainText('Not yet — confirmed when the device reports it');
   await expect(users).not.toContainText('Synced with device');
   // The old CRM's ID for another member: typed in, and it can't be given twice
   await page.goto('/admin/members/ac2');

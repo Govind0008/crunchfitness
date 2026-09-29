@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Link2, Search, UserCheck } from 'lucide-react';
+import { Link2, RefreshCw, Search, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { allMembers, memberCode, type Member } from '@/lib/admin/members';
-import { assignDeviceUser, deviceUsersOf, identitiesOfDevice, listDevices, DeviceUserTakenError, type DeviceUserRow } from '@/lib/access/store';
+import { assignDeviceUser, deviceUsersOf, identitiesOfDevice, listDevices, queueDeviceCommand, DeviceUserTakenError, type DeviceUserRow } from '@/lib/access/store';
 import { BIOMETRIC_LABEL, type AccessDevice, type BiometricIdentity } from '@/lib/access';
 import { AdminShell, ConfirmButton } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
@@ -53,6 +53,18 @@ const DeviceUsersPage = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  // Ask the device to send its full user list (it arrives within a minute)
+  const refreshList = async () => {
+    if (!device) return;
+    setRefreshing(true);
+    try {
+      await queueDeviceCommand(device.id, { type: 'query_users' }, actor);
+      setNote('Asked the device for its user list. It arrives within a minute — this list updates by itself.');
+      const until = Date.now() + 90_000;
+      const t = setInterval(async () => { await deviceUsersOf(deviceId).then(setUsers).catch(() => {}); if (Date.now() > until) { clearInterval(t); setRefreshing(false); } }, 10_000);
+    } catch (e) { setNote(`Couldn’t ask the device: ${(e as Error).message}`); setRefreshing(false); }
+  };
 
   const loadIds = () => identitiesOfDevice(deviceId).then(setIds);
   useEffect(() => {
@@ -121,7 +133,10 @@ const DeviceUsersPage = () => {
         <ConfirmButton confirm={{ title: `Link ${count('suggested')} suggested matches?`, body: 'Each device user is linked to the member whose name matches clearly. Nothing changes on the device. You can unlink anyone later from their profile.' }}
           onConfirm={linkAllSuggested}><UserCheck /> Link {count('suggested')} suggested</ConfirmButton>
       ) : undefined}>
-      <p className="-mt-2 mb-5 max-w-3xl text-sm text-ink-400">The device’s own user list, read by the access reader on the gym PC. Linking tells the CRM who each device user ID belongs to, so their scans show on the right member. Nothing is changed or re-enrolled on the device.</p>
+      <div className="-mt-2 mb-5 flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-3xl text-sm text-ink-400">The device’s own user list, as the device reports it. Linking tells the CRM who each device user ID belongs to, so their scans show on the right member. Nothing is changed or re-enrolled on the device.</p>
+        <Button size="sm" variant="outline" disabled={!device || refreshing} onClick={refreshList}><RefreshCw /> {refreshing ? 'Asked the device…' : 'Refresh list'}</Button>
+      </div>
       {error && <div className="mb-5"><ErrorNote what="Couldn’t load the device users." error={error} /></div>}
       {note && <p role="status" className="mb-4 text-sm text-ink-200">{note}</p>}
       {bulk && <p role="status" className="mb-4 text-sm text-brand-300">Linking… {bulk.done} of {bulk.total}</p>}
@@ -130,7 +145,7 @@ const DeviceUsersPage = () => {
         segments={[{ id: 'todo', label: 'Not linked', count: rows ? count('todo') : undefined }, { id: 'suggested', label: 'Suggested', count: rows ? count('suggested') : undefined }, { id: 'none', label: 'No match', count: rows ? count('none') : undefined }, { id: 'linked', label: 'Linked', count: rows ? linked : undefined }, { id: 'all', label: 'All' }]} />
 
       {!rows ? <SkeletonRows rows={6} /> : users?.length === 0 ? (
-        <EmptyNote title="No device users yet" body="Start the access reader on the gym PC — it uploads the device’s user list within a minute." />
+        <EmptyNote title="No device users yet" body="Once the device is online, press Refresh list — the device sends its user list within a minute." />
       ) : shown.length === 0 ? <EmptyNote title="Nothing here" body="No device users match this filter." /> : (
         <ListBox label="Device users">
           {shown.slice(0, 300).map((r) => (

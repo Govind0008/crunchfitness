@@ -4,8 +4,8 @@ import { Check, Fingerprint } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { memberCode, type Member } from '@/lib/admin/members';
-import { ACCESS_CONNECTED, type AccessDevice, type BiometricIdentity } from '@/lib/access';
-import { DeviceUserTakenError, assignDeviceUser, listDevices, setIdentityStatus } from '@/lib/access/store';
+import { ACCESS_CONNECTED, deviceHealth, type AccessDevice, type BiometricIdentity } from '@/lib/access';
+import { DeviceUserTakenError, assignDeviceUser, listDevices, queueDeviceCommand, setIdentityStatus, watchDeviceCommand, watchIdentity, type DeviceCommand } from '@/lib/access/store';
 import { inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import Avatar from './Avatar';
@@ -24,11 +24,27 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
   const [deviceId, setDeviceId] = useState('');
   const [useExisting, setUseExisting] = useState(false);
   const [existingId, setExistingId] = useState('');
-  const [identity, setIdentity] = useState<{ deviceUserId: string; status: 'PENDING' | 'ENROLLED'; id: string } | null>(null);
+  const [identity, setIdentity] = useState<{ deviceUserId: string; status: BiometricIdentity['status']; id: string } | null>(null);
+  // "Add to device": when the device is online through the relay, the CRM creates the user on it
+  // and starts fingerprint enrolment — nothing to type on the device
+  const [remote, setRemote] = useState<{ add: DeviceCommand | null; enroll: DeviceCommand | null } | null>(null);
+  const [commandIds, setCommandIds] = useState<{ add: string; enroll: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { listDevices().then((d) => { const on = d.filter((x) => x.enabled); setDevices(on); if (on.length === 1) setDeviceId(on[0].id); }).catch(() => setDevices([])); }, []);
   const device = devices?.find((d) => d.id === deviceId);
+  const online = !!device && deviceHealth(device) === 'online';
+  // Live: the command status, and the identity turning SYNCED when the device reports the fingerprint
+  useEffect(() => {
+    if (!device || !commandIds) return;
+    const a = watchDeviceCommand(device.id, commandIds.add, (c) => setRemote((r) => ({ add: c, enroll: r?.enroll ?? null })));
+    const b = watchDeviceCommand(device.id, commandIds.enroll, (c) => setRemote((r) => ({ add: r?.add ?? null, enroll: c })));
+    return () => { a(); b(); };
+  }, [device, commandIds]);
+  useEffect(() => {
+    if (!identity) return;
+    return watchIdentity(identity.id, (i) => { if (i) setIdentity((x) => (x ? { ...x, status: i.status } : x)); });
+  }, [identity?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const already = existing.find((i) => i.deviceId === deviceId && i.status !== 'REMOVED');
 
   const reserve = async () => {
@@ -37,6 +53,11 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
     try {
       const uid = await assignDeviceUser(m, device, actor, { method: 'fingerprint', existingId: useExisting ? existingId : undefined });
       setIdentity({ deviceUserId: uid, status: 'PENDING', id: `${device.id}_${uid}` });
+      if (online && !useExisting) {
+        const add = await queueDeviceCommand(device.id, { type: 'add_user', deviceUserId: uid, name: m.name }, actor);
+        const enroll = await queueDeviceCommand(device.id, { type: 'enroll_fp', deviceUserId: uid }, actor);
+        setCommandIds({ add, enroll });
+      }
       setStep(3); onDone();
     } catch (e) {
       setError(e instanceof DeviceUserTakenError ? e.message : 'The device user ID couldn’t be reserved. Please try again.');
@@ -104,23 +125,37 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
         </section>
       )}
 
-      {step === 3 && identity && device && (
-        <section aria-label="Enrol on device">
-          <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-center">
-            <Fingerprint className={cn('mx-auto h-12 w-12', identity.status === 'ENROLLED' ? 'text-brand-400' : 'text-amber-200 motion-safe:animate-pulse')} aria-hidden />
-            <p className="mt-3 font-display text-2xl font-bold uppercase text-white">{identity.status === 'ENROLLED' ? 'Fingerprint enrolled' : 'Waiting for device'}</p>
-            <p className="mt-1 text-sm text-ink-300">{identity.status === 'ENROLLED' ? `Saved on ${device.name} as user ${identity.deviceUserId}.` : `On ${device.name}, enrol user ID ${identity.deviceUserId} and ask ${m.name.split(' ')[0]} to place their finger on the device.`}</p>
-            <p className="mt-2 font-mono text-4xl font-bold text-white" aria-label={`Device user ID ${identity.deviceUserId}`}>{identity.deviceUserId}</p>
-          </div>
-          <ol className="mt-4 space-y-2 text-sm" aria-label="Enrolment status">
-            <li className="flex items-center gap-2 text-white"><Check size={16} className="text-brand-400" aria-hidden /> User ID reserved</li>
-            <li className={cn('flex items-center gap-2', identity.status === 'ENROLLED' ? 'text-white' : 'text-amber-100')}>{identity.status === 'ENROLLED' ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Fingerprint saved on device{identity.status === 'ENROLLED' ? ' (confirmed by staff)' : ' — waiting'}</li>
-            <li className="flex items-center gap-2 text-ink-500"><span className="ml-1 h-2 w-2 rounded-full bg-ink-600" aria-hidden /> Synced with device — {ACCESS_CONNECTED ? 'the access reader confirms this against the device' : 'device integration isn’t connected yet'}</li>
-          </ol>
-          {!ACCESS_CONNECTED && <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] p-3 text-xs text-amber-100">Device integration isn’t connected yet, so this screen can’t see the device. When the F22 shows the fingerprint saved, confirm it here.</p>}
-          {identity.status === 'PENDING' && <Button size="lg" className="mt-5" disabled={busy} onClick={confirm}>{busy ? 'Saving…' : 'Fingerprint saved on device'}</Button>}
-        </section>
-      )}
+      {step === 3 && identity && device && (() => {
+        const saved = identity.status === 'SYNCED' || identity.status === 'ENROLLED';
+        const failed = remote?.add?.status === 'failed' || remote?.enroll?.status === 'failed';
+        const first = m.name.split(' ')[0];
+        const auto = !!commandIds && !failed;
+        const headline = saved ? 'Fingerprint saved' : failed ? 'The device didn’t accept it'
+          : auto ? (remote?.enroll?.status === 'sent' || remote?.enroll?.status === 'done' ? `${first}: place a finger on the device` : 'Sending to the device…')
+          : 'Waiting for device';
+        const detail = saved ? `Saved on ${device.name} as user ${identity.deviceUserId}.`
+          : failed ? `Enrol user ID ${identity.deviceUserId} on the device instead (Menu → User Mgt → New User), then confirm below.`
+          : auto ? (remote?.enroll?.status === 'sent' || remote?.enroll?.status === 'done' ? `The device is waiting: ${first} places the same finger 3 times. This screen updates by itself.` : `Creating user ${identity.deviceUserId} on ${device.name} — a few seconds.`)
+          : useExisting ? `Linked to user ${identity.deviceUserId}, already on the device. It’s confirmed the next time ${first} scans.`
+          : `On ${device.name}, enrol user ID ${identity.deviceUserId} and ask ${first} to place their finger on the device.`;
+        return (
+          <section aria-label="Enrol on device">
+            <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-center">
+              <Fingerprint className={cn('mx-auto h-12 w-12', saved ? 'text-brand-400' : failed ? 'text-red-300' : 'text-amber-200 motion-safe:animate-pulse')} aria-hidden />
+              <p className="mt-3 font-display text-2xl font-bold uppercase text-white">{headline}</p>
+              <p className="mt-1 text-sm text-ink-300">{detail}</p>
+              <p className="mt-2 font-mono text-4xl font-bold text-white" aria-label={`Device user ID ${identity.deviceUserId}`}>{identity.deviceUserId}</p>
+            </div>
+            <ol className="mt-4 space-y-2 text-sm" aria-label="Enrolment status">
+              <li className="flex items-center gap-2 text-white"><Check size={16} className="text-brand-400" aria-hidden /> User ID reserved</li>
+              {commandIds && <li className={cn('flex items-center gap-2', remote?.add?.status === 'done' ? 'text-white' : 'text-amber-100')}>{remote?.add?.status === 'done' ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Created on the device{remote?.add?.status === 'failed' ? ' — failed' : remote?.add?.status === 'done' ? '' : ' — waiting'}</li>}
+              <li className={cn('flex items-center gap-2', saved ? 'text-white' : 'text-amber-100')}>{saved ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Fingerprint saved on device{saved ? (identity.status === 'ENROLLED' ? ' (confirmed by staff)' : ' (reported by the device)') : ' — waiting'}</li>
+            </ol>
+            {!online && !ACCESS_CONNECTED && <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] p-3 text-xs text-amber-100">The device isn’t connected, so this screen can’t see it. When the device shows the fingerprint saved, confirm it here.</p>}
+            {identity.status === 'PENDING' && (!auto || failed) && <Button size="lg" className="mt-5" disabled={busy} onClick={confirm}>{busy ? 'Saving…' : 'Fingerprint saved on device'}</Button>}
+          </section>
+        );
+      })()}
     </div>
   );
 };

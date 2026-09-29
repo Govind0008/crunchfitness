@@ -244,11 +244,28 @@ service cloud.firestore {
           && request.resource.data.nextUserId is int && request.resource.data.nextUserId >= resource.data.nextUserId;
         allow delete: if false;
 
-        // The device's own user list (IDs and names, never fingerprints), uploaded by the
-        // access reader on the gym PC so staff can match device users to members
+        // The device's own user list (IDs and names, never fingerprints), reported by the
+        // device through the relay so staff can match device users to members
         match /deviceUsers/{deviceUserId} {
           allow read: if isGymAdmin(gymId);
           allow write: if false;
+        }
+
+        // Requests to the device (create a user, start fingerprint enrolment, send the user list).
+        // Staff only choose the request; the relay builds the device command itself and records
+        // the result. Nothing here can delete or change anyone already on the device.
+        match /commands/{commandId} {
+          allow read: if isGymAdmin(gymId);
+          allow create: if isGymAdmin(gymId)
+            && request.resource.data.keys().hasOnly(['type', 'deviceUserId', 'name', 'status', 'createdBy', 'createdAt'])
+            && request.resource.data.type in ['query_users', 'add_user', 'enroll_fp']
+            && request.resource.data.status == 'queued'
+            && request.resource.data.createdBy == request.auth.token.email
+            && request.resource.data.createdAt == request.time
+            && (request.resource.data.type == 'query_users'
+              || (request.resource.data.deviceUserId is string && request.resource.data.deviceUserId.matches('[0-9]{1,9}')))
+            && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 40));
+          allow update, delete: if false;
         }
       }
     }

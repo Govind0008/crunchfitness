@@ -131,3 +131,23 @@ test('member photos in Storage: admins only', async () => {
     await denied(uploadBytes(ref(st, 'members/m1/photo'), jpeg, { contentType: 'image/jpeg' }));
   }
 });
+
+test('device commands: admins may only queue the three safe requests; the relay alone records results', async () => {
+  const { db } = await as(ADMIN.email);
+  const cmd = (extra: Record<string, unknown> = {}) => ({ type: 'add_user', deviceUserId: '10061', name: 'Riya', status: 'queued', createdBy: ADMIN.email, createdAt: serverTimestamp(), ...extra });
+  await setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c1'), cmd());
+  await setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c2'), { type: 'query_users', status: 'queued', createdBy: ADMIN.email, createdAt: serverTimestamp() });
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c3'), cmd({ type: 'delete_user' })));        // nothing destructive
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c4'), cmd({ command: 'DATA DELETE USERINFO PIN=1' })));   // no raw device commands
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c5'), cmd({ status: 'done' })));            // results come from the relay
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c6'), cmd({ createdBy: 'someone@else.test' })));
+  await denied(updateDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c1'), { status: 'done' }));
+  await denied(deleteDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c1')));
+  const mk = await as('ac-marketing@crunch.test');
+  await denied(setDoc(doc(mk.db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c7'), cmd({ createdBy: 'ac-marketing@crunch.test' })));
+  await denied(getDocs(collection(mk.db, 'gyms', GYM, 'devices', 'dev1', 'commands')));
+  // The device's user list: admins read it, nobody writes it from the browser
+  await getDocs(collection(db, 'gyms', GYM, 'devices', 'dev1', 'deviceUsers'));
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'deviceUsers', '1'), { deviceUserId: '1', name: 'X' }));
+  await denied(getDocs(collection(mk.db, 'gyms', GYM, 'devices', 'dev1', 'deviceUsers')));
+});

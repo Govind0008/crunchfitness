@@ -1,6 +1,14 @@
-# Crunch access reader (gym PC)
+# Crunch access reader (optional, one-off tool)
 
-Connects the fingerprint device (eSSL X2008 / ZKTeco, port 4370) to the Crunch CRM.
+**Not needed day to day.** The device connects to the CRM by itself through the ADMS relay
+(`api/iclock.ts`): set its Cloud Server Setting to `www.crunchfitness.fitness` with HTTPS on.
+
+Use this reader only for a one-time job from any computer on the gym network, for example
+importing the scan history already stored on the device (the relay only sees new scans):
+
+    python crunch_reader.py --once
+
+What it does when it runs: it reads the fingerprint device (eSSL X2008 / ZKTeco, port 4370).
 
 - **It only reads from the device.** It never changes users, fingerprints or settings, so the
   old attendance software keeps working exactly as before.
