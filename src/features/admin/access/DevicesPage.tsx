@@ -10,7 +10,7 @@ import { AdminShell, ConfirmButton, Empty, Field, inputCls } from '@/features/ev
 import { useActor } from '@/features/events/admin/actor';
 import { fmtTime } from '@/features/admin/members/lookups';
 
-const blank: DeviceInput = { name: '', model: 'eSSL X2008', serialNumber: '', location: '', protocol: 'sdk' };
+const blank: DeviceInput = { name: 'Main entrance', model: 'eSSL X2008', serialNumber: '', location: '', protocol: 'adms' };
 const healthTone = (h: ReturnType<typeof deviceHealth>) => (h === 'online' ? 'bg-brand-400/15 text-brand-300' : h === 'offline' ? 'bg-red-500/15 text-red-200' : 'bg-white/[0.06] text-ink-300');
 
 /**
