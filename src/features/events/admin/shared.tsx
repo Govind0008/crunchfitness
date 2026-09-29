@@ -50,9 +50,13 @@ export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
  * Page content inside the persistent AdminLayout (which owns the sidebar, header and guard).
  * `nav` / `area` are kept for call-site compatibility; the layout derives both from the URL.
  */
-export const AdminShell = ({ title, back, children, actions }: {
+export const AdminShell = ({ title, subtitle, back, children, actions, bare }: {
   title: string; back?: { to: string; label: string }; children: ReactNode; actions?: ReactNode;
+  /** One line under the title: "14 total · 1 active" */
+  subtitle?: ReactNode;
   nav?: NavKey; area?: string;
+  /** The page draws its own heading (e.g. the member profile's header) */
+  bare?: boolean;
 }) => (
   <>
     <Seo title={`${title} | Crunch admin`} description="Staff area" noindex />
@@ -61,10 +65,15 @@ export const AdminShell = ({ title, back, children, actions }: {
         <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
       </Link>
     )}
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-      <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
-      {actions}
-    </div>
+    {!bare && (
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
+          {subtitle && <p className="mt-2 text-sm text-ink-400">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      </div>
+    )}
     {children}
   </>
 );

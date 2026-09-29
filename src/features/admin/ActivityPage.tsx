@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCached } from '@/features/admin/useCached';
 import { Link } from 'react-router-dom';
 import { recentActivity, type ActivityEntry } from '@/lib/admin/activity';
 import { AdminShell, Empty } from '@/features/events/admin/shared';
@@ -8,9 +8,8 @@ const detail = (a: ActivityEntry) => Object.entries(a.meta ?? {}).filter(([, v])
 
 /** Activity — what staff changed, who, when. Append-only: nothing here can be edited. */
 const ActivityPage = () => {
-  const [items, setItems] = useState<ActivityEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { recentActivity(200).then(setItems).catch((e) => { setError(e.message); setItems([]); }); }, []);
+  const { data, error } = useCached(['activity'], () => recentActivity(200));
+  const items: ActivityEntry[] | null = error ? [] : data;
   return (
     <AdminShell title="Activity" nav="activity" area="System">
       <p className="-mt-4 mb-6 text-sm text-ink-400">Changes to members, plans, offers, blog posts and trainer accounts. Each event keeps its own detailed log on its Activity tab.</p>

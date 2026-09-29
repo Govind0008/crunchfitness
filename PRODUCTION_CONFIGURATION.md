@@ -87,6 +87,35 @@ Firebase console → Firestore → Rules → Publish.
   - `source == "legacy_excel"`, id `lx_…_p`, no receipt number, method may be `"unknown"`.
   - Normal payments are unchanged, except that they may now carry a `paymentType`.
 
+**Access control and member photos** (details in `ACCESS_CONTROL_F22.md`):
+
+- **New Firestore areas:**
+  - `gyms/{gymId}/devices`: admins of that gym only.
+  - `biometricIdentities`: one document per device user ID. Staff statuses only; never "synced"
+    from the browser.
+  - `accessEvents`: read-only for admins, written by the integration service.
+  - Members: `accessOverride` and `photo` metadata are validated.
+- **Firebase Storage:** member photos are private at `members/{id}/photo`, admins only
+  (`storage.rules`, which also closes every other path).
+  - Deploy with `firebase deploy --only storage`.
+  - Storage must be enabled on the project first (Firebase console → Storage). Until it is, member
+    photos show a clear "not set up" message and the member is still saved.
+
+**Manual check-ins without a class** (added with the consistency pass; required, because Classes
+are no longer in the admin):
+
+- **New collection `checkins/{YYYY-MM-DD}_{memberId}`**: one front-desk check-in per member per
+  day. Fields: `memberId`, `memberName`, `memberPhoneKey`, `date`, `method` (`"manual"`), `by`
+  (the admin's uid), `at` (server time).
+- **Rules:** admins read and create only. The id must match the date and member, `by` must be the
+  signed-in admin, `at` must be the server time, and the member must exist. No updates. Admins may
+  delete a mistaken record. Marketing, trainers and the public have no access.
+- **Existing data is untouched.** `attendance` records from the class-PIN page (`/checkin`) are
+  still read and shown as "earlier self check-in". `classSessions` and `duties` are no longer
+  shown in the admin, but they aren't deleted, and the trainer portal and `/checkin` still use them.
+- Until these rules are published, front-desk check-in fails with a permission error. Nothing is
+  written anywhere else.
+
 ## 4. Firestore indexes
 
 See `FIREBASE_INDEX_AUDIT.md`. Deploy with `firebase deploy --only firestore:indexes`.

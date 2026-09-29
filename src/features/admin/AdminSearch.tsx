@@ -3,12 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { searchMembers } from '@/lib/admin/members';
+import { memberCode, membersByIds, searchMembers, todayIST, type Member } from '@/lib/admin/members';
+import { accessEligibility } from '@/lib/access';
+import { identityByDeviceUserId } from '@/lib/access/store';
+import { fmtDate } from './members/lookups';
 import { paymentByReceipt, rupees } from '@/lib/admin/payments';
 import { cn } from '@/lib/utils';
+import { STATUS } from '@/lib/events';
 
 interface Hit { group: 'Members' | 'Trainers' | 'Events' | 'Enquiries' | 'Payments'; id: string; title: string; sub: string; to: string }
 interface Small { trainers: { id: string; name: string; role?: string }[]; events: { id: string; title: string; eventDate?: string; status?: string }[]; enquiries: { id: string; name: string; status?: string; plan?: string }[] }
+
+/** "Active until 31 Oct 2026 · Access enabled" — context only, never the phone number. */
+function memberSub(m: Member, via: string) {
+  const today = todayIST();
+  const a = accessEligibility(m, today);
+  const status = m.membershipEnd ? (m.membershipEnd >= today ? `Active until ${fmtDate(m.membershipEnd)}` : `Expired ${fmtDate(m.membershipEnd)}`) : 'No membership';
+  return [via || memberCode(m.id), status, a.eligible ? 'Access enabled' : 'Access disabled'].join(' · ');
+}
 
 /**
  * One search box for the whole admin: members (server-side prefix search), and the small
@@ -52,8 +64,15 @@ const AdminSearch = () => {
     if (term.length < 2) { setMembers([]); return; }
     const t = setTimeout(() => {
       // "CR-R-0012" → that receipt; anything else → members
-      if (/^cr-r-\d+$/i.test(term)) paymentByReceipt(term).then((p) => setMembers(p ? [{ group: 'Payments', id: p.id, title: p.receiptNo ?? 'Imported payment', sub: `${p.memberName} · ${rupees(p.amountPaise)}`, to: `/admin/payments/${p.id}` }] : [])).catch(() => setMembers([]));
-      else searchMembers(term).then((ms) => setMembers(ms.map((m) => ({ group: 'Members', id: m.id, title: m.name, sub: 'Member', to: `/admin/members/${m.id}` })))).catch(() => setMembers([]));
+      if (/^cr-r-\d+$/i.test(term)) paymentByReceipt(term).then((p) => setMembers(p ? [{ group: 'Payments', id: p.id, title: `${rupees(p.amountPaise)} · ${p.receiptNo ?? 'Imported payment'}`, sub: `Payment · ${p.memberName} · ${p.paidOn}`, to: `/admin/payments/${p.id}` }] : [])).catch(() => setMembers([]));
+      else {
+        // A bare number can also be a device user ID on a biometric device
+        const devUser = /^\d{1,8}$/.test(term) ? identityByDeviceUserId(term).then((ids) => membersByIds(ids.map((i) => i.memberId)).then((ms) => ms.map((m) => ({ m, via: `Device user ${term}` })))).catch(() => []) : Promise.resolve([]);
+        Promise.all([searchMembers(term).catch(() => [] as Member[]), devUser]).then(([ms, byDevice]) => {
+          const all = [...byDevice, ...ms.map((m) => ({ m, via: '' }))].filter((x, i, arr) => arr.findIndex((y) => y.m.id === x.m.id) === i);
+          setMembers(all.map(({ m, via }) => ({ group: 'Members', id: m.id, title: m.name, sub: memberSub(m, via), to: `/admin/members/${m.id}` })));
+        });
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [q]);
@@ -65,8 +84,8 @@ const AdminSearch = () => {
     return [
       ...members,
       ...small.trainers.filter((t) => has(t.name)).slice(0, 5).map((t): Hit => ({ group: 'Trainers', id: t.id, title: t.name, sub: t.role ?? 'Trainer', to: '/admin/trainers' })),
-      ...small.events.filter((e) => has(e.title)).slice(0, 5).map((e): Hit => ({ group: 'Events', id: e.id, title: e.title, sub: e.eventDate ?? 'Event', to: `/admin/events/${e.id}` })),
-      ...small.enquiries.filter((e) => has(e.name)).slice(0, 5).map((e): Hit => ({ group: 'Enquiries', id: e.id, title: e.name, sub: `Enquiry · ${e.status ?? 'new'}${e.plan ? ` · ${e.plan}` : ''}`, to: '/admin/dashboard?tab=enquiries' })),
+      ...small.events.filter((e) => has(e.title)).slice(0, 5).map((e): Hit => ({ group: 'Events', id: e.id, title: e.title, sub: `Event${e.status && e.status in STATUS ? ` · ${STATUS[e.status as keyof typeof STATUS].admin}` : ''}${e.eventDate ? ` · ${e.eventDate}` : ''}`, to: `/admin/events/${e.id}` })),
+      ...small.enquiries.filter((e) => has(e.name)).slice(0, 5).map((e): Hit => ({ group: 'Enquiries', id: e.id, title: e.name, sub: `Enquiry · ${e.status ?? 'new'}${e.plan ? ` · ${e.plan}` : ''}`, to: '/admin/enquiries' })),
     ];
   }, [q, small, members]);
   useEffect(() => setCursor(0), [hits.length]);
@@ -99,7 +118,8 @@ const AdminSearch = () => {
             if (e.key === 'Enter' && hits[cursor]) go(hits[cursor]);
             if (e.key === 'Escape') { setOpen(false); input.current?.blur(); }
           }}
-          placeholder="Search members, trainers, events…  ( / )"
+          aria-label="Search members, trainers, events, payments and device user IDs"
+          placeholder="Search members, payments, events…  ( / )"
           className="h-10 w-full rounded-xl border border-zinc-700 bg-zinc-800 pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-green-400 focus:outline-none"
         />
       </label>

@@ -95,12 +95,15 @@ test('member profile separates membership, PT and payments; existing data untouc
   const summary = page.locator('dl[aria-label="Member summary"]');
   await expect(summary).toContainText('1 Jan 2030');                                // the member's own expiry is not replaced
   await expect(summary).toContainText('No active package');
+  await page.getByRole('tab', { name: 'Membership', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Membership history' })).toContainText('6 Months');
   await expect(page.getByRole('list', { name: 'Membership history' })).toContainText('Ended');
-  const ptHistory = page.getByRole('list', { name: 'PT history' });
+  await page.getByRole('tab', { name: 'PT', exact: true }).click();
+  const ptHistory = page.getByRole('list', { name: 'PT packages' });
   await expect(ptHistory).toContainText('1 Month PT');
   await expect(ptHistory).toContainText('Trainer not recorded');
   await expect(ptHistory).toContainText('24 session');
+  await page.getByRole('tab', { name: 'Payments', exact: true }).click();
   const pay = page.getByRole('region', { name: 'Payments' });
   await pay.getByRole('button', { name: 'PT' }).click();
   await expect(pay.getByRole('list', { name: 'Payment history' }).getByRole('listitem')).toHaveCount(1);
@@ -112,12 +115,14 @@ test('member profile separates membership, PT and payments; existing data untouc
   await page.goto('/admin/members/lx_9545550048');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('vishal varuka');
   await expect(page.locator('dl[aria-label="Member summary"]')).toContainText('Inactive');
-  await expect(page.getByRole('region', { name: 'Membership' })).toContainText('Not allowed');
-  await expect(page.getByRole('list', { name: 'PT history' })).toContainText('1 Month PT');
+  await expect(page.getByRole('region', { name: 'Overview' })).toContainText('Not allowed');
+  await page.getByRole('tab', { name: 'PT', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'PT packages' })).toContainText('1 Month PT');
 
   // The unconfirmed "bal 9000" on the reviewed row is a note, never a due
   await page.goto('/admin/members/lx_9511611353');
-  await expect(page.getByRole('list', { name: 'PT history' })).toContainText('not confirmed — not shown as due');
+  await page.getByRole('tab', { name: 'PT', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'PT packages' })).toContainText('not confirmed — not shown as due');
 });
 
 test('imported payments are records, not receipts; revenue splits membership / PT / other', async ({ page }) => {
@@ -138,13 +143,13 @@ test('imported payments are records, not receipts; revenue splits membership / P
   await page.goto('/admin/payments/new?member=lx_9545550048&type=pt');
   await expect(page.getByRole('radio', { name: 'Personal training' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('');              // no membership price suggested for PT
-  await page.getByLabel('PT package').fill('1 Month PT');
+  await page.getByLabel('Package name').fill('1 Month PT');
   await expect(page.getByLabel('PT starts')).not.toHaveValue('');                    // starts today by default
   await expect(page.getByLabel('PT ends')).not.toHaveValue('');                      // one month, from the package name
   await page.getByLabel('Trainer', { exact: true }).selectOption({ label: 'test' });
   await page.getByLabel('Amount received (₹)').fill('7000');
   await page.getByLabel('Reference').fill('UPI-PT-1');
-  await page.getByRole('button', { name: /Save payment · ₹7,000/ }).click();
+  await page.getByRole('button', { name: /Collect PT payment · ₹7,000/ }).click();
   await page.waitForURL(/\/admin\/payments\/[\w]+\?new=1$/);
   const receipt = page.getByRole('article', { name: /Receipt CR-R-0001/ });
   await expect(receipt).toContainText('Personal training — 1 Month PT');
@@ -157,5 +162,6 @@ test('imported payments are records, not receipts; revenue splits membership / P
   // PT doesn't give gym entry, and didn't touch the membership
   await page.goto('/admin/members/lx_9545550048');
   await expect(page.locator('dl[aria-label="Member summary"]')).toContainText('Active · test');
+  await page.getByRole('tab', { name: 'Membership', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Membership' })).toContainText('Personal training alone doesn’t give gym entry');
 });

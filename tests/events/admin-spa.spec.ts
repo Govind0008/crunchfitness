@@ -66,19 +66,18 @@ test('every sidebar section opens inside the same shell, with no reload', async 
   const SECTIONS: [string, RegExp, RegExp | string][] = [
     ['Members', /\/admin\/members$/, 'Members'],
     ['Trainers', /\/admin\/trainers$/, 'Trainers'],
-    ['Check-ins', /\/admin\/attendance$/, 'Check-ins'],
-    ['Classes', /tab=schedule$/, 'Class Schedule'],
-    ['Duty roster', /tab=roster$/, 'Duty Roster'],
+    ['Attendance', /\/admin\/attendance$/, 'Attendance'],
+    ['Access', /\/admin\/access$/, 'Access control'],
     ['Events', /\/admin\/events$/, 'Events'],
     ['Payments', /\/admin\/payments$/, 'Payments'],
     ['Dues', /\/admin\/payments\/dues$/, 'Dues'],
     ['Revenue', /\/admin\/revenue$/, 'Revenue'],
     ['Reports', /\/admin\/reports$/, 'Reports'],
-    ['Plans', /tab=plans$/, 'Membership Plans'],
-    ['Offers', /tab=offers$/, 'Offers & Promotions'],
-    ['Enquiries', /tab=enquiries$/, 'Customer Enquiries'],
-    ['Blog', /tab=posts$/, 'Blog Posts'],
-    ['Team', /tab=team$/, 'Team & Trainers'],
+    ['Plans', /\/admin\/plans$/, 'Plans'],
+    ['Offers', /\/admin\/offers$/, 'Offers'],
+    ['Enquiries', /\/admin\/enquiries$/, 'Enquiries'],
+    ['Blog', /\/admin\/blog$/, 'Blog'],
+    ['Team', /\/admin\/team$/, 'Team'],
     ['Activity', /\/admin\/activity$/, 'Activity'],
     ['Settings', /\/admin\/settings$/, 'Settings'],
     ['Dashboard', /\/admin\/?$/, /Good (morning|afternoon|evening)/],
@@ -86,6 +85,8 @@ test('every sidebar section opens inside the same shell, with no reload', async 
   // Match the start of the name: some items carry a live badge ("Enquiries 1")
   const item = (label: string) => nav.getByRole('link', { name: new RegExp(`^${label}(\\s+\\d+)?$`) });
   for (const [label, url, heading] of SECTIONS) {
+    // Secondary pages live under "More" (it stays open once opened)
+    if (!(await item(label).count())) await nav.getByRole('button', { name: 'More' }).click();
     await item(label).click();
     await expect(page).toHaveURL(url);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
@@ -107,10 +108,13 @@ test('in-page actions keep the shell: add member, filter, search, CSV preview, b
   const check = await instrument(page);
   const nav = page.getByRole('navigation', { name: 'Admin' });
   await nav.getByRole('link', { name: 'Members', exact: true }).click();
-  await page.getByRole('link', { name: 'Add member' }).first().click();
-  await page.getByLabel('Full name').fill('Spa Tester');
-  await page.getByLabel('Mobile number').fill('9000000055');
-  await page.getByRole('button', { name: 'Add member' }).click();
+  await page.getByRole('button', { name: 'Add member' }).first().click();               // a drawer, not a new page
+  const add = page.getByRole('dialog', { name: 'Add member' });
+  await add.getByLabel('Full name').fill('Spa Tester');
+  await add.getByLabel('Mobile number').fill('9000000055');
+  await add.getByRole('button', { name: 'Add member' }).click();
+  await expect(page.getByRole('dialog', { name: 'Member added' })).toContainText('Spa Tester is added');
+  await page.getByRole('button', { name: 'Open profile' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Spa Tester');       // saved → profile, in place
   await check('saving a member');
 
@@ -129,7 +133,7 @@ test('in-page actions keep the shell: add member, filter, search, CSV preview, b
   await check('CSV preview and back');
 
   // Global search jumps within the app
-  await page.getByRole('combobox', { name: /Search members, trainers/ }).fill('spa');
+  await page.getByRole('combobox', { name: /Search members/ }).fill('spa');
   await page.getByRole('option').filter({ hasText: 'Spa Tester' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Spa Tester');
   await check('global search');
@@ -140,8 +144,8 @@ test('mobile menu navigates in place and closes', async ({ browser }) => {
   await login(page);
   const check = await instrument(page);
   await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Check-ins', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Check-ins');
+  await page.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Attendance', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Attendance');
   await expect(page.getByRole('button', { name: 'Close menu' })).not.toBeInViewport();
   await check('mobile menu');
 });
@@ -160,7 +164,7 @@ test('money workflow stays in the shell: record → receipt → print → back �
 
   await page.getByLabel('Amount received (₹)').fill('3000');
   await page.getByLabel('Method').selectOption('cash');
-  await page.getByRole('button', { name: /Save payment/ }).click();
+  await page.getByRole('button', { name: /Collect (membership|PT|other) payment/ }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Payment saved' })).toBeVisible();
   await expect(page.getByRole('article', { name: /Receipt CR-R-0001/ })).toContainText('Three thousand rupees only');
   await check('saving a payment');

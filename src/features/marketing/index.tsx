@@ -6,16 +6,19 @@ import MarketingEvent from './MarketingEvent';
 import EventWizard from '@/features/events/admin/EventWizard';
 import SocialHighlights from '@/features/events/admin/SocialHighlights';
 
-// The Blog, Offers and Team editors are the admin's own screens, locked to one section
-const ContentEditor = lazy(() => import('@/pages/AdminDashboard'));
+// The Blog, Offers and Team editors are the admin's own screens
+const BlogPage = lazy(() => import('@/features/admin/content/BlogPage'));
+const OffersPage = lazy(() => import('@/features/admin/content/OffersPage'));
+const TeamPage = lazy(() => import('@/features/admin/content/TeamPage'));
 
 /** /marketing/* — rendered inside the persistent MarketingLayout (which guards it). */
 const MarketingApp = () => (
   <Routes>
     <Route index element={<MarketingHome />} />
-    <Route path="blog" element={<ContentEditor lockedTab="posts" mode="marketing" />} />
-    <Route path="offers" element={<ContentEditor lockedTab="offers" mode="marketing" />} />
-    <Route path="team" element={<ContentEditor lockedTab="team" mode="marketing" />} />
+    <Route path="blog" element={<BlogPage />} />
+    <Route path="offers" element={<OffersPage />} />
+    {/* Marketing edits public profiles only: removing one also removes a trainer's login */}
+    <Route path="team" element={<TeamPage canRemove={false} />} />
     <Route path="events" element={<MarketingEvents />} />
     <Route path="events/new" element={<EventWizard />} />
     <Route path="events/:id" element={<MarketingEvent />} />

@@ -40,6 +40,8 @@ export interface Payment {
   membershipId?: string | null;
   ptPackageId?: string | null;
   source?: 'admin' | 'legacy_excel';
+  /** For "other" payments */
+  category?: string | null;
   legacy?: LegacyRef & LegacyBalance;
   memberId: string;
   // Snapshots: a receipt must keep showing what was true when it was issued
@@ -69,13 +71,24 @@ export interface Payment {
   createdAt?: Timestamp;
 }
 
-export interface PtInput { packageName: string; trainerId: string | null; sessionsIncluded: number | null }
+export interface PtInput {
+  /** Pay for a package that already exists (created earlier, not yet paid); otherwise a new one */
+  packageId?: string | null;
+  packageName: string;
+  trainerId: string | null;
+  sessionsIncluded: number | null;
+}
+/** Kinds of "other" payment — labels only, no prices attached */
+export const OTHER_CATEGORIES = ['Registration fee', 'Locker', 'Merchandise', 'Supplements', 'Other'] as const;
+export type OtherCategory = (typeof OTHER_CATEGORIES)[number];
 
 export interface PaymentInput {
   member: Member;
   paymentType: PaymentType;
   /** Personal training package details (paymentType 'pt') */
   pt?: PtInput;
+  /** What an "other" payment was for (paymentType 'other') */
+  other?: { category: OtherCategory; description: string };
   planId: string | null;
   planName: string;
   amountRupees: number;
@@ -102,8 +115,10 @@ export function paymentFor(p: Payment) {
   const t = paymentTypeOf(p);
   if (t === 'pt') return `Personal training${p.planName ? ` — ${p.planName}` : ''}`;
   if (t === 'membership') return p.planName ? `${p.planName} membership` : 'Membership';
-  return p.planName || 'Other payment';
+  return p.category && p.planName && p.planName !== p.category ? `${p.category} — ${p.planName}` : p.planName || p.category || 'Other payment';
 }
+/** Explicit names wherever the type matters: "Membership payment", "PT payment", "Other payment". */
+export const PAYMENT_LABEL: Record<PaymentType, string> = { membership: 'Membership payment', pt: 'PT payment', other: 'Other payment' };
 
 /** Receipt number, or a plain label for imported history. */
 export const receiptLabel = (p: Pick<Payment, 'receiptNo'>) => p.receiptNo ?? 'Imported';
@@ -154,8 +169,10 @@ export function validatePayment(i: Omit<PaymentInput, 'member'> & { member: Memb
   if (i.extendMembership && !i.coversTo) e.push('Add the “covers until” date to extend the membership.');
   if (!Number.isFinite(i.discountRupees) || i.discountRupees < 0) e.push('The discount can’t be negative.');
   if (i.listPriceRupees != null && i.discountRupees > i.listPriceRupees) e.push('The discount can’t be more than the plan price.');
-  if (i.paymentType === 'pt' && !i.pt?.packageName.trim()) e.push('Name the PT package (e.g. “1 Month PT”).');
-  if (i.paymentType === 'pt' && (!i.coversFrom || !i.coversTo)) e.push('Add when the PT package starts and ends.');
+  if (i.paymentType === 'pt' && !i.pt?.packageId && !i.pt?.packageName.trim()) e.push('Name the PT package (e.g. “1 Month PT”).');
+  if (i.paymentType === 'other' && !i.other?.category) e.push('Choose what the payment is for.');
+  if (i.paymentType === 'other' && i.other?.category === 'Other' && !i.other.description.trim()) e.push('Describe what the payment is for.');
+  if (i.paymentType === 'pt' && !i.pt?.packageId && (!i.coversFrom || !i.coversTo)) e.push('Add when the PT package starts and ends.');
   if (i.paymentType === 'pt' && i.pt?.sessionsIncluded != null && (!Number.isInteger(i.pt.sessionsIncluded) || i.pt.sessionsIncluded < 1)) e.push('Sessions must be a whole number.');
   if (i.paymentType !== 'membership' && i.extendMembership) e.push('Only a membership payment can extend the membership.');
   return e;
@@ -178,18 +195,23 @@ export async function recordPayment(i: PaymentInput, actor: AdminActor): Promise
   const payRef = doc(col());
   // A membership period or PT package is recorded alongside the payment it came from
   const membershipRef = i.paymentType === 'membership' && i.coversFrom && i.coversTo ? doc(collection(db, 'memberships')) : null;
-  const ptRef = i.paymentType === 'pt' ? doc(collection(db, 'ptPackages')) : null;
+  const existingPt = i.paymentType === 'pt' && i.pt?.packageId ? doc(db, 'ptPackages', i.pt.packageId) : null;
+  const ptRef = i.paymentType === 'pt' && !existingPt ? doc(collection(db, 'ptPackages')) : null;
   await runTransaction(db, async (tx) => {
     const c = await tx.get(counterRef);
+    const pkg = existingPt ? await tx.get(existingPt) : null;
+    if (existingPt && !pkg?.exists()) throw new Error('That PT package no longer exists.');
     const next = ((c.data()?.next as number | undefined) ?? 0) + 1;
     tx.set(counterRef, { next });
     const amountPaise = toPaise(i.amountRupees);
     tx.set(payRef, {
       receiptNo: receiptNumber(next), receiptSeq: next, paymentType: i.paymentType, source: 'admin',
-      membershipId: membershipRef?.id ?? null, ptPackageId: ptRef?.id ?? null,
+      membershipId: membershipRef?.id ?? null, ptPackageId: ptRef?.id ?? existingPt?.id ?? null,
+      category: i.paymentType === 'other' ? i.other!.category : null,
       memberId: i.member.id, memberName: i.member.name, memberPhone: i.member.phone, memberPhoneKey: phoneKey(i.member.phone),
       planId: i.paymentType === 'membership' ? i.planId : null,
-      planName: i.paymentType === 'pt' ? i.pt!.packageName.trim() : i.planName,
+      planName: i.paymentType === 'pt' ? (pkg?.data()?.packageName as string | undefined) ?? i.pt!.packageName.trim()
+        : i.paymentType === 'other' ? (i.other!.description.trim() || i.other!.category) : i.planName,
       amountPaise, countedPaise: amountPaise,
       listPricePaise: i.listPriceRupees != null ? toPaise(i.listPriceRupees) : null, discountPaise: toPaise(i.discountRupees || 0),
       kind: kindFor(i),
@@ -202,10 +224,12 @@ export async function recordPayment(i: PaymentInput, actor: AdminActor): Promise
         paymentId: payRef.id, source: 'payment', createdBy: actor.email, createdAt: serverTimestamp(),
       });
     }
+    // First payment for an existing package links it; later ones (instalments) just reference it
+    if (existingPt && !pkg!.data()!.paymentId) tx.update(existingPt, { paymentId: payRef.id, updatedAt: serverTimestamp() });
     if (ptRef) {
       tx.set(ptRef, {
         memberId: i.member.id, trainerId: i.pt!.trainerId || null, packageName: i.pt!.packageName.trim(),
-        sessionsIncluded: i.pt!.sessionsIncluded, sessionsRemaining: null, startDate: i.coversFrom, endDate: i.coversTo,
+        sessionsIncluded: i.pt!.sessionsIncluded, sessionsUsed: 0, sessionsRemaining: null, startDate: i.coversFrom, endDate: i.coversTo,
         notes: '', paymentId: payRef.id, source: 'payment', createdBy: actor.email, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
     }

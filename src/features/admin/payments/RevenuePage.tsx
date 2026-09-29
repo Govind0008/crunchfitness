@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCached } from '@/features/admin/useCached';
 import { Link } from 'react-router-dom';
 import { todayIST } from '@/lib/admin/members';
 import { KIND_LABEL, METHOD_LABEL, TYPE_LABEL, groupTotals, paymentTypeOf, type PaymentType, monthEnd, monthLabel, monthStart, paymentsBetween, revenueBetween, rupees, shiftMonth, type Payment } from '@/lib/admin/payments';
@@ -16,23 +16,16 @@ const Card = ({ label, t, sub }: { label: string; t: Totals | null; sub?: string
 /** Revenue — money received (voided payments excluded), summed by the server from the ledger. */
 const RevenuePage = () => {
   const today = todayIST();
-  const [cards, setCards] = useState<Record<string, Totals> | null>(null);
-  const [trend, setTrend] = useState<{ month: string; paise: number }[] | null>(null);
-  const [thisMonth, setThisMonth] = useState<Payment[] | null>(null);
-  const [lastMonth, setLastMonth] = useState<Payment[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const m0 = monthStart(today), last = shiftMonth(today, -1);
-    Promise.all([
-      revenueBetween(today, today), revenueBetween(m0, today), revenueBetween(last, monthEnd(last)), revenueBetween(`${today.slice(0, 4)}-01-01`, today),
-    ]).then(([d, m, l, y]) => setCards({ today: d, month: m, last: l, year: y })).catch((e) => setError(e.message));
-    const months = Array.from({ length: 12 }, (_, i) => shiftMonth(today, i - 11));
-    Promise.all(months.map((s) => revenueBetween(s, monthEnd(s)).then((r) => ({ month: s, paise: r.paise }))))
-      .then(setTrend).catch((e) => setError(e.message));
-    paymentsBetween(m0, today).then(setThisMonth).catch((e) => setError(e.message));
-    paymentsBetween(last, monthEnd(last)).then(setLastMonth).catch((e) => setError(e.message));
-  }, [today]);
+  const m0 = monthStart(today), last = shiftMonth(today, -1);
+  const cardsQ = useCached(['revenueCards', today], () => Promise.all([
+    revenueBetween(today, today), revenueBetween(m0, today), revenueBetween(last, monthEnd(last)), revenueBetween(`${today.slice(0, 4)}-01-01`, today),
+  ]).then(([d, m, l, y]): Record<string, Totals> => ({ today: d, month: m, last: l, year: y })));
+  const trendQ = useCached(['revenueTrend', today], () => Promise.all(Array.from({ length: 12 }, (_, i) => shiftMonth(today, i - 11))
+    .map((s) => revenueBetween(s, monthEnd(s)).then((r) => ({ month: s, paise: r.paise })))));
+  const thisQ = useCached(['payments', m0, today], () => paymentsBetween(m0, today));
+  const lastQ = useCached(['payments', last, monthEnd(last)], () => paymentsBetween(last, monthEnd(last)));
+  const cards = cardsQ.data, trend = trendQ.data, thisMonth = thisQ.data, lastMonth = lastQ.data;
+  const error = cardsQ.error ?? trendQ.error ?? thisQ.error ?? lastQ.error;
 
   const max = Math.max(1, ...(trend ?? []).map((t) => t.paise));
   const byMethod = thisMonth ? groupTotals(thisMonth, (p) => METHOD_LABEL[p.method]) : [];

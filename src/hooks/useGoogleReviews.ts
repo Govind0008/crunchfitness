@@ -3,9 +3,6 @@ import { useEffect, useState } from 'react';
 declare global {
   interface Window {
     google: any;
-    __googleMapsReady: Promise<void>;
-    __googleMapsResolve: () => void;
-    __googleMapsReject: (err: Error) => void;
     initGoogleMaps: () => void;
     gm_authFailure: () => void;
   }
@@ -30,6 +27,27 @@ const PLACE_NAME = 'Crunch Fitness Club Wakad Pune';
 const PLACE_LAT  = 18.5999023;
 const PLACE_LNG  = 73.7700584;
 
+/**
+ * Load the Maps JS API only when the reviews section needs it. It used to be a deferred
+ * <script> in index.html, which made every page (the admin included) wait for Maps first.
+ */
+let mapsLoading: Promise<void> | null = null;
+function loadGoogleMaps(): Promise<void> {
+  if (mapsLoading) return mapsLoading;
+  const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+  mapsLoading = new Promise<void>((resolve, reject) => {
+    if (!key) { reject(new Error('Google Maps key not configured')); return; }
+    window.initGoogleMaps = () => resolve();
+    window.gm_authFailure = () => reject(new Error('Google Maps auth failed – check your API key'));
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=initGoogleMaps`;
+    s.async = true;
+    s.onerror = () => reject(new Error('Google Maps failed to load'));
+    document.head.appendChild(s);
+  });
+  return mapsLoading;
+}
+
 function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
   return Promise.race([
     promise,
@@ -49,7 +67,7 @@ export const useGoogleReviews = () => {
 
     const load = async () => {
       try {
-        await withTimeout(window.__googleMapsReady, 10_000);
+        await withTimeout(loadGoogleMaps(), 10_000);
         if (cancelled) return;
 
         const Place = window.google.maps.places.Place;

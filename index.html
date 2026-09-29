@@ -94,24 +94,9 @@
 }
   </script>
 
-  <!-- Google Maps JS API (Places library for real-time reviews) -->
-  <script>
-    window.__googleMapsReady = new Promise(function(resolve, reject) {
-      window.__googleMapsResolve = resolve;
-      window.__googleMapsReject  = reject;
-    });
-    // Called by SDK on successful load
-    window.initGoogleMaps = function() { window.__googleMapsResolve(); };
-    // Called by SDK when API key auth fails — rejects the promise so the app doesn't hang
-    window.gm_authFailure = function() {
-      window.__googleMapsReject(new Error('Google Maps auth failed – check your API key'));
-    };
-  </script>
-  <!-- loading=async conflicts with the callback pattern — use defer only -->
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_API_KEY%&libraries=places&callback=initGoogleMaps"
-    defer
-  ></script>
+  <!-- Google Maps (reviews) loads on demand from src/hooks/useGoogleReviews.ts, not on every page -->
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
 </head>
 
 <body>

@@ -48,7 +48,7 @@ test('recording a payment: suggestion, receipt, renewal — all in one save', as
   const until = await page.getByLabel('Covers until').inputValue();
   await page.getByLabel('Amount received (₹)').fill('6000');                                 // they actually paid less
   await page.getByLabel('Reference').fill('UPI-12345');
-  await page.getByRole('button', { name: /Save payment · ₹6,000/ }).click();
+  await page.getByRole('button', { name: /Collect membership payment · ₹6,000/ }).click();
   const receipt = page.getByRole('article', { name: /Receipt CR-R-0001/ });
   await expect(receipt).toContainText('Asha Rao');
   await expect(receipt).toContainText('₹6,000');
@@ -57,7 +57,9 @@ test('recording a payment: suggestion, receipt, renewal — all in one save', as
   await expect(receipt).toContainText('UPI-12345');
   // Membership moved to the paid period; Asha is no longer due
   await page.getByRole('link', { name: 'Asha Rao' }).click();
+  await page.getByRole('tab', { name: 'Membership', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Membership' })).toContainText(new Date(`${until}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+  await page.getByRole('tab', { name: 'Payments', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Payment history' })).toContainText('CR-R-0001');
   await page.goto('/admin/payments/dues');
   await expect(page.getByRole('region', { name: /Overdue/ })).not.toContainText('Asha Rao');
@@ -65,7 +67,7 @@ test('recording a payment: suggestion, receipt, renewal — all in one save', as
   await page.goto('/admin/payments/new?member=b');
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('3000');
   await page.getByLabel('Amount received (₹)').fill('');
-  await page.getByRole('button', { name: /Save payment/ }).click();
+  await page.getByRole('button', { name: /Collect (membership|PT|other) payment/ }).click();
   await expect(page.getByRole('alert')).toContainText('Enter the amount received.');
 });
 
@@ -75,14 +77,14 @@ test('second payment gets the next receipt number; revenue sums; a void stops co
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('3000');                  // wait for the suggestion, as a person would
   await page.getByLabel('Amount received (₹)').fill('3000');
   await page.getByLabel('Method').selectOption('cash');
-  await page.getByRole('button', { name: /Save payment/ }).click();
+  await page.getByRole('button', { name: /Collect (membership|PT|other) payment/ }).click();
   await expect(page.getByRole('article', { name: /Receipt CR-R-0002/ })).toBeVisible();
   await page.goto('/admin/payments/new?member=b');
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('3000');
   await page.getByLabel('Amount received (₹)').fill('10');
-  await expect(page.getByRole('button', { name: 'Save payment · ₹10' })).toBeVisible();      // the button confirms the exact amount
+  await expect(page.getByRole('button', { name: 'Collect membership payment · ₹10' })).toBeVisible();      // the button confirms the exact amount
   await page.getByLabel('Extend membership', { exact: false }).uncheck();
-  await page.getByRole('button', { name: /Save payment/ }).click();
+  await page.getByRole('button', { name: /Collect (membership|PT|other) payment/ }).click();
   await expect(page.getByRole('article', { name: /Receipt CR-R-0003/ })).toBeVisible();
 
   await page.goto('/admin/revenue');
@@ -117,7 +119,7 @@ test('reports: payments CSV has every payment, void marked', async ({ page }) =>
 
 test('global search finds a payment by receipt number', async ({ page }) => {
   await login(page);
-  await page.getByRole('combobox', { name: /Search members, trainers/ }).fill('CR-R-0002');
+  await page.getByRole('combobox', { name: /Search members/ }).fill('CR-R-0002');
   await page.getByRole('option').filter({ hasText: 'CR-R-0002' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('CR-R-0002');
 });
@@ -131,5 +133,5 @@ test('typing before the plan price arrives is never overwritten', async ({ page 
   await page.getByLabel('Amount received (₹)').pressSequentially('25');
   await page.waitForTimeout(2500);
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('25');
-  await expect(page.getByRole('button', { name: 'Save payment · ₹25' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collect membership payment · ₹25' })).toBeVisible();
 });

@@ -10,7 +10,7 @@
 // (no downloading the list, no counters that can drift):
 //   active + expiry E → E · active, no expiry → "9999-12-31" · inactive → "0000-00-00"
 import {
-  collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, serverTimestamp,
+  collection, doc, documentId, getCountFromServer, getDoc, getDocs, limit, orderBy, query, serverTimestamp,
   startAfter, where, writeBatch, type QueryDocumentSnapshot, type Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -33,13 +33,25 @@ export interface Member {
   trainerId: string | null;          // teamMembers id
   /** Link to the trainer portal's client record (training data lives there) */
   trainerClient: { trainerId: string; clientId: string } | null;
+  /** When they last checked in (stamped at check-in, so lists don't scan attendance records) */
+  lastVisitAt?: Timestamp | null;
   notes: string;
   source: 'manual' | 'import' | 'trainer_client' | 'legacy_excel';
+  /** Short readable ID (memberCode) — stored so staff can search by it */
+  code?: string;
+  emergencyName?: string;
+  emergencyPhone?: string;
+  /** Private photo in Firebase Storage (members/{id}/photo) — only metadata lives here */
+  photo?: { path: string; contentType: string; size: number; updatedAt?: Timestamp } | null;
+  /** Staff block — always wins over the membership for door access */
+  accessOverride?: 'blocked' | 'suspended' | null;
+  accessOverrideReason?: string | null;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
 
-export type MemberInput = Pick<Member, 'name' | 'phone' | 'email' | 'planId' | 'membershipStart' | 'membershipEnd' | 'status' | 'trainerId' | 'notes'>;
+export type MemberInput = Pick<Member, 'name' | 'phone' | 'email' | 'planId' | 'membershipStart' | 'membershipEnd' | 'status' | 'trainerId' | 'notes'>
+  & Partial<Pick<Member, 'emergencyName' | 'emergencyPhone'>>;
 
 const FOREVER = '9999-12-31';
 const NEVER = '0000-00-00';
@@ -97,6 +109,8 @@ function derived(input: MemberInput) {
     activeUntil: activeUntilOf({ status: input.status, membershipEnd: input.membershipEnd || null }),
     trainerId: input.trainerId || null,
     notes: input.notes.trim(),
+    ...(input.emergencyName !== undefined ? { emergencyName: input.emergencyName.trim() } : {}),
+    ...(input.emergencyPhone !== undefined ? { emergencyPhone: input.emergencyPhone.trim() } : {}),
   };
 }
 
@@ -106,6 +120,7 @@ export function validateMember(input: MemberInput): string[] {
   if (phoneKey(input.phone).length !== 10) e.push('Enter a 10-digit mobile number.');
   if (input.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email.trim())) e.push('The email address doesn’t look right.');
   if (input.membershipStart && input.membershipEnd && input.membershipEnd < input.membershipStart) e.push('The expiry date must be after the start date.');
+  if (input.emergencyPhone?.trim() && phoneKey(input.emergencyPhone).length !== 10) e.push('The emergency contact number should be a 10-digit mobile number.');
   return e;
 }
 
@@ -127,7 +142,8 @@ export async function memberCounts(expiringDays: number): Promise<MemberCounts> 
 
 // ── Lists & search (paged, indexed single-field queries) ──────────────────────
 
-export type MemberFilter = 'all' | 'active' | 'expiring' | 'inactive';
+/** Paged filters (straight member queries). Other filters (PT, access, biometric) go through their own records. */
+export type MemberFilter = 'all' | 'active' | 'expiring' | 'inactive' | 'expired' | 'no_membership';
 export const PAGE = 50;
 
 export async function listMembers(filter: MemberFilter, expiringDays: number, after?: QueryDocumentSnapshot) {
@@ -137,6 +153,9 @@ export async function listMembers(filter: MemberFilter, expiringDays: number, af
     active: query(col(), where('activeUntil', '>=', today), orderBy('activeUntil')),
     expiring: query(col(), where('activeUntil', '>=', today), where('activeUntil', '<=', addDays(today, expiringDays)), orderBy('activeUntil')),
     inactive: query(col(), where('activeUntil', '<', today), orderBy('activeUntil', 'desc')),
+    // Had a membership that ended (not marked inactive by hand, which stores NEVER)
+    expired: query(col(), where('activeUntil', '>', NEVER), where('activeUntil', '<', today), orderBy('activeUntil', 'desc')),
+    no_membership: query(col(), where('membershipEnd', '==', null)),
   }[filter];
   const snap = await getDocs(after ? query(base, startAfter(after), limit(PAGE)) : query(base, limit(PAGE)));
   return { members: snap.docs.map(toMember), last: snap.docs[snap.docs.length - 1], more: snap.size === PAGE };
@@ -158,6 +177,8 @@ export async function searchMembers(raw: string): Promise<Member[]> {
     tasks.push(prefix('nameLower', q.toLowerCase()).then((s) => s.docs.map(toMember)));
   }
   if (/^[A-Za-z0-9]{15,}$/.test(q)) tasks.push(getDoc(doc(col(), q)).then((s) => (s.exists() ? [toMember(s)] : [])));
+  // Member ID as shown on the profile ("M-3F9K2A"); stored on members saved since codes were added
+  if (/^m-[a-z0-9_]{1,6}$/i.test(q)) tasks.push(getDocs(query(col(), where('code', '==', q.toUpperCase()), limit(5))).then((s) => s.docs.map(toMember)));
   const all = (await Promise.all(tasks)).flat();
   return all.filter((m, i) => all.findIndex((x) => x.id === m.id) === i);
 }
@@ -207,7 +228,7 @@ export async function createMember(input: MemberInput, actor: AdminActor, source
   if (dup) throw new DuplicateMemberError(dup);
   const ref = doc(col());
   const b = writeBatch(db);
-  b.set(ref, { ...derived(input), trainerClient, source, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: actor.email });
+  b.set(ref, { ...derived(input), code: memberCode(ref.id), photo: null, trainerClient, source, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: actor.email });
   logTo(b, actor, 'Member created', 'member', ref.id, { name: input.name.trim(), source });
   await b.commit();
   return ref.id;
@@ -222,7 +243,7 @@ export async function updateMember(m: Member, input: MemberInput, actor: AdminAc
   const next = derived(input);
   const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => k !== 'nameLower' && k !== 'emailLower' && k !== 'phoneKey' && k !== 'activeUntil' && (m as unknown as Record<string, unknown>)[k] !== next[k]);
   const b = writeBatch(db);
-  b.update(doc(col(), m.id), { ...next, updatedAt: serverTimestamp() });
+  b.update(doc(col(), m.id), { ...next, code: memberCode(m.id), updatedAt: serverTimestamp() });
   logTo(b, actor, 'Member updated', 'member', m.id, { name: next.name, fields: changed.join(', ') || 'none' });
   await b.commit();
 }
@@ -268,3 +289,14 @@ export async function setLinks(pairs: { member: Member; link: NonNullable<Member
 
 /** Short, readable member ID for staff and members (derived from the record id — stable, no counter). */
 export const memberCode = (id: string) => `M-${id.slice(0, 6).toUpperCase()}`;
+
+/** Members by id (≤30 per query), in the order given — for filters that start from other records. */
+export async function membersByIds(ids: string[]): Promise<Member[]> {
+  const unique = [...new Set(ids)];
+  const found = new Map<string, Member>();
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(query(col(), where(documentId(), 'in', unique.slice(i, i + 30))));
+    snap.docs.forEach((d) => found.set(d.id, toMember(d)));
+  }
+  return unique.map((id) => found.get(id)).filter((m): m is Member => !!m);
+}
