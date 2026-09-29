@@ -183,6 +183,12 @@ export async function searchMembers(raw: string): Promise<Member[]> {
   return all.filter((m, i) => all.findIndex((x) => x.id === m.id) === i);
 }
 
+/** Every member (for one-off tools such as matching device users to members — not for lists). */
+export async function allMembers(): Promise<Member[]> {
+  const snap = await getDocs(query(col(), orderBy('nameLower')));
+  return snap.docs.map(toMember);
+}
+
 export async function getMember(id: string) {
   const s = await getDoc(doc(col(), id));
   return s.exists() ? toMember(s) : null;

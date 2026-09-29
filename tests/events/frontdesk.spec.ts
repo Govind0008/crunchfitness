@@ -46,7 +46,7 @@ test('receptionist: find → check membership → check in → payment with disc
   await expect(page.locator('dl[aria-label="Member summary"]')).toContainText('Expired');
   await expect(page.getByRole('region', { name: 'Overview' })).toContainText('Not allowed');   // entry access follows the membership
   await page.getByRole('tab', { name: 'Membership', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Membership' })).toContainText('door device isn’t connected yet');
+  await expect(page.getByRole('region', { name: 'Membership' })).toContainText('Membership expired');
   // Common tasks open in a drawer — the profile stays where it is
   await page.getByRole('button', { name: 'Check in', exact: true }).click();
   const drawer = page.getByRole('dialog', { name: 'Check in' });

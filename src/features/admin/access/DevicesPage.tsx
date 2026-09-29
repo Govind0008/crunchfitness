@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Radio } from 'lucide-react';
+import { Plus, Radio, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ACCESS_CONNECTED, HEALTH_LABEL, PROTOCOL_LABEL, accessProvider, deviceHealth, type AccessDevice, type DeviceProtocol } from '@/lib/access';
+import { ACCESS_CONNECTED, HEALTH_LABEL, PROTOCOL_LABEL, deviceHealth, type AccessDevice, type DeviceProtocol } from '@/lib/access';
 import { deviceCounts, listDevices, saveDevice, setDeviceEnabled, validateDevice, type DeviceInput } from '@/lib/access/store';
 import { Link } from 'react-router-dom';
 import { GYM } from '@/lib/gym';
@@ -10,7 +10,7 @@ import { AdminShell, ConfirmButton, Empty, Field, inputCls } from '@/features/ev
 import { useActor } from '@/features/events/admin/actor';
 import { fmtTime } from '@/features/admin/members/lookups';
 
-const blank: DeviceInput = { name: '', model: 'eSSL F22', serialNumber: '', location: '', protocol: 'adms' };
+const blank: DeviceInput = { name: '', model: 'eSSL X2008', serialNumber: '', location: '', protocol: 'sdk' };
 const healthTone = (h: ReturnType<typeof deviceHealth>) => (h === 'online' ? 'bg-brand-400/15 text-brand-300' : h === 'offline' ? 'bg-red-500/15 text-red-200' : 'bg-white/[0.06] text-ink-300');
 
 /**
@@ -40,17 +40,27 @@ const DevicesPage = () => {
     try { await saveDevice(f, actor, editing === 'new' ? undefined : editing ?? undefined); setEditing(null); load(); }
     catch (err) { setErrors([`Couldn’t save: ${(err as Error).message}`]); }
   };
-  const test = async () => { const h = await accessProvider.healthCheck(); setNote(h.message); };
+  // The reader on the gym PC reports in every minute: "test" = look at when it last did
+  const test = async (d: AccessDevice) => {
+    const fresh = (await listDevices()).find((x) => x.id === d.id) ?? d;
+    setDevices((all) => all?.map((x) => (x.id === d.id ? fresh : x)) ?? all);
+    const h = deviceHealth(fresh);
+    const ago = fresh.lastSeenAt ? Math.round((Date.now() - fresh.lastSeenAt.toDate().getTime()) / 1000) : null;
+    setNote(h === 'online' ? `${fresh.name} is online — the reader heard from it ${ago! < 90 ? `${ago} seconds` : `${Math.round(ago! / 60)} minutes`} ago`
+      : h === 'never_connected' ? `${fresh.name} hasn’t reported in yet. Start the access reader on the gym PC`
+      : h === 'disabled' ? `${fresh.name} is disabled here`
+      : `${fresh.name} is offline — last heard ${fresh.lastSeenAt ? fmtTime(fresh.lastSeenAt as never) : 'never'}. Check the gym PC is on and the reader is running${fresh.lastError ? ` (${fresh.lastError})` : ''}`);
+  };
 
   return (
     <AdminShell title="Access devices" nav="settings" area="Settings" back={{ to: '/admin/settings', label: 'Settings' }}
       actions={editing ? undefined : <Button onClick={() => open('new')}><Plus /> Add device</Button>}>
-      <p className="-mt-4 mb-6 max-w-2xl text-sm text-ink-400">The biometric devices at {GYM.name}. Adding a device here doesn’t change anything on the device itself — the old system keeps working until the pilot is switched over.</p>
-      <div role="status" className="mb-6 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-sm text-amber-100">
-        <p className="font-semibold">Device integration not configured</p>
-        <p className="mt-1 text-amber-100/80">No integration service is connected yet, so no device can report in. Online status, firmware and sync appear only once it is — see ACCESS_CONTROL_F22.md for the pilot steps.</p>
+      <p className="-mt-4 mb-6 max-w-2xl text-sm text-ink-400">The biometric devices at {GYM.name}. Adding a device here doesn’t change anything on the device itself.</p>
+      <div role="status" className="mb-6 max-w-3xl rounded-xl border border-white/[0.08] bg-ink-900 p-4 text-sm text-ink-300">
+        <p className="font-semibold text-white">How devices connect</p>
+        <p className="mt-1">The <strong className="text-white">access reader</strong> on the gym PC reads each device over the gym network and reports here: online status, its user list and every scan. It only reads — nothing on the device changes, so the old system keeps working. A device shows “Online” only when the reader has actually heard from it.</p>
       </div>
-      {note && <p role="status" className="mb-4 text-sm text-ink-300">Test connection: {note}.</p>}
+      {note && <p role="status" className="mb-4 text-sm text-ink-200">{note}.</p>}
 
       {editing && (
         <form onSubmit={save} className="mb-8 grid max-w-3xl gap-4 rounded-2xl border border-white/[0.08] bg-ink-900 p-5 sm:grid-cols-2" noValidate aria-label={editing === 'new' ? 'New device' : 'Edit device'}>
@@ -73,7 +83,7 @@ const DevicesPage = () => {
       )}
 
       {!devices ? <div className="h-24 animate-pulse rounded-2xl bg-ink-900" role="status" aria-label="Loading devices" /> : devices.length === 0 ? (
-        <Empty title="No devices yet" body="Add the gym’s eSSL F22 (and any others) so members can be linked to their user IDs on it." />
+        <Empty title="No devices yet" body="Add the gym’s fingerprint device (serial number from Menu → System Info) so the access reader can report it." />
       ) : (
         <ul className="space-y-3" aria-label="Devices">
           {devices.map((d) => {
@@ -100,8 +110,8 @@ const DevicesPage = () => {
                 {d.lastError && <p className="mt-2 text-sm text-red-200">Last error: {d.lastError}</p>}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => open(d)}>Configure</Button>
-                  <Button size="sm" variant="outline" onClick={test}><Radio /> Test connection</Button>
-                  <Button size="sm" variant="ghost" disabled title="Needs the device integration">Sync</Button>
+                  <Button size="sm" variant="outline" onClick={() => test(d)}><Radio /> Test connection</Button>
+                  <Button asChild size="sm"><Link to={`/admin/settings/access/${d.id}/users`}><Users /> Match users</Link></Button>
                   <Button asChild size="sm" variant="ghost"><Link to="/admin/access">View events</Link></Button>
                   <ConfirmButton size="sm" variant="secondary" confirm={{ title: d.enabled ? `Disable ${d.name}?` : `Enable ${d.name}?`, body: d.enabled ? 'It won’t be offered for new enrolments. Nothing changes on the device itself.' : 'It will be offered for enrolments again.' }}
                     onConfirm={async () => { await setDeviceEnabled(d, !d.enabled, actor); load(); }}>{d.enabled ? 'Disable' : 'Enable'}</ConfirmButton>

@@ -47,6 +47,17 @@ export async function setDeviceEnabled(d: AccessDevice, enabled: boolean, actor:
 }
 
 // ── Member ↔ device user ─────────────────────────────────────────────────────
+/** The device's own user list, as uploaded by the access reader on the gym PC (IDs and names only). */
+export interface DeviceUserRow { id: string; deviceUserId: string; name: string; admin: boolean; hasCard: boolean }
+export async function deviceUsersOf(deviceId: string): Promise<DeviceUserRow[]> {
+  const snap = await getDocs(collection(db, 'gyms', gymId, 'devices', deviceId, 'deviceUsers'));
+  return snap.docs.map((d) => withId<DeviceUserRow>(d));
+}
+export async function identitiesOfDevice(deviceId: string): Promise<BiometricIdentity[]> {
+  const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('deviceId', '==', deviceId)));
+  return snap.docs.map((d) => withId<BiometricIdentity>(d));
+}
+
 export async function identitiesOfMember(memberId: string): Promise<BiometricIdentity[]> {
   // Every access query names the gym: the rules only allow reading your own gym's records
   const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('memberId', '==', memberId)));
