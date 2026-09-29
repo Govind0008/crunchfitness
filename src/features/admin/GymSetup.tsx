@@ -32,7 +32,7 @@ const GymSetup = () => {
     { title: 'Gym details', state: GYM.name && GYM.phone && GYM.address.length ? 'done' : 'todo',
       body: <>{GYM.name} · {GYM.address.join(', ')} · {GYM.phone} · {GYM.email} · WhatsApp {GYM.whatsappNumber.replace(/^91/, '+91 ')} · {GYM.timezone.replace('_', ' ')}</> },
     { title: 'Admin users', state: counts ? (counts.admins > 0 ? 'done' : 'todo') : 'todo', body: n(counts?.admins, 'admin account', 'admin accounts'), to: { href: '/admin/settings', label: 'Staff access' } },
-    { title: 'Membership plans', state: counts ? (counts.plans > 0 ? 'done' : 'todo') : 'todo', body: n(counts?.plans, 'plan on the website', 'plans on the website'), to: { href: '/admin/dashboard?tab=plans', label: 'Plans' } },
+    { title: 'Membership plans', state: counts ? (counts.plans > 0 ? 'done' : 'todo') : 'todo', body: n(counts?.plans, 'plan on the website', 'plans on the website'), to: { href: '/admin/plans', label: 'Plans' } },
     { title: 'Trainers', state: counts ? (counts.trainers > 0 ? 'done' : 'todo') : 'todo', body: n(counts?.trainers, 'team profile', 'team profiles'), to: { href: '/admin/trainers', label: 'Trainers' } },
     { title: 'Payment settings', state: 'done',
       body: <>Receipts numbered {GYM.payments.receiptPrefix}0001 onwards · {GYM.payments.methods.map((m) => METHOD_LABEL[m]).join(', ')} · {GYM.payments.tax ? `GST ${GYM.payments.tax.gstin}` : 'No GST registration set up — receipts are payment receipts, not tax invoices'}</> },

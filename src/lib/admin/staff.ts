@@ -34,3 +34,31 @@ export async function removeStaffAccess(s: StaffAccount, actor: AdminActor) {
   await deleteDoc(doc(db, 'userRoles', s.uid));
   await logAdmin(actor, 'Staff access removed', 'staff', s.uid, { email: s.email ?? '', role: s.role });
 }
+
+// ── Trainer portal logins ───────────────────────────────────────────────────
+export interface TrainerLogin { uid: string; trainerId: string; name?: string; email?: string }
+
+export async function listTrainerLogins(): Promise<TrainerLogin[]> {
+  const snap = await getDocs(query(collection(db, 'userRoles'), where('role', '==', 'trainer')));
+  return snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<TrainerLogin, 'uid'>) }));
+}
+
+/** A trainer-portal login tied to one team profile. Same secondary-app pattern as marketing logins. */
+export async function createTrainerLogin(input: { email: string; password: string; trainerId: string; name: string }, actor: AdminActor) {
+  const app = initializeApp(firebaseConfig, `trainer-create-${Date.now()}`);
+  try {
+    const secondary = getAuth(app);
+    if (USE_EMULATORS) connectAuthEmulator(secondary, 'http://127.0.0.1:9099', { disableWarnings: true });
+    const cred = await createUserWithEmailAndPassword(secondary, input.email.trim(), input.password);
+    await setDoc(doc(db, 'userRoles', cred.user.uid), { role: 'trainer', trainerId: input.trainerId, name: input.name, email: input.email.trim() });
+    await logAdmin(actor, 'Trainer login created', 'trainer', input.trainerId, { email: input.email.trim() });
+    return cred.user.uid;
+  } finally {
+    await deleteApp(app);
+  }
+}
+
+export async function removeTrainerLogin(t: TrainerLogin, actor: AdminActor) {
+  await deleteDoc(doc(db, 'userRoles', t.uid));
+  await logAdmin(actor, 'Trainer login removed', 'trainer', t.trainerId, { email: t.email ?? '' });
+}

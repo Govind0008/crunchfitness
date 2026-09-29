@@ -1,6 +1,6 @@
 // Gym-wide admin activity log (append-only; the rules forbid edits and deletes).
 // Event-specific actions keep their own per-event log (events/{id}/activity).
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, writeBatch, type DocumentData, type DocumentReference, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, where, writeBatch, type DocumentData, type DocumentReference, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export interface AdminActor { uid: string; email: string }
@@ -27,5 +27,11 @@ export async function logAdmin(actor: AdminActor | null, action: string, refType
 
 export async function recentActivity(n = 100): Promise<ActivityEntry[]> {
   const snap = await getDocs(query(collection(db, 'activity'), orderBy('at', 'desc'), limit(n)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ActivityEntry);
+}
+
+/** One member's (or record's) history, newest first. */
+export async function activityFor(refId: string, n = 30): Promise<ActivityEntry[]> {
+  const snap = await getDocs(query(collection(db, 'activity'), where('refId', '==', refId), orderBy('at', 'desc'), limit(n)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ActivityEntry);
 }

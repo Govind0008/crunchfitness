@@ -1,11 +1,16 @@
-// Class check-ins (`attendance`, written by /checkin) and today's classes (`classSessions`).
+// Attendance records.
+//  • `checkins` — front-desk manual check-ins: one per member per day ({date}_{memberId}).
+//  • `attendance` — earlier check-ins from the class-PIN page (/checkin). Classes are retired from
+//    the admin; these stay readable as historical manual records.
+//  • Door scans from the fingerprint device live in `accessEvents` (see lib/access).
 import {
   collection, doc, getCountFromServer, getDocs, increment, limit, orderBy, query, runTransaction, serverTimestamp,
-  Timestamp, where,
+  Timestamp, getDoc, setDoc, updateDoc, where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { phoneKey } from './phone';
 import { todayIST } from './members';
+import type { AdminActor } from './activity';
 
 export interface CheckInRecord {
   id: string; sessionId: string; memberName: string; memberPhone: string; memberPhoneKey?: string;
@@ -36,16 +41,7 @@ export async function countSince(start: Timestamp) {
   return (await getCountFromServer(query(col(), where('checkedInAt', '>=', start)))).data().count;
 }
 
-export async function classesOn(date: string): Promise<ClassSession[]> {
-  const snap = await getDocs(query(collection(db, 'classSessions'), where('date', '==', date)));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ClassSession).sort((a, b) => a.startTime.localeCompare(b.startTime));
-}
-export async function attendeesOf(sessionId: string) {
-  const snap = await getDocs(query(col(), where('sessionId', '==', sessionId)));
-  return snap.docs.map(toRec).sort((a, b) => (a.checkedInAt?.seconds ?? 0) - (b.checkedInAt?.seconds ?? 0));
-}
-
-/** A member's check-ins. New records carry memberPhoneKey; older ones stored the phone as typed,
+/** A member's earlier /checkin records. New records carry memberPhoneKey; older ones stored the phone as typed,
  *  so common formats of the same number are matched too. */
 export async function checkInsForPhone(phone: string) {
   const key = phoneKey(phone);
@@ -57,19 +53,6 @@ export async function checkInsForPhone(phone: string) {
   ]);
   const all = [...a.docs, ...b.docs].map(toRec);
   return all.filter((r, i) => all.findIndex((x) => x.id === r.id) === i).sort((x, y) => (y.checkedInAt?.seconds ?? 0) - (x.checkedInAt?.seconds ?? 0));
-}
-
-/** Peak hour (IST) among check-ins, or null. Derived from real records only. */
-export function peakHour(recs: CheckInRecord[]) {
-  const counts = new Map<number, number>();
-  recs.forEach((r) => {
-    if (!r.checkedInAt) return;
-    const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }).format(r.checkedInAt.toDate()));
-    counts.set(h, (counts.get(h) ?? 0) + 1);
-  });
-  let best: [number, number] | null = null;
-  counts.forEach((c, h) => { if (!best || c > best[1]) best = [h, c]; });
-  return best as [number, number] | null;
 }
 
 export type CheckInResult = 'ok' | 'duplicate' | 'full';
@@ -100,22 +83,84 @@ export async function selfCheckIn(session: Pick<ClassSession, 'id'>, name: strin
   }
 }
 
+/** Latest earlier (/checkin) record per phone key, for a page of members (≤30 phones per query, last 60 days). */
+export async function lastCheckIns(keys: string[], days = 60): Promise<Map<string, Timestamp>> {
+  const since = Timestamp.fromMillis(Date.now() - days * 86400000);
+  const out = new Map<string, Timestamp>();
+  const unique = [...new Set(keys.filter((k) => k.length === 10))];
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(query(col(), where('memberPhoneKey', 'in', unique.slice(i, i + 30)), where('checkedInAt', '>=', since), limit(500)));
+    snap.docs.forEach((d) => {
+      const r = toRec(d); const k = r.memberPhoneKey ?? ''; const at = r.checkedInAt;
+      if (at && (!out.get(k) || out.get(k)!.seconds < at.seconds)) out.set(k, at);
+    });
+  }
+  return out;
+}
+
+// ── Manual check-ins (no class) ──────────────────────────────────────────────
+export interface ManualCheckIn {
+  id: string; memberId: string; memberName: string; memberPhoneKey: string; date: string; method: 'manual'; by: string; at?: Timestamp;
+}
+const mcol = () => collection(db, 'checkins');
+const toManual = (d: { id: string; data: () => Record<string, unknown> }) => ({ id: d.id, ...d.data() }) as ManualCheckIn;
+
 /**
- * Front-desk check-in by staff. Same one-document-per-person-per-class record as /checkin, but
- * staff may overwrite attendance, so this checks for an existing record inside the transaction
- * rather than relying on the rules to refuse it (which would double-count the class).
+ * Front-desk check-in. One record per member per day — id `{date}_{memberId}` — so checking the
+ * same person in twice is refused, not double-counted. The rules allow admins to create only,
+ * stamped with the server time and their own uid.
  */
-export async function staffCheckIn(session: Pick<ClassSession, 'id'>, name: string, phone: string): Promise<CheckInResult> {
-  const key = phoneKey(phone);
-  const sessionRef = doc(db, 'classSessions', session.id);
-  const recRef = doc(db, 'attendance', `${session.id}_${key}`);
-  return runTransaction(db, async (tx) => {
-    const [s, existing] = await Promise.all([tx.get(sessionRef), tx.get(recRef)]);
-    if (existing.exists()) return 'duplicate' as const;
-    const count = (s.data()?.checkedInCount as number | undefined) ?? 0;
-    if (count >= (s.data()?.capacity as number)) return 'full' as const;
-    tx.update(sessionRef, { checkedInCount: increment(1) });
-    tx.set(recRef, { sessionId: session.id, memberName: name.trim(), memberPhone: phone.trim(), memberPhoneKey: key, checkedInAt: serverTimestamp() });
-    return 'ok' as const;
+export async function manualCheckIn(m: { id: string; name: string; phone: string }, actor: AdminActor): Promise<'ok' | 'duplicate'> {
+  if (!actor) throw new Error('Not signed in');
+  const date = todayIST();
+  const ref = doc(db, 'checkins', `${date}_${m.id}`);
+  if ((await getDoc(ref)).exists()) return 'duplicate';
+  try {
+    await setDoc(ref, { memberId: m.id, memberName: m.name.trim(), memberPhoneKey: phoneKey(m.phone), date, method: 'manual', by: actor.uid, at: serverTimestamp() });
+    // "Last visit" on the member, so lists read one field instead of scanning check-ins.
+    // Separate from the check-in: if this fails, the visit is still recorded.
+    updateDoc(doc(db, 'members', m.id), { lastVisitAt: serverTimestamp() }).catch(() => {});
+    return 'ok';
+  } catch (e) {
+    // Created a moment ago from another screen: the rules refuse the overwrite
+    if ((e as { code?: string }).code === 'permission-denied' && (await getDoc(ref).catch(() => null))?.exists()) return 'duplicate';
+    throw e;
+  }
+}
+export async function manualCheckInsSince(start: Timestamp, n = 500) {
+  const snap = await getDocs(query(mcol(), where('at', '>=', start), orderBy('at', 'desc'), limit(n)));
+  return snap.docs.map(toManual);
+}
+export async function countManualSince(start: Timestamp) {
+  return (await getCountFromServer(query(mcol(), where('at', '>=', start)))).data().count;
+}
+export async function manualCheckInsOf(memberId: string) {
+  const snap = await getDocs(query(mcol(), where('memberId', '==', memberId), limit(300)));
+  return snap.docs.map(toManual).sort((a, b) => (b.at?.seconds ?? 0) - (a.at?.seconds ?? 0));
+}
+/** Latest manual check-in per member id (≤30 ids per query, last `days` days). */
+export async function lastManualCheckIns(memberIds: string[], days = 60): Promise<Map<string, Timestamp>> {
+  const since = Timestamp.fromMillis(Date.now() - days * 86400000);
+  const out = new Map<string, Timestamp>();
+  const unique = [...new Set(memberIds)];
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(query(mcol(), where('memberId', 'in', unique.slice(i, i + 30)), where('at', '>=', since), limit(500)));
+    snap.docs.forEach((d) => {
+      const r = toManual(d);
+      if (r.at && (!out.get(r.memberId) || out.get(r.memberId)!.seconds < r.at.seconds)) out.set(r.memberId, r.at);
+    });
+  }
+  return out;
+}
+
+/** Peak hour (IST) across a set of arrival times in ms. */
+export function peakHourOf(times: number[]) {
+  const counts = new Map<number, number>();
+  times.filter(Boolean).forEach((t) => {
+    const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }).format(new Date(t)));
+    counts.set(h, (counts.get(h) ?? 0) + 1);
   });
+  let best: [number, number] | null = null;
+  counts.forEach((c, h) => { if (!best || c > best[1]) best = [h, c]; });
+  return best as [number, number] | null;
 }

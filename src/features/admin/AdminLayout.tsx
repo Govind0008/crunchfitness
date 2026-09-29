@@ -1,77 +1,121 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Menu } from 'lucide-react';
+import { ChevronRight, Command, LogOut, Menu, Settings } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import CommandPalette from './CommandPalette';
 import { signOut } from 'firebase/auth';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, getCountFromServer, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { auth } from '@/lib/firebase-auth';
-import AdminSidebar from '@/components/admin/AdminSidebar';
-import { ADMIN_TABS, type AdminTab, type NavKey } from '@/components/admin/tabs';
+import AdminSidebar, { AdminBottomNav } from '@/components/admin/AdminSidebar';
+import type { NavKey } from '@/components/admin/tabs';
 import { EventAdminRoute } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import Seo from '@/components/site/Seo';
 import AdminSearch from './AdminSearch';
 
-const TAB_AREA: Record<AdminTab, string> = {
-  posts: 'Content', team: 'Content', accounts: 'People', offers: 'Business', plans: 'Business', enquiries: 'Business', roster: 'Daily operations', schedule: 'Daily operations',
-};
+// Start loading the admin pages as soon as the shell loads, not after the guard has finished
+void import('./index').catch(() => {});
 
 /** Which sidebar item and top-bar section a URL belongs to. */
-function sectionOf(pathname: string, search: string): { nav: NavKey; area: string } {
+function sectionOf(pathname: string): { nav: NavKey; area: string } {
   const p = pathname.replace(/\/$/, '');
-  if (p === '/admin') return { nav: 'dashboard', area: 'Dashboard' };
+  if (p === '/admin') return { nav: 'dashboard', area: 'Home' };
   if (p.startsWith('/admin/members')) return { nav: 'members', area: 'People' };
   if (p.startsWith('/admin/trainers')) return { nav: 'trainers', area: 'People' };
-  if (p.startsWith('/admin/attendance')) return { nav: 'attendance', area: 'Daily operations' };
-  if (p.startsWith('/admin/events')) return { nav: 'events', area: 'Community' };
+  if (p.startsWith('/admin/attendance')) return { nav: 'attendance', area: 'Operations' };
+  if (p.startsWith('/admin/access')) return { nav: 'access', area: 'Operations' };
+  if (p.startsWith('/admin/events')) return { nav: 'events', area: 'Growth' };
   if (p.startsWith('/admin/payments/dues')) return { nav: 'dues', area: 'Money' };
   if (p.startsWith('/admin/payments')) return { nav: 'payments', area: 'Money' };
   if (p.startsWith('/admin/revenue')) return { nav: 'revenue', area: 'Money' };
-  if (p.startsWith('/admin/reports')) return { nav: 'reports', area: 'System' };
-  if (p.startsWith('/admin/activity')) return { nav: 'activity', area: 'System' };
-  if (p.startsWith('/admin/settings')) return { nav: 'settings', area: 'System' };
-  const tab = new URLSearchParams(search).get('tab') as AdminTab | null;
-  const t: AdminTab = tab && ADMIN_TABS.includes(tab) ? tab : 'posts';
-  return { nav: t, area: TAB_AREA[t] };
+  if (p.startsWith('/admin/reports')) return { nav: 'reports', area: 'More' };
+  if (p.startsWith('/admin/activity')) return { nav: 'activity', area: 'More' };
+  if (p.startsWith('/admin/settings/access')) return { nav: 'settings', area: 'Settings' };
+  if (p.startsWith('/admin/settings')) return { nav: 'settings', area: 'More' };
+  if (p.startsWith('/admin/enquiries')) return { nav: 'enquiries', area: 'Growth' };
+  if (p.startsWith('/admin/offers')) return { nav: 'offers', area: 'Website' };
+  if (p.startsWith('/admin/blog')) return { nav: 'posts', area: 'Website' };
+  if (p.startsWith('/admin/team')) return { nav: 'team', area: 'Website' };
+  if (p.startsWith('/admin/plans')) return { nav: 'plans', area: 'Website' };
+  return { nav: 'dashboard', area: 'Home' };
 }
 
+const LABEL: Partial<Record<NavKey, string>> = {
+  dashboard: 'Dashboard', members: 'Members', trainers: 'Trainers', attendance: 'Attendance', access: 'Access', events: 'Events',
+  payments: 'Payments', dues: 'Dues', revenue: 'Revenue', reports: 'Reports', activity: 'Activity', settings: 'Settings',
+  posts: 'Blog', team: 'Team', offers: 'Offers', plans: 'Plans', enquiries: 'Enquiries',
+};
+const COLLAPSE_KEY = 'crunch.admin.sidebar.collapsed';
+
 const Frame = () => {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const actor = useActor();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; } });
   const [unread, setUnread] = useState(0);
   const main = useRef<HTMLElement>(null);
-  const { nav, area } = sectionOf(pathname, search);
+  const { nav, area } = sectionOf(pathname);
+  const section = LABEL[nav] ?? area;
+  const toggleCollapsed = () => setCollapsed((c) => { try { localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1'); } catch { /* convenience only */ } return !c; });
 
-  // One small live query for the sidebar badge — not re-subscribed on navigation
-  useEffect(() => onSnapshot(query(collection(db, 'enquiries'), where('read', '==', false)), (s) => setUnread(s.size), () => setUnread(0)), []);
+  // Sidebar badge: a count (not a live listener, which would queue ahead of the page's own
+  // queries), refreshed on navigation and every minute
+  useEffect(() => {
+    const load = () => getCountFromServer(query(collection(db, 'enquiries'), where('read', '==', false))).then((c) => setUnread(c.data().count)).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, [pathname]);
   // New page → start at the top of the content area (the shell itself never scrolls away)
   useEffect(() => { main.current?.scrollTo({ top: 0 }); setMenuOpen(false); }, [pathname]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950 text-white" data-admin-shell>
       <Seo title="Crunch admin" description="Staff area" noindex />
-      <AdminSidebar active={nav} email={actor.email} open={menuOpen} onClose={() => setMenuOpen(false)} unreadEnquiries={unread}
-        onLogout={async () => { await signOut(auth); navigate('/admin/login'); }} />
-      <div className="flex h-screen w-full flex-1 flex-col overflow-hidden md:ml-60">
-        <header className="z-20 flex h-16 flex-shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-900/95 px-4 backdrop-blur md:px-6">
-          <button type="button" onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-gray-400 hover:bg-zinc-800 hover:text-white md:hidden" aria-label="Open menu"><Menu size={20} /></button>
-          <div className="hidden min-w-0 sm:block">
-            <p className="truncate text-base font-bold text-white" data-admin-area>{area}</p>
-            <p className="text-xs text-gray-500">Crunch Fitness Club — Admin</p>
+      <AdminSidebar active={nav} open={menuOpen} onClose={() => setMenuOpen(false)} unreadEnquiries={unread} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+      <div className={`flex h-screen w-full flex-1 flex-col overflow-hidden transition-[margin] duration-300 motion-reduce:transition-none ${collapsed ? 'md:ml-16' : 'md:ml-60'}`}>
+        <header className="z-20 flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/[0.06] bg-ink-950/90 px-4 backdrop-blur md:px-6">
+          <button type="button" onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-ink-400 hover:bg-white/[0.06] hover:text-white md:hidden" aria-label="Open menu"><Menu size={20} /></button>
+          <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm sm:flex">
+            {area !== section && <><span className="text-ink-500" data-admin-area>{area}</span><ChevronRight size={14} className="text-ink-600" aria-hidden /></>}
+            <span className="truncate font-semibold text-white" {...(area === section ? { 'data-admin-area': true } : {})}>{section}</span>
+          </nav>
+          <div className="ml-auto flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-1">
+            <AdminSearch />
+            <button type="button" onClick={() => setPalette(true)} className="hidden h-10 flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-white/[0.1] px-3 text-sm text-ink-300 hover:border-white/25 hover:text-white xl:flex" aria-label="Quick actions (Ctrl K)">
+              <Command size={14} aria-hidden /> Quick actions <kbd className="rounded bg-white/[0.08] px-1.5 text-[10px] text-ink-400">Ctrl K</kbd>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-sm font-bold text-white hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" aria-label={`Account: ${actor.email}`}>
+                  {(actor.email[0] ?? 'A').toUpperCase()}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 border-white/10 bg-ink-900 text-white">
+                <DropdownMenuLabel className="font-normal"><span className="block text-xs text-ink-500">Signed in as</span><span className="block truncate text-sm">{actor.email}</span></DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <DropdownMenuItem onSelect={() => navigate('/admin/settings')}><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setPalette(true)}><Command className="mr-2 h-4 w-4" /> Quick actions</DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <DropdownMenuItem className="text-red-300 focus:text-red-200" onSelect={async () => { await signOut(auth); window.location.assign('/admin/login'); /* full reload: clears every in-memory cache on shared desks */ }}><LogOut className="mr-2 h-4 w-4" /> Sign out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <div className="ml-auto flex w-full justify-end sm:w-auto sm:flex-1"><AdminSearch /></div>
         </header>
         <main ref={main} className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">
+          <div className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 md:pb-24">
             {/* Sections load inside the shell — the sidebar and header stay put */}
-            <Suspense fallback={<div className="flex h-64 items-center justify-center" role="status" aria-label="Loading section"><div className="h-7 w-7 animate-spin rounded-full border-2 border-brand-400 border-t-transparent" /></div>}>
+            <Suspense fallback={<div className="space-y-4" role="status" aria-label="Loading section"><div className="h-10 w-64 animate-pulse rounded-lg bg-ink-900 motion-reduce:animate-none" /><div className="h-32 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /><div className="h-64 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /></div>}>
               <Outlet />
             </Suspense>
           </div>
         </main>
       </div>
+      <AdminBottomNav active={nav} onMore={() => setMenuOpen(true)} />
+      <CommandPalette open={palette} onOpenChange={setPalette} />
     </div>
   );
 };

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { paymentsQuery } from '@/features/admin/pageData';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { todayIST, addDays } from '@/lib/admin/members';
-import { LIST_LIMIT, METHOD_LABEL, paymentFor, TYPE_LABEL, monthEnd, monthStart, paymentTypeOf, paymentsBetween, receiptLabel, rupees, shiftMonth, type Payment, type PaymentMethod, type PaymentType } from '@/lib/admin/payments';
+import { LIST_LIMIT, METHOD_LABEL, paymentFor, TYPE_LABEL, monthEnd, monthStart, paymentTypeOf, receiptLabel, rupees, shiftMonth, type Payment, type PaymentMethod, type PaymentType } from '@/lib/admin/payments';
 import { AdminShell, Empty, inputCls } from '@/features/events/admin/shared';
 import { fmtDate } from '@/features/admin/members/lookups';
 import { PaymentStatus } from './ui';
@@ -27,8 +29,6 @@ const PaymentsPage = () => {
   const status = (params.get('status') as 'paid' | 'void' | 'all') || 'all';
   const type = (params.get('type') as PaymentType | 'all') || 'all';
   const [q, setQ] = useState('');
-  const [rows, setRows] = useState<Payment[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const setParam = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -36,10 +36,8 @@ const PaymentsPage = () => {
     setParams(next);
   };
 
-  useEffect(() => {
-    setRows(null); setError(null);
-    paymentsBetween(from, to).then(setRows).catch((e) => setError(e.message));
-  }, [from, to]);
+  const pq = useQuery(paymentsQuery(from, to));
+  const rows = pq.data ?? null, error = pq.error ? (pq.error as Error).message : null;
 
   const shown = useMemo(() => (rows ?? []).filter((p) =>
     (method === 'all' || p.method === method) && (status === 'all' || p.status === status) && (type === 'all' || paymentTypeOf(p) === type) &&

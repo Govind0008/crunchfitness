@@ -19,6 +19,10 @@ service cloud.firestore {
     function isMarketing() { return hasRole() && myRole().role == 'marketing'; }
     // Staff who may edit what the public sees
     function isContentStaff() { return isAdmin() || isMarketing(); }
+    // Multi-gym: a staff account belongs to one gym (userRoles.gymId). Accounts created before
+    // gyms existed belong to the first gym, Crunch Fitness Wakad.
+    function myGym() { return myRole().get('gymId', 'crunch-wakad'); }
+    function isGymAdmin(gymId) { return isAdmin() && myGym() == gymId; }
     function isTrainer() { return hasRole() && myRole().role == 'trainer'; }
     function isTrainerOf(trainerId) { return isTrainer() && myRole().trainerId == trainerId; }
     function isClientOf(trainerId) { return hasRole() && myRole().role == 'client' && myRole().trainerId == trainerId; }
@@ -90,6 +94,23 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Manual check-ins by the front desk (no class): one per member per day, id {date}_{memberId}.
+    // Stamped with the server time and the admin's uid; never edited. Admins may delete a mistake.
+    match /checkins/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && id == request.resource.data.date + '_' + request.resource.data.memberId
+        && request.resource.data.keys().hasOnly(['memberId', 'memberName', 'memberPhoneKey', 'date', 'method', 'by', 'at'])
+        && request.resource.data.date is string && request.resource.data.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.method == 'manual'
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.memberName is string && request.resource.data.memberName.size() > 0 && request.resource.data.memberName.size() <= 120
+        && exists(/databases/$(database)/documents/members/$(request.resource.data.memberId));
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     // ── Members — the gym's membership list ──────────────────────────────────
     // Admins manage; a trainer can see the members assigned to them.
     match /members/{memberId} {
@@ -98,7 +119,14 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() > 1
         && request.resource.data.phoneKey is string && request.resource.data.phoneKey.matches('[0-9]{10}')
         && request.resource.data.status in ['active', 'inactive']
-        && request.resource.data.activeUntil is string;
+        && request.resource.data.activeUntil is string
+        // Staff block for door access (always wins over the membership)
+        && request.resource.data.get('accessOverride', null) in [null, 'blocked', 'suspended']
+        // Photo metadata only — the image itself is private in Storage at members/{id}/photo
+        && (request.resource.data.get('photo', null) == null
+          || (request.resource.data.photo.path == 'members/' + memberId + '/photo'
+            && request.resource.data.photo.contentType.matches('image/.*')
+            && request.resource.data.photo.size is int && request.resource.data.photo.size < 8388608));
       allow delete: if isAdmin();
     }
 
@@ -134,6 +162,7 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time;
       allow create: if isAdmin()
         && request.resource.data.get('source', 'admin') == 'admin'
+        && (request.resource.data.get('category', null) == null || request.resource.data.category is string)
         && validPaymentType()
         && request.resource.data.amountPaise is int && request.resource.data.amountPaise > 0
         && request.resource.data.countedPaise == request.resource.data.amountPaise
@@ -180,8 +209,65 @@ service cloud.firestore {
         && request.resource.data.source in ['payment', 'legacy_excel']
         && (request.resource.data.sessionsIncluded == null || (request.resource.data.sessionsIncluded is int && request.resource.data.sessionsIncluded > 0))
         && request.resource.data.createdAt == request.time;
-      allow update: if isAdmin() && !changed().hasAny(['memberId', 'source', 'legacy', 'createdAt', 'paymentId']);
+      allow update: if isAdmin() && !changed().hasAny(['memberId', 'source', 'legacy', 'createdAt'])
+        // A package's first payment is linked once; after that the link never changes
+        && (!changed().hasAny(['paymentId']) || resource.data.get('paymentId', null) == null)
+        // Sessions used only count up, and never beyond the package
+        && (!changed().hasAny(['sessionsUsed']) || (request.resource.data.sessionsUsed is int
+          && request.resource.data.sessionsUsed >= resource.data.get('sessionsUsed', 0)
+          && (resource.data.sessionsIncluded == null || request.resource.data.sessionsUsed <= resource.data.sessionsIncluded)));
       allow delete: if false;
+    }
+
+    // ── Access control (biometric doors) ──────────────────────────────────────
+    // Staff register devices and link members to device user IDs. Online status, sync results
+    // and scans come only from the integration service (server side, Admin SDK) — the browser
+    // can never mark anything "online", "synced" or write a scan.
+    match /gyms/{gymId} {
+      allow read: if isGymAdmin(gymId);
+      allow write: if false;
+
+      match /devices/{deviceId} {
+        allow read: if isGymAdmin(gymId);
+        allow create: if isGymAdmin(gymId)
+          && request.resource.data.gymId == gymId
+          && request.resource.data.name is string && request.resource.data.name.size() > 1
+          && request.resource.data.protocol in ['adms', 'sdk', 'other']
+          && request.resource.data.enabled == true
+          && request.resource.data.nextUserId == 1
+          && request.resource.data.lastSeenAt == null && request.resource.data.lastSyncAt == null
+          && request.resource.data.firmware == null && request.resource.data.lastError == null;
+        allow update: if isGymAdmin(gymId)
+          && !changed().hasAny(['gymId', 'lastSeenAt', 'lastSyncAt', 'firmware', 'lastError', 'createdAt', 'createdBy'])
+          && request.resource.data.protocol in ['adms', 'sdk', 'other']
+          && request.resource.data.enabled is bool
+          && request.resource.data.nextUserId is int && request.resource.data.nextUserId >= resource.data.nextUserId;
+        allow delete: if false;
+      }
+    }
+
+    // One document per device user: id = {deviceId}_{deviceUserId}, so an ID can't be given twice
+    match /biometricIdentities/{identityId} {
+      // Checking whether an ID is free reads a document that may not exist yet
+      allow get: if isAdmin() && (resource == null || isGymAdmin(resource.data.gymId));
+      allow list: if isGymAdmin(resource.data.gymId);
+      allow create: if isGymAdmin(request.resource.data.gymId)
+        && identityId == request.resource.data.deviceId + '_' + request.resource.data.deviceUserId
+        && request.resource.data.deviceUserId.matches('[A-Za-z0-9_-]{1,24}')
+        && exists(/databases/$(database)/documents/gyms/$(request.resource.data.gymId)/devices/$(request.resource.data.deviceId))
+        && request.resource.data.memberId is string
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.lastSyncedAt == null && request.resource.data.lastSyncError == null;
+      allow update: if isGymAdmin(resource.data.gymId)
+        && changed().hasOnly(['status', 'enrolledAt', 'updatedAt'])
+        && request.resource.data.status in ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED'];
+      allow delete: if false;
+    }
+
+    // Scans reported by devices — written by the integration service only
+    match /accessEvents/{eventId} {
+      allow read: if isGymAdmin(resource.data.gymId);
+      allow write: if false;
     }
 
     // Import history (counts only): admins, append-only

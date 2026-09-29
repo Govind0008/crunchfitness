@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -86,22 +86,44 @@ const SettingsPage = () => {
     await logAdmin(actor, 'Settings changed', 'settings', 'admin', { expiringSoonDays: days });
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
+  const Tile = ({ to, title, sub }: { to: string; title: string; sub: string }) => (
+    <Link to={to} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-ink-900 p-4 transition-colors hover:border-white/20">
+      <span><span className="block font-semibold text-white">{title}</span><span className="text-sm text-ink-400">{sub}</span></span>
+      <ArrowRight className="h-4 w-4 flex-shrink-0 text-ink-500" aria-hidden />
+    </Link>
+  );
+  const Group = ({ title, children }: { title: string; children: ReactNode }) => (
+    <section aria-label={title} className="space-y-3">
+      <h2 className="font-sans text-xs font-bold uppercase tracking-[0.16em] text-ink-400">{title}</h2>
+      {children}
+    </section>
+  );
   return (
-    <AdminShell title="Settings" nav="settings" area="System">
-      <div className="grid gap-6 lg:grid-cols-[22rem_1fr] lg:items-start">
-        <div className="space-y-6">
-          <Link to="/admin/settings/setup" className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-ink-900 p-5 transition-colors hover:border-white/20">
-            <span><span className="block font-semibold text-white">Gym setup</span><span className="text-sm text-ink-400">Details, plans, trainers, payments, access control</span></span>
-            <ArrowRight className="h-4 w-4 text-ink-500" aria-hidden />
-          </Link>
-          <div className="space-y-4 rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
-            <Field label="“Expiring soon” window" hint="Members whose membership ends within this many days are flagged on the dashboard and in Dues." htmlFor="exp-days">
-              <input id="exp-days" type="number" min={1} max={90} className={inputCls} value={days ?? ''} onChange={(e) => setDays(Number(e.target.value))} />
-            </Field>
-            <Button onClick={save} disabled={days == null || days < 1 || days > 90}>{saved ? 'Saved' : 'Save'}</Button>
-          </div>
+    <AdminShell title="Settings" nav="settings" area="More">
+      <div className="grid gap-10 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-10">
+          <Group title="Gym">
+            <Tile to="/admin/settings/setup" title="Gym profile & setup" sub="Details, branding, payments and setup progress" />
+            <Tile to="/admin/plans" title="Membership plans" sub="Plans and prices shown on the website" />
+            <div className="space-y-4 rounded-xl border border-white/[0.08] bg-ink-900 p-4">
+              <Field label="“Expiring soon” window" hint="Members whose membership ends within this many days are flagged on the dashboard and in Dues." htmlFor="exp-days">
+                <input id="exp-days" type="number" min={1} max={90} className={inputCls} value={days ?? ''} onChange={(e) => setDays(Number(e.target.value))} />
+              </Field>
+              <Button onClick={save} disabled={days == null || days < 1 || days > 90}>{saved ? 'Saved' : 'Save'}</Button>
+            </div>
+          </Group>
+          <Group title="Access control">
+            <Tile to="/admin/settings/access" title="Devices" sub="Fingerprint devices, their status and enrolled users" />
+          </Group>
+          <Group title="System">
+            <Tile to="/admin/activity" title="Activity log" sub="Who changed what, and when" />
+            <Tile to="/admin/reports" title="Reports" sub="Spreadsheet downloads of members, payments and dues" />
+          </Group>
         </div>
-        <StaffAccess />
+        <Group title="Users & roles">
+          <StaffAccess />
+          <Tile to="/admin/trainers" title="Trainer logins" sub="Portal accounts, managed on each trainer" />
+        </Group>
       </div>
     </AdminShell>
   );

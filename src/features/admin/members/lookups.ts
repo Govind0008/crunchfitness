@@ -8,6 +8,7 @@ export interface TrainerRef { id: string; name: string; role?: string }
 type Lookups = { plans: Map<string, PlanRef>; trainers: Map<string, TrainerRef> };
 const FRESH_MS = 30_000;
 let cache: { at: number; p: Promise<Lookups> } | null = null;
+let last: Lookups | null = null;   // the latest result, so a page can render names on its first paint
 
 /** Shared across admin pages: moving between them doesn't re-read plans and trainers every time. */
 function loadLookups(): Promise<Lookups> {
@@ -20,6 +21,7 @@ function loadLookups(): Promise<Lookups> {
     trainers: new Map(ts.docs.map((d) => [d.id, { id: d.id, ...(d.data() as Omit<TrainerRef, 'id'>) }])),
   }));
   cache = { at: Date.now(), p };
+  p.then((d) => { last = d; }).catch(() => {});
   p.catch(() => { if (cache?.p === p) cache = null; });
   return p;
 }
@@ -28,7 +30,7 @@ export const invalidateLookups = () => { cache = null; };
 
 /** Plans and trainers are small collections: load once, look names up by id (never copied onto members). */
 export function useLookups() {
-  const [data, setData] = useState<Lookups>({ plans: new Map(), trainers: new Map() });
+  const [data, setData] = useState<Lookups>(() => last ?? { plans: new Map(), trainers: new Map() });
   useEffect(() => {
     let off = false;
     loadLookups().then((d) => { if (!off) setData(d); }).catch(() => {});

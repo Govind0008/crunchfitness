@@ -14,7 +14,7 @@ import { parseCsv } from '@/lib/admin/csv';
 import LegacyImport from './LegacyImport';
 
 const TEMPLATE = 'name,phone,email,plan,start,expiry,status\nAsha Rao,9876543210,asha@example.com,3 Months,2026-09-01,2026-11-30,active\n';
-const ALIASES: Record<keyof Omit<MemberInput, 'trainerId' | 'notes'> | 'plan', string[]> = {
+const ALIASES: Record<keyof Omit<MemberInput, 'trainerId' | 'notes' | 'emergencyName' | 'emergencyPhone'> | 'plan', string[]> = {
   name: ['name', 'full name', 'member name'], phone: ['phone', 'mobile', 'phone number', 'contact'], email: ['email', 'e-mail'],
   plan: ['plan', 'membership', 'package'], planId: [], membershipStart: ['start', 'start date', 'joined', 'join date'],
   membershipEnd: ['expiry', 'end', 'end date', 'expiry date', 'valid till'], status: ['status'],

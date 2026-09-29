@@ -104,3 +104,42 @@ answer **No**.
 
 The membership / PT / other revenue split is added up in the browser from those bounded lists.
 It isn't a per-type `sum()`, which would need a new `(paymentType, paidOn, countedPaise)` index.
+
+## Command center, members and access control (added 2026-09-29)
+
+| # | Collection | Fields | Query | Why |
+|---|---|---|---|---|
+| A1 | `attendance` | `memberPhoneKey` ↑, `checkedInAt` ↑ | Members list "last check-in": `memberPhoneKey in [≤30]` and `checkedInAt ≥` 60 days ago | Filter on one field and range on another |
+| A2 | `accessEvents` | `gymId` ↑, `at` ↓ | Today's door scans (Access control, Attendance, dashboard counts) | Equality, then range and sort on `at` |
+| A3 | `accessEvents` | `gymId` ↑, `result` ↑, `at` ↑ | "Verified today" count | Two equalities plus a range |
+| A4 | `accessEvents` | `gymId` ↑, `memberId` ↑, `at` ↓ | Member profile → door scans | Equalities, then sort on `at` |
+| A5 | `activity` | `refId` ↑, `at` ↓ | Member profile → activity | Equality, then sort |
+
+**No composite index needed:**
+
+| Query | Why |
+|---|---|
+| `biometricIdentities` by `gymId` + `status` / `memberId` / `deviceUserId` | Equality only |
+| `members` by `accessOverride in` | Single field |
+| `members` by `membershipEnd == null` | Single field |
+| `members` with `activeUntil` in a range ("Expired" filter) | Single field |
+| `ptPackages` by `memberId in` | Single field |
+| `ptPackages` by `endDate ≥ today` | Single field |
+
+**Every access-control query filters on `gymId`.** The rules check the document's `gymId`, and
+Firestore only allows a list query when its filters guarantee that check passes.
+
+## Manual check-ins (added 2026-09-29, consistency pass)
+
+| # | Collection | Fields | Query | Why |
+|---|---|---|---|---|
+| C1 | `checkins` | `memberId` ↑, `at` ↑ | Members list "last visit": `memberId in [≤30]` and `at ≥` 60 days ago | Filter on one field and range on another |
+
+**No composite index needed:**
+
+| Query | Why |
+|---|---|
+| `checkins` with `at ≥` today / Monday / the 1st, plus `orderBy('at')` | Single field (Attendance, dashboard counts) |
+| `checkins` by `memberId ==` | Single field; sorted in the browser (member profile) |
+
+Until C1 is built, the members list shows "—" for a front-desk visit. Everything else works.

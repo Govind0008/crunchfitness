@@ -2,7 +2,8 @@ import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
@@ -51,7 +52,6 @@ const Contact        = lazy(() => import("./pages/Contact"));
 const Blog           = lazy(() => import("./pages/Blog"));
 const BlogPost       = lazy(() => import("./pages/BlogPost"));
 const AdminLogin       = lazy(() => import("./pages/AdminLogin"));
-const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
 const AdminLayout      = lazy(() => import("./features/admin/AdminLayout"));
 const TrainerLogin     = lazy(() => import("./pages/TrainerLogin"));
 const TrainerArea      = lazy(() => import("./routes/PortalRoutes").then((m) => ({ default: m.TrainerArea })));
@@ -74,8 +74,6 @@ const PageLoader = () => (
     <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
   </div>
 );
-
-const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -105,7 +103,6 @@ const App = () => (
               {/* One persistent admin shell: sidebar, header and auth stay mounted; only content changes */}
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index            element={<AdminApp />} />
-                <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="events/*"  element={<EventsAdmin />} />
                 <Route path="*"         element={<AdminApp />} />
               </Route>

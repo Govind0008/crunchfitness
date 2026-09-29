@@ -295,9 +295,10 @@ test('events live inside the admin layout, with the shared sidebar', async ({ br
   const admin = await adminPage(browser);
   const nav = admin.getByRole('navigation', { name: 'Admin' });
   await expect(nav.getByRole('link', { name: 'Events', exact: true })).toHaveAttribute('aria-current', 'page');
+  if (!(await nav.getByRole('link', { name: 'Blog', exact: true }).count())) await nav.getByRole('button', { name: 'More' }).click();   // secondary pages live under More
   await nav.getByRole('link', { name: 'Blog', exact: true }).click();
-  await expect(admin).toHaveURL(/\/admin\/dashboard\?tab=posts$/);
-  await expect(admin.getByRole('heading', { name: 'Blog Posts' })).toBeVisible();
+  await expect(admin).toHaveURL(/\/admin\/blog$/);
+  await expect(admin.getByRole('heading', { level: 1 })).toHaveText('Blog');
   await admin.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Events', exact: true }).click();
   await expect(admin).toHaveURL(/\/admin\/events$/);
 });

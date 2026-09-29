@@ -63,8 +63,8 @@ test('marketing navigation stays inside one shell; blog, events, offers, team, s
   await page.evaluate(() => { (window as unknown as { __spa: string }).__spa = 'alive'; document.querySelector('[data-marketing-shell] aside')!.setAttribute('data-mark', 'shell'); });
   const nav = page.getByRole('navigation', { name: 'Marketing' });
   for (const [label, url, heading] of [
-    ['Blog', /\/marketing\/blog$/, 'Blog Posts'], ['Events', /\/marketing\/events$/, 'Events'], ['Offers', /\/marketing\/offers$/, 'Offers & Promotions'],
-    ['Team profiles', /\/marketing\/team$/, 'Team & Trainers'], ['Instagram', /\/marketing\/social$/, 'Instagram highlights'], ['Desk', /\/marketing$/, /Build the brand/],
+    ['Blog', /\/marketing\/blog$/, 'Blog'], ['Events', /\/marketing\/events$/, 'Events'], ['Offers', /\/marketing\/offers$/, 'Offers'],
+    ['Team profiles', /\/marketing\/team$/, 'Team'], ['Instagram', /\/marketing\/social$/, 'Instagram highlights'], ['Desk', /\/marketing$/, /Build the brand/],
   ] as const) {
     await nav.getByRole('link', { name: label }).click();
     await expect(page).toHaveURL(url);
@@ -84,18 +84,21 @@ test('marketing writes a draft, edits an event page, and can’t remove the “t
   await page.waitForURL(/\/marketing$/);
   // Blog: quick action opens the new-post form
   await page.getByRole('link', { name: 'New blog post' }).click();
-  await expect(page.getByRole('heading', { name: 'New Blog Post' })).toBeVisible();
-  await page.locator('input[name=title]').fill('Monsoon Training Plan');
-  await page.locator('textarea[name=excerpt]').fill('Stay consistent through the rains.');
-  await page.locator('textarea[name=content]').fill('Train indoors, keep it simple.');
-  await page.getByLabel(/SEO title/).fill('Monsoon training at Crunch Wakad');
-  await page.getByRole('button', { name: 'Save Post' }).click();
-  await expect(page.getByText('Draft saved.')).toBeVisible();
-  await expect(page.getByText('Monsoon Training Plan')).toBeVisible();
-  // Edit it again (edit is new)
-  await page.getByRole('button', { name: 'Edit Monsoon Training Plan' }).click();
-  await expect(page.getByLabel(/SEO title/)).toHaveValue('Monsoon training at Crunch Wakad');
-  await page.getByRole('button', { name: /Cancel/ }).first().click();
+  const post = page.getByRole('dialog', { name: 'New post' });
+  await post.getByLabel('Title').fill('Monsoon Training Plan');
+  await post.getByLabel('Summary').fill('Stay consistent through the rains.');
+  await post.getByLabel('Content').fill('Train indoors, keep it simple.');
+  await post.getByRole('button', { name: /Link, tags and search appearance/ }).click();
+  await post.getByLabel('Search title').fill('Monsoon training at Crunch Wakad');
+  await post.getByRole('button', { name: 'Save draft' }).click();
+  const posts = page.getByRole('list', { name: 'Posts' });
+  await expect(posts.getByRole('button', { name: 'Edit Monsoon Training Plan' })).toContainText('Draft');
+  // Edit it again
+  await posts.getByRole('button', { name: 'Edit Monsoon Training Plan' }).click();
+  const edit = page.getByRole('dialog', { name: 'Edit post' });
+  await edit.getByRole('button', { name: /Link, tags and search appearance/ }).click();
+  await expect(edit.getByLabel('Search title')).toHaveValue('Monsoon training at Crunch Wakad');
+  await edit.getByRole('button', { name: 'Cancel' }).click();
 
   // Events: text only — registration and capacity aren't offered
   await page.getByRole('navigation', { name: 'Marketing' }).getByRole('link', { name: 'Events' }).click();
@@ -108,8 +111,10 @@ test('marketing writes a draft, edits an event page, and can’t remove the “t
 
   // Team: edit yes, remove no
   await page.getByRole('navigation', { name: 'Marketing' }).getByRole('link', { name: 'Team profiles' }).click();
-  await expect(page.getByRole('button', { name: 'Edit test' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Remove test' })).toHaveCount(0);
+  await page.getByRole('list', { name: 'Team' }).getByRole('button', { name: 'Edit test' }).click();
+  const profile = page.getByRole('dialog', { name: 'Edit profile' });
+  await expect(profile.getByRole('button', { name: 'Save profile' })).toBeVisible();
+  await expect(profile.getByRole('button', { name: 'Remove profile' })).toHaveCount(0);  // marketing edits, never removes
 });
 
 test('marketing is kept out of the admin — no member or money data renders', async ({ page }) => {
@@ -155,7 +160,9 @@ test('admins add a marketing login in Settings → Staff access', async ({ page,
   await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/\/admin\/?$/);
-  await page.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Settings' }).click();
+  const nav = page.getByRole('navigation', { name: 'Admin' });
+  if (!(await nav.getByRole('link', { name: 'Settings' }).count())) await nav.getByRole('button', { name: 'More' }).click();   // secondary pages live under More
+  await nav.getByRole('link', { name: 'Settings' }).click();
   const staff = page.getByRole('region', { name: 'Staff access' });
   await expect(staff.getByRole('list', { name: 'Staff accounts' })).toContainText(MARKETING.email);
   await staff.getByRole('button', { name: 'Add marketing login' }).click();
@@ -167,7 +174,7 @@ test('admins add a marketing login in Settings → Staff access', async ({ page,
   await expect(staff.getByRole('list', { name: 'Staff accounts' })).toContainText('Nisha');
   // The admin is still signed in as themselves (the login was created on a side connection)
   await expect(page.getByRole('navigation', { name: 'Admin' })).toBeVisible();
-  await expect(page.locator('aside')).toContainText(ADMIN.email);
+  await expect(page.getByRole('button', { name: `Account: ${ADMIN.email}` })).toBeVisible();   // still signed in as the admin
   // Gym setup shows real progress
   await page.goto('/admin/settings/setup');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Gym setup');

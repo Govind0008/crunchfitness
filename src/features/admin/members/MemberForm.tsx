@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -9,8 +9,10 @@ import {
 import { AdminShell, Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { useLookups } from './lookups';
+import Avatar from './Avatar';
+import { uploadMemberPhoto, removeMemberPhoto, validatePhoto } from '@/lib/admin/photos';
 
-const blank: MemberInput = { name: '', phone: '', email: '', planId: null, membershipStart: todayIST(), membershipEnd: null, status: 'active', trainerId: null, notes: '' };
+const blank: MemberInput = { name: '', phone: '', email: '', planId: null, membershipStart: todayIST(), membershipEnd: null, status: 'active', trainerId: null, notes: '', emergencyName: '', emergencyPhone: '' };
 
 /** Add or edit a member. Short on purpose: only what the front desk actually uses. */
 const MemberForm = () => {
@@ -23,13 +25,16 @@ const MemberForm = () => {
   const [errors, setErrors] = useState<string[]>([]);
   const [dup, setDup] = useState<Member | null>(null);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [dropPhoto, setDropPhoto] = useState(false);
+  const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
 
   useEffect(() => {
     if (!id) return;
     getMember(id).then((m) => {
       if (!m) return;
       setExisting(m);
-      setF({ name: m.name, phone: m.phone, email: m.email, planId: m.planId, membershipStart: m.membershipStart, membershipEnd: m.membershipEnd, status: m.status, trainerId: m.trainerId, notes: m.notes ?? '' });
+      setF({ name: m.name, phone: m.phone, email: m.email, planId: m.planId, membershipStart: m.membershipStart, membershipEnd: m.membershipEnd, status: m.status, trainerId: m.trainerId, notes: m.notes ?? '', emergencyName: m.emergencyName ?? '', emergencyPhone: m.emergencyPhone ?? '' });
     });
   }, [id]);
 
@@ -46,8 +51,14 @@ const MemberForm = () => {
     if (errs.length) return;
     setBusy(true);
     try {
-      if (existing) { await updateMember(existing, f, actor); navigate(`/admin/members/${existing.id}`); }
-      else navigate(`/admin/members/${await createMember(f, actor)}`);
+      const memberId = existing ? (await updateMember(existing, f, actor), existing.id) : await createMember(f, actor);
+      // The photo goes up after the member is saved; if it fails, the member is still saved
+      let photoNote = '';
+      try {
+        if (photo) await uploadMemberPhoto(memberId, photo, actor);
+        else if (dropPhoto && existing?.photo) await removeMemberPhoto(memberId, actor);
+      } catch (e) { photoNote = (e as Error).message; }
+      navigate(`/admin/members/${memberId}${photoNote ? `?notice=${encodeURIComponent(photoNote)}` : ''}`);
     } catch (err) {
       if (err instanceof DuplicateMemberError) setDup(err.existing);
       else setErrors([`Couldn’t save: ${(err as Error).message}`]);
@@ -63,6 +74,18 @@ const MemberForm = () => {
             <strong>{dup.name}</strong> already has this phone number. <Link to={`/admin/members/${dup.id}`} className="font-semibold underline">Open their profile</Link> instead of adding them twice.
           </div>
         )}
+        <div className="flex items-center gap-4">
+          {preview ? <img src={preview} alt="" className="h-20 w-20 rounded-full object-cover" /> : <Avatar m={{ id: existing?.id ?? 'new', name: f.name || '?', photo: dropPhoto ? null : existing?.photo }} size={80} />}
+          <div className="text-sm">
+            <label className="inline-flex cursor-pointer items-center rounded-full border border-white/20 px-4 py-2 font-semibold text-white hover:border-white/40 focus-within:border-brand-400">
+              {existing?.photo || photo ? 'Change photo' : 'Add photo'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo"
+                onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; const bad = validatePhoto(file); if (bad) { setErrors([bad]); return; } setPhoto(file); setDropPhoto(false); }} />
+            </label>
+            {(photo || (existing?.photo && !dropPhoto)) && <button type="button" className="ml-3 text-xs text-ink-400 hover:text-white" onClick={() => { setPhoto(null); setDropPhoto(true); }}>Remove</button>}
+            <p className="mt-2 text-xs text-ink-500">Private — only admins can see it. Optional.</p>
+          </div>
+        </div>
         <div className="grid gap-6 sm:grid-cols-2">
           <Field label="Full name" htmlFor="m-name"><input id="m-name" className={inputCls} value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="off" /></Field>
           <Field label="Mobile number" htmlFor="m-phone"><input id="m-phone" className={inputCls} type="tel" inputMode="tel" value={f.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
@@ -94,6 +117,10 @@ const MemberForm = () => {
               ))}
             </div>
           </div>
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <Field label="Emergency contact" hint="Optional — name" htmlFor="m-em-name"><input id="m-em-name" className={inputCls} value={f.emergencyName ?? ''} onChange={(e) => set('emergencyName', e.target.value)} /></Field>
+          <Field label="Emergency contact number" hint="Optional" htmlFor="m-em-phone"><input id="m-em-phone" className={inputCls} type="tel" inputMode="tel" value={f.emergencyPhone ?? ''} onChange={(e) => set('emergencyPhone', e.target.value)} /></Field>
         </div>
         <Field label="Notes" hint="Optional — visible to staff only" htmlFor="m-notes"><textarea id="m-notes" rows={3} className={cn(inputCls, 'h-auto py-3')} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
         <p className="text-xs text-ink-500">Adding a member doesn’t create a login. Client-portal logins are still created by the member’s trainer in the trainer portal.</p>

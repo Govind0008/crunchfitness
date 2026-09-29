@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { duesQuery } from '@/features/admin/pageData';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { DUES_LOOKBACK_DAYS, membersDue, todayIST, type Member } from '@/lib/admin/members';
-import { getSettings } from '@/lib/admin/settings';
+import { DUES_LOOKBACK_DAYS, todayIST, type Member } from '@/lib/admin/members';
 import { formatPhone } from '@/lib/admin/phone';
 import { parsePrice, rupees, toPaise } from '@/lib/admin/payments';
 import { Button } from '@/components/ui/button';
@@ -13,10 +14,10 @@ const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T00:00:0
 /** Dues — renewals from real expiry dates. Amounts are each plan's CURRENT price, labelled as such. */
 const DuesPage = () => {
   const { plans } = useLookups();
-  const [rows, setRows] = useState<Member[] | null>(null);
-  const [days, setDays] = useState(14);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { getSettings().then((s) => { setDays(s.expiringSoonDays); return membersDue(s.expiringSoonDays); }).then(setRows).catch((e) => setError(e.message)); }, []);
+  const dq = useQuery(duesQuery());
+  const data = dq.data, error = dq.error ? (dq.error as Error).message : null;
+  const rows: Member[] | null = data?.rows ?? null;
+  const days = data?.days ?? 14;
 
   const today = todayIST();
   const overdue = useMemo(() => (rows ?? []).filter((m) => (m.membershipEnd ?? '') < today), [rows, today]);
@@ -45,9 +46,9 @@ const DuesPage = () => {
                   <span className={tone === 'over' ? 'block font-semibold text-red-300' : 'block font-semibold text-amber-200'}>{d < 0 ? `${-d} day${d === -1 ? '' : 's'} overdue` : d === 0 ? 'Expires today' : `In ${d} day${d === 1 ? '' : 's'}`}</span>
                   <span className="text-xs text-ink-500">Expiry {fmtDate(m.membershipEnd)}</span>
                 </span>
-                <span className="w-28 text-right">
+                <span className="w-36 text-right">
                   <span className="block font-display text-xl font-bold tabular-nums text-white">{amt != null ? rupees(amt) : '—'}</span>
-                  <span className="text-[11px] text-ink-500">{amt != null ? 'Est. renewal' : 'No plan price'}</span>
+                  <span className="text-[11px] text-ink-500">{amt != null ? 'Estimated next renewal' : 'No plan price'}</span>
                 </span>
                 <Button asChild size="sm"><Link to={`/admin/payments/new?member=${m.id}`}>Record payment</Link></Button>
               </li>

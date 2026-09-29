@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -13,6 +13,8 @@ const AdminLogin = () => {
   const [showPw, setShowPw]     = useState(false);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  // Download the admin while the password is being typed, so signing in opens it straight away
+  useEffect(() => { import('@/features/admin/AdminLayout').catch(() => {}); import('@/features/admin').catch(() => {}); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +24,8 @@ const AdminLogin = () => {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       // Marketing accounts belong in the Creative Desk, not the operations admin
       const role = await getDoc(doc(db, 'userRoles', cred.user.uid)).then((d) => d.data()?.role).catch(() => null);
+      // Start the dashboard's queries now, while the admin screen opens
+      if (role === 'admin') import('@/features/admin/dashboardData').then((d) => d.prefetchDashboard()).catch(() => {});
       navigate(role === 'marketing' ? '/marketing' : '/admin');
     } catch {
       setError('Invalid email or password. Please try again.');

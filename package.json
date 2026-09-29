@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e": "playwright test",
-    "test:events": "npx -y firebase-tools@15.31.0 emulators:exec --project demo-crunch --only auth,firestore 'playwright test -c playwright.events.config.ts'"
+    "test:events": "npx -y firebase-tools@15.31.0 emulators:exec --project demo-crunch --only auth,firestore,storage 'playwright test -c playwright.events.config.ts'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

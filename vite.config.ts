@@ -19,4 +19,16 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // All icons in one small chunk instead of one file per icon: the admin needed dozens of them,
+        // discovered and fetched in several round trips before a page could render.
+        manualChunks(id) {
+          if (id.includes('node_modules/lucide-react')) return 'icons';
+          return undefined;
+        },
+      },
+    },
+  },
 }));

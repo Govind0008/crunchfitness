@@ -23,7 +23,6 @@ test.beforeAll(async () => {
   const expired = addDays(today, -2);
   await seedDoc('members/desk1', { name: 'Kiran Patil', nameLower: 'kiran patil', phone: '9000000031', phoneKey: '9000000031', email: '', emailLower: '', planId: 'p3',
     membershipStart: '2026-01-01', membershipEnd: expired, status: 'active', activeUntil: expired, trainerId: null, trainerClient: null, notes: '', source: 'manual' });
-  await seedDoc('classSessions/desk-s1', { title: 'Morning Strength', trainerId: 'T1', trainerName: 'Coach One', area: 'Main floor', date: today, startTime: '07:00', duration: 60, capacity: 20, checkedInCount: 0, pin: '1111' });
 });
 
 test('receptionist: find → check membership → check in → payment with discount → receipt → dues → collection', async ({ page, isMobile }) => {
@@ -31,37 +30,45 @@ test('receptionist: find → check membership → check in → payment with disc
   page.on('pageerror', (e) => { if (!/URI malformed/.test(e.message)) errors.push(e.message); });
   await login(page);
 
-  // Check in from the dashboard's quick action
-  await page.getByRole('region', { name: 'Quick actions' }).getByRole('link', { name: 'Check in', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin\/attendance\?checkin=1$/);
-  const desk = page.getByRole('region', { name: 'Check in a member' });
+  // Check in from the dashboard's quick action: a drawer, no class to choose
+  await page.getByRole('region', { name: 'Quick actions' }).getByRole('button', { name: 'Check in', exact: true }).click();
+  const desk = page.getByRole('dialog', { name: 'Check in' });
   await desk.getByPlaceholder('Name or phone number').fill('Kir');
   await desk.getByRole('button', { name: /Kiran Patil/ }).click();
-  await expect(desk.getByRole('combobox')).toHaveValue('desk-s1');                 // today's only class is chosen for you
-  await desk.getByRole('button', { name: 'Check in' }).click();
-  await expect(desk.getByRole('status')).toContainText('Kiran Patil is checked in to Morning Strength');
+  await expect(desk).toContainText('membership isn’t active');                       // expired: warned, still allowed to record the visit
+  await desk.getByRole('button', { name: 'Check in', exact: true }).click();
+  await expect(desk.getByRole('status')).toContainText('Kiran Patil is checked in.');
+  await page.keyboard.press('Escape');
 
   // Member profile: the essentials at a glance, and the same check-in can't happen twice
   await page.goto('/admin/members/desk1');
-  await expect(page.locator('dl[aria-label="Member summary"]')).toContainText('M-DESK1');
+  await expect(page.getByText('M-DESK1').first()).toBeVisible();                       // member ID under the name
   await expect(page.locator('dl[aria-label="Member summary"]')).toContainText('Expired');
-  await expect(page.getByRole('region', { name: 'Membership' })).toContainText('Not allowed');   // entry access follows the membership
+  await expect(page.getByRole('region', { name: 'Overview' })).toContainText('Not allowed');   // entry access follows the membership
+  await page.getByRole('tab', { name: 'Membership', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Membership' })).toContainText('door device isn’t connected yet');
-  await page.getByRole('link', { name: 'Check in' }).click();
-  await expect(page).toHaveURL(/member=desk1/);
-  await expect(page.getByRole('region', { name: 'Check in a member' })).toContainText('Kiran Patil');
-  await page.getByRole('region', { name: 'Check in a member' }).getByRole('button', { name: 'Check in' }).click();
-  await expect(page.getByRole('region', { name: 'Check in a member' }).getByRole('alert')).toContainText('already checked in');
+  // Common tasks open in a drawer — the profile stays where it is
+  await page.getByRole('button', { name: 'Check in', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: 'Check in' });
+  await expect(drawer).toContainText('Kiran Patil');
+  await drawer.getByRole('button', { name: 'Check in', exact: true }).click();
+  await expect(drawer.getByRole('alert')).toContainText('already checked in today');
+  await page.keyboard.press('Escape');
 
   // Payment with a discount — the plan's own price is untouched
   await page.goto('/admin/members/desk1');
-  await page.getByRole('link', { name: 'Record payment' }).first().click();
+  await page.getByRole('button', { name: 'Renew', exact: true }).click();
+  const pay = page.getByRole('dialog', { name: 'Renew membership' });
+  await expect(pay.getByRole('radio', { name: /Membership/ })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('6500');
   await page.getByLabel('Discount (₹)').fill('500');
   await expect(page.getByLabel('Amount received (₹)')).toHaveValue('6000');
   await page.getByLabel('Method').selectOption('upi');
   await page.getByLabel('Reference').fill('UPI-777');
-  await page.getByRole('button', { name: /Save payment · ₹6,000/ }).click();
+  await expect(pay).toContainText('This is a membership payment from Kiran Patil');
+  await page.getByRole('button', { name: /Collect membership payment · ₹6,000/ }).click();
+  await expect(pay.getByRole('status')).toContainText('₹6,000 collected');
+  await pay.getByRole('link', { name: 'View receipt' }).click();
   await page.waitForURL(/\/admin\/payments\/[\w]+\?new=1$/);
   const receipt = page.getByRole('article', { name: /Receipt CR-R-0001/ });
   await expect(receipt).toContainText('Payment receipt');
