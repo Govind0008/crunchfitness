@@ -5,7 +5,8 @@ import { collection, getCountFromServer, query, where } from 'firebase/firestore
 import { db } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import { GYM } from '@/lib/gym';
-import { ACCESS_CONNECTED } from '@/lib/access';
+import { deviceHealth, type AccessDevice } from '@/lib/access';
+import { listDevices } from '@/lib/access/store';
 import { METHOD_LABEL } from '@/lib/admin/payments';
 import { AdminShell } from '@/features/events/admin/shared';
 
@@ -18,6 +19,10 @@ interface Step { title: string; state: State; body: ReactNode; to?: { href: stri
  */
 const GymSetup = () => {
   const [counts, setCounts] = useState<{ admins: number; plans: number; trainers: number } | null>(null);
+  // Done only when a device has actually reported in — never assumed
+  const [devices, setDevices] = useState<AccessDevice[] | null>(null);
+  useEffect(() => { listDevices().then(setDevices).catch(() => setDevices([])); }, []);
+  const online = (devices ?? []).filter((d) => deviceHealth(d) === 'online');
   useEffect(() => {
     Promise.all([
       getCountFromServer(query(collection(db, 'userRoles'), where('role', '==', 'admin'))),
@@ -36,8 +41,11 @@ const GymSetup = () => {
     { title: 'Trainers', state: counts ? (counts.trainers > 0 ? 'done' : 'todo') : 'todo', body: n(counts?.trainers, 'team profile', 'team profiles'), to: { href: '/admin/trainers', label: 'Trainers' } },
     { title: 'Payment settings', state: 'done',
       body: <>Receipts numbered {GYM.payments.receiptPrefix}0001 onwards · {GYM.payments.methods.map((m) => METHOD_LABEL[m]).join(', ')} · {GYM.payments.tax ? `GST ${GYM.payments.tax.gstin}` : 'No GST registration set up — receipts are payment receipts, not tax invoices'}</> },
-    { title: 'Access control', state: ACCESS_CONNECTED ? 'done' : 'waiting',
-      body: 'No door device connected. Membership already decides who is allowed in; the device will be connected once its make and model are confirmed.' },
+    { title: 'Access control', state: online.length ? 'done' : 'waiting',
+      body: online.length ? `${online.map((d) => d.name).join(', ')} reporting in. Membership decides who is allowed in.`
+        : devices?.length ? `${devices.map((d) => d.name).join(', ')} added, but no device has reported in yet. Membership already decides who is allowed in.`
+        : 'No door device connected yet. Membership already decides who is allowed in.',
+      to: { href: '/admin/settings/access', label: 'Devices' } },
     { title: 'Branding', state: GYM.logo ? 'done' : 'todo', body: <span className="inline-flex items-center gap-3"><img src={GYM.logo} alt={`${GYM.name} logo`} className="h-8 w-auto rounded bg-white p-1" /> Logo and colours from the website</span> },
   ];
   const done = steps.filter((s) => s.state === 'done').length;
