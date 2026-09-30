@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 import http from 'node:http';
+import { PassThrough } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import { FS, PROJECT, resetFirestore, seedDoc } from './emulator';
+import { ADMIN, AUTH, FS, PROJECT, resetFirestore, seedAdmin, seedDoc } from './emulator';
 
 // The ADMS relay (api/iclock.ts) between the fingerprint device and the old attendance server.
 // A fake "old server" records exactly what it receives; the relay runs against the emulator.
@@ -47,8 +48,10 @@ test.beforeAll(async () => {
   await new Promise((r) => upstream.once('listening', r));
   process.env.ADMS_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8085';
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
   process.env.GCLOUD_PROJECT = PROJECT;
   const { default: handler } = await import('../../api/iclock');
+  const { default: diagnostics } = await import('../../api/adms');
 
   // A minimal Vercel-style wrapper around the handler
   relay = http.createServer((req, res) => {
@@ -56,12 +59,31 @@ test.beforeAll(async () => {
     const m = url.pathname.match(/^\/iclock\/(.*)$/);
     const query: Record<string, string> = Object.fromEntries(url.searchParams);
     if (m) { query.path = m[1]; url.searchParams.set('path', m[1]); }
-    Object.assign(req, { query, url: `/api/iclock${url.search}` });
     const vres = Object.assign(res, {
       status(code: number) { res.statusCode = code; return vres; },
       send(b: string | Buffer) { res.end(b); return vres; },
+      json(o: unknown) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); return vres; },
     });
-    handler(req as never, vres as never).catch((e: Error) => { res.statusCode = 500; res.end(e.message); });
+    if (url.pathname === '/api/adms') {
+      Object.assign(req, { query, headers: { ...req.headers, 'x-forwarded-proto': 'http' } });
+      diagnostics(req as never, vres as never).catch((e: Error) => { res.statusCode = 500; res.end(e.message); });
+      return;
+    }
+    Object.assign(req, { query, url: `/api/iclock${url.search}` });
+    // Like Vercel's Node runtime (@vercel/node addHelpers/restoreBody): read the whole body first,
+    // then re-attach it only to 'data'/'end' listeners — the relay must still get every byte
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      const replay = new PassThrough();
+      const on = replay.on.bind(replay);
+      const originalOn = req.on.bind(req);
+      req.read = replay.read.bind(replay) as never;
+      req.on = req.addListener = ((name: string, cb: (...a: unknown[]) => void) => (name === 'data' || name === 'end' ? on(name, cb) : originalOn(name, cb))) as never;
+      replay.write(Buffer.concat(chunks));
+      replay.end();
+      handler(req as never, vres as never).catch((e: Error) => { res.statusCode = 500; res.end(e.message); });
+    });
   }).listen(0);
   await new Promise((r) => relay.once('listening', r));
   relayUrl = `http://127.0.0.1:${(relay.address() as AddressInfo).port}`;
@@ -134,4 +156,63 @@ test('if the old server is down, nothing is acknowledged — the device keeps th
   const events = await list('accessEvents');
   expect(events.some((e) => e.fields.at.stringValue === '2026-09-29T13:30:00.000Z')).toBe(false);   // not recorded twice later
   upstreamDown = false;
+});
+
+// ── Diagnostics ──────────────────────────────────────────────────────────────
+const idToken = async () => {
+  const r = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-key`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: ADMIN.email, password: ADMIN.password, returnSecureToken: true }),
+  });
+  return ((await r.json()) as { idToken: string }).idToken;
+};
+
+test('every device request leaves a "last contact" record — never a fingerprint template', async () => {
+  const d = await getDoc(`admsDiagnostics/${SN}`);
+  expect(d).not.toBeNull();
+  const raw = JSON.stringify(d);
+  expect(raw).toContain('command result');                                          // the latest kinds of request are there
+  expect(raw).not.toContain('TMP');                                                 // the FP line's template never stored
+  expect(raw).not.toContain('AAAA');
+  expect(d!.crmDeviceId.stringValue).toBe('dev1');                                  // matched to the CRM device
+});
+
+test('a serial the CRM doesn’t know is recorded (so a typo shows), and still passed on', async () => {
+  const before = received.length;
+  const r = await send('getrequest?SN=JJ41254700696');
+  expect(r.status).toBe(200);
+  expect(received.length).toBe(before + 1);                                         // the old server still gets it
+  const d = await getDoc('admsDiagnostics/JJ41254700696');
+  expect(d!.crmDeviceId).toEqual({ nullValue: null });
+  expect(JSON.stringify(d)).toContain('no CRM device has serial JJ41254700696');
+  const dev = await getDoc('gyms/crunch-wakad/devices/dev1');
+  expect(dev!.serialNumber.stringValue).toBe(SN);                                   // nothing about the real device changed
+});
+
+test('the reserved self-test serial is answered by the relay itself — never sent to the old server', async () => {
+  const before = received.length;
+  const hs = await (await send('cdata?SN=CRUNCH-PROBE&options=all')).text();
+  expect(hs.startsWith('GET OPTION FROM: CRUNCH-PROBE')).toBe(true);
+  expect(await (await send('getrequest?SN=CRUNCH-PROBE')).text()).toBe('OK');
+  expect(received.length).toBe(before);                                             // nothing reached the old server
+  expect((await list('accessEvents')).some((e) => e.fields.deviceUserId.stringValue === 'CRUNCH-PROBE')).toBe(false);
+});
+
+test('diagnostics: health is public; status and self-test are admins only, and tell the truth', async () => {
+  await seedAdmin();
+  const health = await (await fetch(`${relayUrl}/api/adms?check=health`)).json() as { alive: boolean; recording: boolean };
+  expect(health).toMatchObject({ alive: true, recording: true });
+  expect((await fetch(`${relayUrl}/api/adms?check=status`)).status).toBe(401);
+  const token = await idToken();
+  const auth = { headers: { Authorization: `Bearer ${token}` } };
+  const status = await (await fetch(`${relayUrl}/api/adms?check=status`, auth)).json() as { contacts: { sn: string; state: string; last: { kind: string } }[] };
+  const real = status.contacts.find((c) => c.sn === SN)!;
+  expect(real.state).toBe('connected');                                             // a real request from a registered serial
+  expect(status.contacts.find((c) => c.sn === 'JJ41254700696')!.state).toBe('unregistered serial');
+  expect(status.contacts.find((c) => c.sn === 'CRUNCH-PROBE')!.state).toBe('self-test');
+
+  const before = received.length;
+  const test = await (await fetch(`${relayUrl}/api/adms?check=selftest`, { method: 'POST', ...auth })).json() as { ok: boolean; steps: { step: string; ok: boolean; detail: string }[] };
+  expect(test.steps.map((s) => s.step)).toEqual(['DNS', 'HTTPS and /iclock route (handshake)', 'Command poll (getrequest)', 'Recording (Firestore)', 'Old attendance server reachable (TCP only)']);
+  expect(test.steps.every((s) => s.ok), JSON.stringify(test.steps)).toBe(true);
+  expect(received.length).toBe(before);                                             // the self-test never talks HTTP to the old server
 });

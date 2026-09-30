@@ -1,7 +1,8 @@
 import type { IncomingMessage } from 'node:http';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { firestoreOrNull } from './_lib/firebase.js';
+import { PROBE_SN, logLine, recordContact, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
 import {
   OUR_ID, commandText, eventKey, ownHandshake, parseAttlog, parseCommandResults, parseFingerprintPins, parseUsers, scanResult, toIso,
   type CommandType, type MemberLike, type Scan,
@@ -27,26 +28,21 @@ const HAS_UPSTREAM = UPSTREAM !== 'none' && UPSTREAM !== '';
 
 export const config = { api: { bodyParser: false } };
 
-let db: Firestore | null | undefined;
-function firestore(): Firestore | null {
-  if (db !== undefined) return db;
-  try {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const emulator = !!process.env.FIRESTORE_EMULATOR_HOST;   // tests only
-    if (!raw && !emulator) { db = null; return db; }
-    const app = getApps()[0] ?? initializeApp(emulator ? { projectId: 'demo-crunch' } : { credential: cert(JSON.parse(raw!)) });
-    db = getFirestore(app);
-  } catch (e) {
-    console.error('[iclock] Firestore not configured:', (e as Error).message);
-    db = null;
-  }
-  return db;
-}
+const firestore = firestoreOrNull;
 
-async function rawBody(req: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(typeof c === 'string' ? Buffer.from(c) : c);
-  return Buffer.concat(chunks);
+/**
+ * The request body, byte for byte. Uses 'data'/'end' listeners on purpose: Vercel's Node runtime
+ * reads the body before our handler runs and re-attaches it only to those listeners
+ * (@vercel/node restoreBody). Iterating the stream (`for await`) would see an already-finished
+ * stream there and return an empty body — and an empty scan upload must never be forwarded.
+ */
+function rawBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer | string) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 /** The device's own query string, without the routing parameter the rewrite adds. */
@@ -181,13 +177,44 @@ async function recordResults(fs: Firestore, deviceId: string, results: ReturnTyp
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
+/** Diagnostics for every request: a log line always, and the per-serial "last contact" record
+ *  when Firestore is available. Never delays the device by more than a moment, never throws. */
+async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome) {
+  logLine(s, o);
+  if (!fs) return;
+  await Promise.race([recordContact(fs, s, o), new Promise((r) => setTimeout(r, 2000))]).catch((e) => console.error('[iclock] diagnostics', (e as Error).message));
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const started = Date.now();
   const path = String(req.query.path ?? '').replace(/^\/+/, '') || 'cdata';
   const sn = String(req.query.SN ?? req.query.sn ?? '');
   const table = String(req.query.table ?? '');
   const body = req.method === 'POST' ? await rawBody(req) : null;
   const text = body ? body.toString('utf8') : '';
-  const fs = sn ? firestore() : null;
+  const summary = summarize({ method: req.method ?? 'GET', path, query: req.query, headers: req.headers, body: text, bodyBytes: body?.length ?? 0 });
+  const fsDiag = firestore();
+
+  // Never forward an upload whose body we failed to read: the old server could acknowledge
+  // "nothing" and the device would drop those scans. Refusing makes the device send them again.
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (req.method === 'POST' && declared > 0 && (body?.length ?? 0) === 0) {
+    await observe(fsDiag, summary, { status: 503, upstreamStatus: null, durationMs: Date.now() - started, crmDeviceId: null, forwarded: false, note: `body not received (declared ${declared} bytes) — refused, device will retry` });
+    res.status(503).send('Try again');
+    return;
+  }
+
+  // Remote self-test: answered here — never forwarded, never touches devices, members or scans
+  if (sn === PROBE_SN) {
+    const reply = path === 'cdata' && req.method === 'GET' ? ownHandshake(sn) : 'OK';
+    await observe(fsDiag, summary, { status: 200, upstreamStatus: null, durationMs: Date.now() - started, crmDeviceId: null, forwarded: false, note: 'self-test' });
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).send(reply);
+    return;
+  }
+
+  const fs = sn ? fsDiag : null;
   const deviceId = fs ? await deviceIdFor(fs, sn).catch(() => '') : '';
 
   // 1) Command results: ours are handled here; everything else goes to the old server
@@ -212,6 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       console.error('[iclock] old server unreachable:', (e as Error).message);
       if (fs && deviceId) await devRef(fs, deviceId).update({ lastError: 'The old attendance server didn’t answer; the device will retry' }).catch(() => {});
+      await observe(fsDiag, summary, { status: 503, upstreamStatus: null, durationMs: Date.now() - started, crmDeviceId: deviceId || null, forwarded: false, note: `old server unreachable: ${(e as Error).message}` });
       res.status(503).send('Try again');   // nothing acknowledged → the device re-sends later
       return;
     }
@@ -238,6 +266,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  await observe(fsDiag, summary, {
+    status: reply.status, upstreamStatus: HAS_UPSTREAM && !oursOnly ? reply.status : null, durationMs: Date.now() - started,
+    crmDeviceId: deviceId || null, forwarded: HAS_UPSTREAM && !oursOnly,
+    ...(sn && fs && !deviceId ? { note: `no CRM device has serial ${sn.toUpperCase()}` } : !sn ? { note: 'request without a serial (SN)' } : {}),
+  });
   res.setHeader('Content-Type', reply.type);
   if (reply.date) res.setHeader('Date', reply.date);
   res.setHeader('Cache-Control', 'no-store');

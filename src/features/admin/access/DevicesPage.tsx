@@ -9,6 +9,7 @@ import { GYM } from '@/lib/gym';
 import { AdminShell, ConfirmButton, Empty, Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { fmtTime } from '@/features/admin/members/lookups';
+import ConnectionDiagnostics from './ConnectionDiagnostics';
 
 const blank: DeviceInput = { name: 'Main entrance', model: 'eSSL X2008', serialNumber: '', location: '', protocol: 'adms' };
 const healthTone = (h: ReturnType<typeof deviceHealth>) => (h === 'online' ? 'bg-brand-400/15 text-brand-300' : h === 'offline' ? 'bg-red-500/15 text-red-200' : 'bg-white/[0.06] text-ink-300');
@@ -61,6 +62,7 @@ const DevicesPage = () => {
         <p className="mt-1">Each device sends its scans over the internet to this CRM (Menu → Comm. → Cloud Server Setting on the device). Everything is passed on unchanged to the old attendance server, so the old system keeps working. The CRM records scans of linked members, keeps the device’s user list for matching, and can add new members to the device. A device shows “Online” only when it has actually reported in.</p>
       </div>
       {note && <p role="status" className="mb-4 text-sm text-ink-200">{note}.</p>}
+      <ConnectionDiagnostics />
 
       {editing && (
         <form onSubmit={save} className="mb-8 grid max-w-3xl gap-4 rounded-2xl border border-white/[0.08] bg-ink-900 p-5 sm:grid-cols-2" noValidate aria-label={editing === 'new' ? 'New device' : 'Edit device'}>
