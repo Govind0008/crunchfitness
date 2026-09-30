@@ -24,7 +24,7 @@ import PtPackageForm from './PtPackageForm';
 import EnrollWizard from './EnrollWizard';
 import PaymentForm from '@/features/admin/payments/PaymentForm';
 import StaffCheckIn from '@/features/admin/StaffCheckIn';
-import { EmptyNote, SideDrawer, SkeletonRows, StatusDot } from '@/features/admin/kit';
+import { EmptyNote, ErrorNote, SideDrawer, SkeletonRows, StatusDot } from '@/features/admin/kit';
 import MemberAccess from './MemberAccess';
 import MemberPt from './MemberPt';
 import { cachedMember } from '@/features/admin/useCached';
@@ -36,13 +36,13 @@ const Card = ({ title, children, action }: { title: string; children: ReactNode;
   </section>
 );
 const PeriodTag = ({ state }: { state: ReturnType<typeof periodState> }) => (
-  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', state === 'current' ? 'bg-brand-400/15 text-brand-300' : 'bg-white/[0.06] text-ink-400')}>{PERIOD_LABEL[state]}</span>
+  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', state === 'current' ? 'bg-brand-400/15 text-brand-fg' : 'bg-white/[0.06] text-ink-400')}>{PERIOD_LABEL[state]}</span>
 );
 const Story = ({ title, action, children }: { title: string; action?: { label: string; onClick: () => void }; children: ReactNode }) => (
-  <div className="flex flex-col rounded-2xl border border-white/[0.08] bg-ink-900 p-5 transition-colors hover:border-white/15">
+  <div className="flex flex-col rounded-2xl border border-white/[0.08] bg-ink-900 p-4 transition-colors hover:border-white/15">
     <div className="mb-3 flex items-center justify-between gap-3">
       <h2 className="font-sans text-xs font-bold uppercase tracking-[0.16em] text-ink-400">{title}</h2>
-      {action && <button type="button" onClick={action.onClick} className="text-xs font-semibold text-brand-400 hover:underline">{action.label}</button>}
+      {action && <button type="button" onClick={action.onClick} className="text-xs font-semibold text-brand-fg hover:underline">{action.label}</button>}
     </div>
     <div className="flex-1">{children}</div>
   </div>
@@ -51,7 +51,8 @@ const Row = ({ k, v }: { k: string; v: ReactNode }) => (
   <div className="flex justify-between gap-4 py-1.5 text-sm"><dt className="text-ink-400">{k}</dt><dd className="text-right text-white">{v}</dd></div>
 );
 
-interface Visit { id: string; at: number; kind: 'manual' | 'biometric'; how: string; ok: boolean }
+/** One visit = one attendance day (front desk and/or fingerprint), never one raw punch. */
+interface Visit { id: string; at: number; lastAt?: number; kind: 'manual' | 'biometric' | 'both'; how: string; punches?: number; eventIds?: string[]; day?: string }
 const fmtWhen = (ms: number) => (ms ? new Date(ms).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—');
 
 type Tab = 'overview' | 'membership' | 'pt' | 'payments' | 'attendance' | 'access' | 'events' | 'activity';
@@ -80,6 +81,8 @@ const MemberProfile = () => {
   const [pt, setPt] = useState<PtPackage[] | null>(null);
   const [identities, setIdentities] = useState<BiometricIdentity[] | null>(null);
   const [scans, setScans] = useState<AccessEvent[] | null>(null);
+  // The member's raw punches — used to check attendance is complete; a failure is shown, never read as "no punches"
+  const [scansError, setScansError] = useState<string | null>(null);
   const [log, setLog] = useState<ActivityEntry[] | null>(null);
   const [params, setParams] = useSearchParams();
   const tab = (TABS.find(([t]) => t === params.get('tab'))?.[0] ?? 'overview') as Tab;
@@ -96,7 +99,8 @@ const MemberProfile = () => {
   useEffect(() => { if (params.has('enroll')) setDrawer('access'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     identitiesOfMember(id).then(setIdentities).catch(() => setIdentities([]));
-    accessEventsOfMember(id).then(setScans).catch(() => setScans([]));
+    setScansError(null);
+    accessEventsOfMember(id).then(setScans).catch((e: Error) => { setScans([]); setScansError(e.message); });
   }, [id]);
   // Activity loads when its tab opens
   useEffect(() => { if (tab === 'activity' && log === null) activityFor(id).then(setLog).catch(() => setLog([])); }, [tab, id, log]);
@@ -113,12 +117,18 @@ const MemberProfile = () => {
   // the member record), plus earlier self check-ins matched by phone
   const [desk, setDesk] = useState<Visit[] | null>(null);
   const [earlier, setEarlier] = useState<Visit[] | null>(null);
-  const loadDesk = () => manualCheckInsOf(id).catch(() => []).then((rows) => setDesk(rows.map((r): Visit => ({ id: `m-${r.id}`, at: r.at?.toMillis() ?? 0, kind: 'manual', how: 'Manual · front desk', ok: true }))));
+  const [deskError, setDeskError] = useState<string | null>(null);
+  const loadDesk = () => manualCheckInsOf(id).then((rows) => { setDeskError(null); setDesk(rows.map((r): Visit => {
+    const src = new Set(r.sources ?? [r.method ?? 'manual']);
+    const kind = src.has('biometric') && src.has('manual') ? 'both' : src.has('biometric') ? 'biometric' : 'manual';
+    return { id: `m-${r.id}`, at: r.at?.toMillis() ?? 0, lastAt: r.lastAt?.toMillis(), kind, day: r.date, eventIds: r.eventIds ?? [], punches: r.punchCount,
+      how: kind === 'manual' ? 'Front desk' : kind === 'both' ? 'Fingerprint + front desk' : 'Fingerprint' };
+  })); }).catch((e: Error) => { setDesk([]); setDeskError(e.message); });
   useEffect(() => { setDesk(null); loadDesk(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setEarlier(null);
     if (!m?.phone) return;
-    checkInsForPhone(m.phone).catch(() => []).then((rows) => setEarlier(rows.map((r): Visit => ({ id: `c-${r.id}`, at: r.checkedInAt?.toMillis() ?? 0, kind: 'manual', how: 'Manual · earlier self check-in', ok: true }))));
+    checkInsForPhone(m.phone).catch(() => []).then((rows) => setEarlier(rows.map((r): Visit => ({ id: `c-${r.id}`, at: r.checkedInAt?.toMillis() ?? 0, kind: 'manual', how: 'Earlier self check-in' }))));
   }, [m?.phone]);
   const manual = useMemo(() => (desk && earlier ? [...desk, ...earlier] : null), [desk, earlier]);
 
@@ -168,12 +178,15 @@ const MemberProfile = () => {
   }, [m?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const periods = useMemo(() => periodStarts(), []);
-  // One attendance history: manual check-ins and door scans (a refused scan isn't a visit)
-  const history = useMemo<Visit[] | null>(() => (manual && scans ? [...manual, ...scans.map((e): Visit => ({
-    id: `s-${e.id}`, at: new Date(e.at).getTime(), kind: 'biometric', ok: e.result === 'granted',
-    how: `Biometric${e.result === 'granted' ? '' : ` · ${RESULT_LABEL[e.result]}`}`,
-  }))].sort((a, b) => b.at - a.at) : null), [manual, scans]);
-  const visits = history?.filter((v) => v.ok) ?? null;
+  // Attendance = the visit records (one per day). Raw punches are only checked against them.
+  const history = useMemo<Visit[] | null>(() => (manual ? [...manual].sort((a, b) => b.at - a.at) : null), [manual]);
+  const visits = history;
+  // Punches with no attendance record: a processing problem to surface, not a silent 0
+  const unrecorded = useMemo(() => {
+    if (!scans || !desk) return null;
+    const recorded = new Set(desk.flatMap((v) => v.eventIds ?? []));
+    return scans.filter((e) => (e.personType ?? 'member') === 'member' && !recorded.has(e.id));
+  }, [scans, desk]);
   const inPeriod = (since: { seconds: number }) => (visits ?? []).filter((v) => v.at >= since.seconds * 1000).length;
 
   const findLinks = async () => {
@@ -218,25 +231,25 @@ const MemberProfile = () => {
     <AdminShell title={m.name} nav="members" area="People" back={{ to: '/admin/members', label: 'Members' }} bare>
       {notice && <p role="alert" className="mb-6 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">{notice}</p>}
 
-      <header className="mb-8 flex flex-col gap-6 rounded-2xl border border-white/[0.08] bg-ink-900 p-5 sm:flex-row sm:items-start sm:p-6">
-        <PhotoControl m={m} onChanged={reload} />
+      <header className="mb-4 flex flex-col gap-4 rounded-2xl border border-white/[0.08] bg-ink-900 p-4 sm:flex-row sm:items-start sm:p-5">
+        <PhotoControl m={m} onChanged={reload} size={76} />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-4xl font-bold uppercase leading-none text-white sm:text-5xl">{m.name}</h1>
-          <p className="mt-2 text-sm text-ink-400">Member ID <span className="font-mono text-ink-200">{memberCode(m.id)}</span> · <a href={`tel:${m.phone}`} className="tabular-nums hover:text-white">{formatPhone(m.phone)}</a></p>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+          <h1 className="font-display text-3xl font-bold uppercase leading-none tracking-wide text-white">{m.name}</h1>
+          <p className="mt-1 text-sm text-ink-400">Member ID <span className="font-mono text-ink-200">{memberCode(m.id)}</span> · <a href={`tel:${m.phone}`} className="tabular-nums hover:text-white">{formatPhone(m.phone)}</a></p>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
             <StatusDot tone={membershipTone}>{state === 'active' ? 'Active membership' : state === 'expiring' ? 'Membership expiring soon' : state === 'expired' ? 'Membership expired' : m.membershipEnd ? 'Inactive' : 'No membership'}</StatusDot>
             <StatusDot tone={access.eligible ? 'ok' : access.eligible === false ? 'bad' : 'muted'}>{access.eligible ? 'Access enabled' : access.eligible === false ? 'Access not allowed' : 'No gym access'}</StatusDot>
             {ptNow && <StatusDot tone="info">PT active</StatusDot>}
           </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Button onClick={() => setDrawer('renew')}><RefreshCw /> Renew</Button>
-            <Button variant="outline" onClick={() => setDrawer('payment')}><IndianRupee /> Payment</Button>
-            <Button variant="outline" onClick={() => setDrawer('pt')}><Dumbbell /> Add PT</Button>
-            <Button variant="outline" onClick={() => setDrawer('access')}><Fingerprint /> Access</Button>
-            <Button variant="outline" onClick={() => setDrawer('checkin')}><ClipboardCheck /> Check in</Button>
-            <Button asChild variant="ghost"><Link to={`/admin/members/${m.id}/edit`}><Pencil /> Edit</Link></Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setDrawer('renew')}><RefreshCw /> Renew</Button>
+            <Button size="sm" variant="outline" onClick={() => setDrawer('payment')}><IndianRupee /> Payment</Button>
+            <Button size="sm" variant="outline" onClick={() => setDrawer('pt')}><Dumbbell /> Add PT</Button>
+            <Button size="sm" variant="outline" onClick={() => setDrawer('access')}><Fingerprint /> Access</Button>
+            <Button size="sm" variant="outline" onClick={() => setDrawer('checkin')}><ClipboardCheck /> Check in</Button>
+            <Button size="sm" asChild variant="ghost"><Link to={`/admin/members/${m.id}/edit`}><Pencil /> Edit</Link></Button>
           </div>
-          <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-white/[0.06] pt-4 text-sm sm:grid-cols-3 lg:grid-cols-5" aria-label="Member summary">
+          <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-white/[0.06] pt-3 text-sm sm:grid-cols-3 lg:grid-cols-5" aria-label="Member summary">
             {[
               ['Plan', plan ? plan.duration : 'No plan'],
               ['Status', <StatePill state={state} />],
@@ -248,10 +261,10 @@ const MemberProfile = () => {
         </div>
       </header>
 
-      <div role="tablist" aria-label="Member sections" className="mb-6 flex gap-1 overflow-x-auto border-b border-white/[0.08]">
+      <div role="tablist" aria-label="Member sections" className="mb-4 flex gap-1 overflow-x-auto border-b border-white/[0.08]">
         {TABS.map(([t, label]) => (
           <button key={t} role="tab" type="button" id={`tab-${t}`} aria-selected={tab === t} aria-controls={`panel-${t}`} onClick={() => go(t)}
-            className={cn('whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors', tab === t ? 'border-brand-400 text-white' : 'border-transparent text-ink-400 hover:text-white')}>{label}</button>
+            className={cn('whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors', tab === t ? 'border-brand-400 text-white' : 'border-transparent text-ink-400 hover:text-white')}>{label}</button>
         ))}
       </div>
 
@@ -259,7 +272,7 @@ const MemberProfile = () => {
       {tab === 'overview' && (
         <>
           {/* The whole story on one screen; tabs hold the history */}
-          <section aria-label="Overview" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <section aria-label="Overview" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Story title="Membership" action={{ label: 'Renew membership', onClick: () => setDrawer('renew') }}>
               <p className="font-display text-2xl font-bold uppercase text-white">{plan?.duration ?? (m.membershipEnd ? 'Membership' : 'No membership')}</p>
               <p className="mt-1 text-sm text-ink-300">{m.membershipStart ? fmtDate(m.membershipStart) : '—'} → {m.membershipEnd ? fmtDate(m.membershipEnd) : 'no expiry'}</p>
@@ -282,7 +295,7 @@ const MemberProfile = () => {
             <Story title="Attendance" action={{ label: 'Check in member', onClick: () => setDrawer('checkin') }}>
               <p className="font-display text-2xl font-bold uppercase text-white">{visits === null ? '…' : visits[0] ? fmtWhen(visits[0].at) : 'No visits yet'}</p>
               <p className="mt-1 text-sm text-ink-300">{visits ? `${visitsThisMonth} this month · ${visits.length} in total` : ''}</p>
-              <p className="mt-2 text-xs text-ink-500">{visits?.[0] ? `Last visit · ${visits[0].how.split(' · ')[0]}` : 'Manual and biometric visits'}</p>
+              <p className="mt-2 text-xs text-ink-500">{visits?.[0] ? `Last visit · ${visits[0].how}` : 'Fingerprint and front-desk visits'}</p>
             </Story>
             <Story title="Access" action={{ label: 'Manage access', onClick: () => go('access') }}>
               <StatusDot tone={access.eligible ? 'ok' : access.eligible === false ? 'bad' : 'muted'}>{access.eligible ? 'Enabled' : access.eligible === false ? 'Not allowed' : 'No membership'}</StatusDot>
@@ -300,10 +313,10 @@ const MemberProfile = () => {
         </Card>
         <Card title="Trainer" action={m.trainerClient
           ? <button type="button" className="text-xs text-ink-400 hover:text-white" onClick={async () => { await linkTrainerClient(m, null, actor); reload(); }}>Unlink</button>
-          : <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-400 hover:underline" onClick={findLinks}><Link2 className="h-3.5 w-3.5" /> Link trainer record</button>}>
+          : <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-fg hover:underline" onClick={findLinks}><Link2 className="h-3.5 w-3.5" /> Link trainer record</button>}>
           <p className="text-white">{trainer?.name ?? 'No trainer assigned'}</p>
           {trainer?.role && <p className="text-sm text-ink-400">{trainer.role}</p>}
-          {m.trainerClient ? <p className="mt-2 text-xs text-brand-300">Linked to the trainer portal — training data shows below.</p>
+          {m.trainerClient ? <p className="mt-2 text-xs text-brand-fg">Linked to the trainer portal — training data shows below.</p>
             : <p className="mt-2 text-xs text-ink-500">Not linked to a trainer-portal client record.</p>}
           {linkOptions && !m.trainerClient && (
             linkOptions.length ? (
@@ -331,7 +344,7 @@ const MemberProfile = () => {
       )}
 
       {tab === 'membership' && <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Membership" action={<Link to={`/admin/payments/new?member=${m.id}`} className="text-xs font-semibold text-brand-400 hover:underline">Renew membership</Link>}>
+        <Card title="Membership" action={<Link to={`/admin/payments/new?member=${m.id}`} className="text-xs font-semibold text-brand-fg hover:underline">Renew membership</Link>}>
           <dl>
             <Row k="Plan" v={plan ? `${plan.duration}${plan.price ? ` · ${plan.price}` : ''}` : m.planId ? 'Plan no longer exists' : '—'} />
             <Row k="Status" v={<StatePill state={state} />} />
@@ -341,7 +354,7 @@ const MemberProfile = () => {
           </dl>
           <div className="mt-4 border-t border-white/[0.06] pt-3 text-sm">
             <p className="flex justify-between gap-3"><span className="text-ink-400">Gym entry</span>
-              <span className={access.eligible ? 'text-brand-300' : access.eligible === false ? 'text-red-300' : 'text-ink-300'}>{access.eligible ? 'Allowed' : access.eligible === false ? 'Not allowed' : 'Check membership'}</span></p>
+              <span className={access.eligible ? 'text-brand-fg' : access.eligible === false ? 'text-red-300' : 'text-ink-300'}>{access.eligible ? 'Allowed' : access.eligible === false ? 'Not allowed' : 'Check membership'}</span></p>
             <p className="mt-1 text-xs text-ink-500">{access.reason}.{ptNow && !access.eligible ? ' Personal training alone doesn’t give gym entry.' : ''} {ACCESS_CONNECTED ? '' : 'The door device isn’t connected yet.'}</p>
           </div>
           <div className="mt-4 border-t border-white/[0.06] pt-3">
@@ -379,7 +392,7 @@ const MemberProfile = () => {
       </div>}
 
       {tab === 'payments' && <div className="max-w-3xl">
-        <Card title="Payments" action={<Link to={`/admin/payments/new?member=${m.id}`} className="text-xs font-semibold text-brand-400 hover:underline">Record membership payment</Link>}>
+        <Card title="Payments" action={<Link to={`/admin/payments/new?member=${m.id}`} className="text-xs font-semibold text-brand-fg hover:underline">Record membership payment</Link>}>
           {payments === null ? <div className="h-20 animate-pulse rounded-xl bg-ink-800" /> : payments.length === 0 ? <p className="text-sm text-ink-400">No payments recorded.</p> : (
             <>
               <div className="flex flex-wrap gap-1" role="group" aria-label="Show payments for">
@@ -395,7 +408,7 @@ const MemberProfile = () => {
               <ul className="mt-3 space-y-2 text-sm" aria-label="Payment history">
                 {shownPayments.slice(0, 12).map((p) => (
                   <li key={p.id} className="flex items-center justify-between gap-3">
-                    <Link to={`/admin/payments/${p.id}`} className="min-w-0 hover:text-brand-400"><span className="font-mono text-xs text-ink-400">{receiptLabel(p)}</span> <span className="text-ink-300">{fmtDate(p.paidOn)} · {paymentTypeOf(p) === 'pt' ? 'PT' : TYPE_LABEL[paymentTypeOf(p)]} · {METHOD_LABEL[p.method]}</span></Link>
+                    <Link to={`/admin/payments/${p.id}`} className="min-w-0 hover:text-brand-fg"><span className="font-mono text-xs text-ink-400">{receiptLabel(p)}</span> <span className="text-ink-300">{fmtDate(p.paidOn)} · {paymentTypeOf(p) === 'pt' ? 'PT' : TYPE_LABEL[paymentTypeOf(p)]} · {METHOD_LABEL[p.method]}</span></Link>
                     <span className={p.status === 'void' ? 'tabular-nums text-ink-500 line-through' : 'tabular-nums text-white'}>{rupees(p.amountPaise)}</span>
                   </li>
                 ))}
@@ -407,35 +420,44 @@ const MemberProfile = () => {
 
       {tab === 'attendance' && (
         <section aria-label="Attendance" className="space-y-5">
-          <div className="grid grid-cols-3 gap-2 text-center sm:max-w-md">
-            {[['Today', inPeriod(periods.today)], ['This week', inPeriod(periods.week)], ['This month', inPeriod(periods.month)]].map(([k, v]) => (
-              <div key={k as string} className="rounded-xl border border-white/[0.08] bg-ink-900 p-3"><p className="font-display text-3xl font-bold tabular-nums text-white">{history ? v : '…'}</p><p className="text-xs text-ink-400">{k}</p></div>
+          <dl className="grid grid-cols-3 gap-2 text-center sm:max-w-lg" aria-label="Attendance summary">
+            {([['This month', history ? String(visitsThisMonth) : '…'], ['Last visit', history ? (history[0] ? new Date(history[0].at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }) : '—') : '…'], ['Total visits', history ? String(history.length) : '…']] as const).map(([k, v]) => (
+              <div key={k} className="flex flex-col-reverse rounded-xl border border-white/[0.08] bg-ink-900 p-3"><dt className="text-xs text-ink-400">{k}</dt><dd className="truncate font-display text-3xl font-bold tabular-nums text-white">{v}</dd></div>
             ))}
-          </div>
+          </dl>
+          {deskError && <ErrorNote what="Attendance couldn’t load — the count below isn’t reliable." error={deskError} onRetry={loadDesk} />}
+          {scansError && <ErrorNote what="Couldn’t check this member’s fingerprint punches against attendance." error={scansError} />}
+          {unrecorded && unrecorded.length > 0 && (
+            <div role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-sm text-amber-100">
+              <p className="font-semibold">Attendance processing issue</p>
+              <p className="mt-1">{unrecorded.length} fingerprint punch{unrecorded.length === 1 ? '' : 'es'} on {new Set(unrecorded.map((e) => e.localDate ?? e.at.slice(0, 10))).size} day(s) {unrecorded.length === 1 ? 'isn’t' : 'aren’t'} in this member’s attendance. <Link to="/admin/access?tab=integrity" className="font-semibold underline">Review and repair in Access → Attendance check</Link>.</p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink-400">{visits ? <>{visits.length} visit{visits.length === 1 ? '' : 's'} in total{visits[0] && <> · last <span className="text-white">{fmtWhen(visits[0].at)}</span></>}</> : 'Loading…'}</p>
             <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-ink-900 p-1" role="group" aria-label="Show">
-              {([['all', 'All'], ['biometric', 'Biometric'], ['manual', 'Manual']] as const).map(([k, l]) => (
+              {([['all', 'All'], ['biometric', 'Fingerprint'], ['manual', 'Front desk']] as const).map(([k, l]) => (
                 <button key={k} type="button" aria-pressed={visitFilter === k} onClick={() => setVisitFilter(k)} className={cn('rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors', visitFilter === k ? 'bg-white text-ink-950' : 'text-ink-300 hover:text-white')}>{l}</button>
               ))}
             </div>
           </div>
           {!history ? <SkeletonRows rows={4} /> : (() => {
-            const shown = history.filter((v) => visitFilter === 'all' || v.kind === visitFilter);
+            const shown = history.filter((v) => visitFilter === 'all' || v.kind === visitFilter || v.kind === 'both');
             if (!shown.length) return <EmptyNote title="No visits" body={visitFilter === 'biometric' && !ACCESS_CONNECTED ? 'The fingerprint device isn’t connected to this system yet, so door scans don’t appear here.' : 'Check-ins will appear here as they happen.'}><Button size="sm" variant="outline" onClick={() => setDrawer('checkin')}><ClipboardCheck /> Check in member</Button></EmptyNote>;
             return (
               <ol className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-900" aria-label="Attendance history">
                 {shown.slice(0, 100).map((v) => (
                   <li key={v.id} className="flex items-center gap-4 px-4 py-3 text-sm">
-                    <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', v.kind === 'biometric' ? (v.ok ? 'bg-brand-400' : 'bg-red-400') : 'bg-sky-300')} aria-hidden />
-                    <span className={cn('min-w-0 flex-1 truncate', v.ok ? 'text-white' : 'text-red-200')}>{v.how}</span>
+                    <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', v.kind === 'manual' ? 'bg-sky-300' : 'bg-brand-400')} aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-white">{v.how}{v.punches && v.punches > 1 ? <span className="text-ink-400"> · {v.punches} punches, last {fmtWhen(v.lastAt ?? v.at).split(', ').pop()}</span> : null}</span>
+                    {v.eventIds?.length ? <Link to={`/admin/access?member=${m.id}&day=${v.day}`} className="text-xs text-ink-400 hover:text-white">Punches</Link> : null}
                     <span className="tabular-nums text-ink-400">{fmtWhen(v.at)}</span>
                   </li>
                 ))}
               </ol>
             );
           })()}
-          <p className="text-xs text-ink-500">Manual = checked in at the front desk (earlier self check-ins are kept as history). Biometric = the fingerprint device.</p>
+          <p className="text-xs text-ink-500">One visit per day, from the fingerprint device or the front desk (earlier self check-ins are kept as history). Every raw punch stays in Access → Activity.</p>
         </section>
       )}
 
@@ -447,9 +469,9 @@ const MemberProfile = () => {
             <ul className="space-y-3 text-sm">
               {events.map(({ ev, number, status, result, category }) => (
                 <li key={ev.id}>
-                  <Link to={`/admin/events/${ev.id}`} className="font-semibold text-white hover:text-brand-400">{ev.title}</Link>
+                  <Link to={`/admin/events/${ev.id}`} className="font-semibold text-white hover:text-brand-fg">{ev.title}</Link>
                   <p className="text-xs text-ink-400">{formatEventDate(ev.eventDate)} · #{passNumber(number)} · {status === 'checked_in' ? 'Checked in' : status === 'no_show' ? 'No-show' : 'Registered'} · {STATUS[ev.status].admin}</p>
-                  {result && category && <p className="text-xs text-brand-300">Result: {formatScore(result.score, category)}{result.position ? ` · Position ${result.position}` : ''}</p>}
+                  {result && category && <p className="text-xs text-brand-fg">Result: {formatScore(result.score, category)}{result.position ? ` · Position ${result.position}` : ''}</p>}
                 </li>
               ))}
             </ul>
@@ -473,7 +495,7 @@ const MemberProfile = () => {
         title={drawer === 'renew' ? 'Renew membership' : 'Collect payment'} description={`${m.name} · ${memberCode(m.id)}`}>
         {paid ? (
           <div role="status" className="text-center">
-            <CheckCircle2 className="mx-auto h-12 w-12 text-brand-400" aria-hidden />
+            <CheckCircle2 className="mx-auto h-12 w-12 text-brand-fg" aria-hidden />
             <p className="mt-3 font-display text-3xl font-bold uppercase text-white">{paid.amount} collected</p>
             <p className="mt-1 text-sm text-ink-300">{PAYMENT_LABEL[paid.type]} from {m.name} is saved, with a receipt.</p>
             <div className="mt-6 flex justify-center gap-2">

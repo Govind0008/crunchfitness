@@ -111,7 +111,7 @@ const CheckIn = () => {
       {/* Confirmation — green for done, amber for "already in" so a double check-in is obvious */}
       {flash && (
         <button type="button" onClick={() => setFlash(null)} role="status" aria-live="assertive"
-          className={cn('fixed inset-0 z-50 flex flex-col items-center justify-center p-8 text-center', flash.kind === 'in' ? 'bg-brand-400 text-ink-950' : 'bg-amber-300 text-ink-950')}>
+          className={cn('fixed inset-0 z-50 flex flex-col items-center justify-center p-8 text-center', flash.kind === 'in' ? 'bg-brand-400 text-on-brand' : 'bg-amber-300 text-on-brand')}>
           {flash.kind === 'in' ? <CheckCircle2 className="h-20 w-20" aria-hidden /> : <TriangleAlert className="h-20 w-20" aria-hidden />}
           <span className="mt-6 font-display text-6xl font-extrabold uppercase leading-none">{flash.kind === 'in' ? 'Checked in' : 'Already checked in'}</span>
           <span className="mt-6 text-3xl font-bold">{flash.reg.name}</span>

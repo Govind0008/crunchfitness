@@ -112,13 +112,13 @@ const LegacyImport = () => {
 
       {result && (
         <ImportReport result={result}>
-          <p className="flex items-center gap-2 font-display text-2xl font-bold uppercase text-white"><CheckCircle2 className="h-6 w-6 text-brand-400" aria-hidden /> Import complete</p>
+          <p className="flex items-center gap-2 font-display text-2xl font-bold uppercase text-white"><CheckCircle2 className="h-6 w-6 text-brand-fg" aria-hidden /> Import complete</p>
         </ImportReport>
       )}
 
       <Step n={1} title="Choose the file">
         <label className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-white/20 p-4 hover:border-white/40 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-400/30 sm:p-5">
-          <FileUp className="h-7 w-7 flex-shrink-0 text-brand-400" aria-hidden />
+          <FileUp className="h-7 w-7 flex-shrink-0 text-brand-fg" aria-hidden />
           <span className="min-w-0 text-sm"><span className="block break-words font-semibold text-white">{loaded ? loaded.file : 'Choose the Excel (.xlsx) or CSV file'}</span>
             <span className="text-ink-400">{loaded ? `Sheet “${loaded.sheet}” · ${analysis?.rows.length ?? 0} rows · ${analysis?.header.filter(Boolean).length ?? 0} columns` : 'It stays on this computer until you confirm the import.'}</span></span>
           <input type="file" accept=".xlsx,.csv" className="sr-only" aria-label="Old member sheet" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
@@ -215,7 +215,7 @@ const LegacyImport = () => {
             ))}
           </ul>
         )}
-        {result && <Link to="/admin/members" className="mt-3 inline-block text-sm font-semibold text-brand-400 hover:underline">View members →</Link>}
+        {result && <Link to="/admin/members" className="mt-3 inline-block text-sm font-semibold text-brand-fg hover:underline">View members →</Link>}
       </section>
     </div>
   );

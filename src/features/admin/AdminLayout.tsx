@@ -1,7 +1,8 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronRight, Command, LogOut, Menu, Settings } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ChevronRight, Command, LogOut, Menu, Monitor, Moon, Settings, Sun } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useStaffTheme, type ThemePref } from '@/lib/theme';
 import CommandPalette from './CommandPalette';
 import { signOut } from 'firebase/auth';
 import { collection, getCountFromServer, query, where } from 'firebase/firestore';
@@ -54,6 +55,7 @@ const Frame = () => {
   const actor = useActor();
   const [menuOpen, setMenuOpen] = useState(false);
   const [palette, setPalette] = useState(false);
+  const theme = useStaffTheme();
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; } });
   const [unread, setUnread] = useState(0);
   const main = useRef<HTMLElement>(null);
@@ -73,11 +75,11 @@ const Frame = () => {
   useEffect(() => { main.current?.scrollTo({ top: 0 }); setMenuOpen(false); }, [pathname]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-ink-950 text-white" data-admin-shell>
+    <div className="relative flex h-[100dvh] overflow-hidden bg-ink-950 text-white" data-admin-shell>
       <Seo title="Crunch admin" description="Staff area" noindex />
       <AdminSidebar active={nav} open={menuOpen} onClose={() => setMenuOpen(false)} unreadEnquiries={unread} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-      <div className={`flex h-screen w-full flex-1 flex-col overflow-hidden transition-[margin] duration-300 motion-reduce:transition-none ${collapsed ? 'md:ml-16' : 'md:ml-60'}`}>
-        <header className="z-20 flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/[0.06] bg-ink-950/90 px-4 backdrop-blur md:px-6">
+      <div className={`flex h-[100dvh] min-w-0 w-full flex-1 flex-col overflow-hidden transition-[margin] duration-300 motion-reduce:transition-none ${collapsed ? 'md:ml-16' : 'md:ml-60'}`}>
+        <header className="z-20 flex h-14 flex-shrink-0 items-center gap-3 border-b border-white/[0.08] bg-ink-950 px-4 md:px-5 lg:px-6">
           <button type="button" onClick={() => setMenuOpen(true)} className="rounded-lg p-1.5 text-ink-400 hover:bg-white/[0.06] hover:text-white md:hidden" aria-label="Open menu"><Menu size={20} /></button>
           <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm sm:flex">
             {area !== section && <><span className="text-ink-500" data-admin-area>{area}</span><ChevronRight size={14} className="text-ink-600" aria-hidden /></>}
@@ -90,7 +92,22 @@ const Frame = () => {
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-sm font-bold text-white hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" aria-label={`Account: ${actor.email}`}>
+                <button type="button" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-ink-300 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" aria-label={`Theme: ${theme.pref}`}>
+                  {theme.resolved === 'light' ? <Sun size={17} aria-hidden /> : <Moon size={17} aria-hidden />}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44 border-white/10 bg-ink-900 text-white">
+                <DropdownMenuLabel className="text-xs font-normal text-ink-500">Theme</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={theme.pref} onValueChange={(v) => theme.choose(v as ThemePref)} aria-label="Theme">
+                  <DropdownMenuRadioItem value="light"><Sun className="mr-2 h-4 w-4" /> Light</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark"><Moon className="mr-2 h-4 w-4" /> Dark</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system"><Monitor className="mr-2 h-4 w-4" /> System</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-sm font-bold text-white hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" aria-label={`Account: ${actor.email}`}>
                   {(actor.email[0] ?? 'A').toUpperCase()}
                 </button>
               </DropdownMenuTrigger>
@@ -99,14 +116,17 @@ const Frame = () => {
                 <DropdownMenuSeparator className="bg-white/10" />
                 <DropdownMenuItem onSelect={() => navigate('/admin/settings')}><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setPalette(true)}><Command className="mr-2 h-4 w-4" /> Quick actions</DropdownMenuItem>
+
                 <DropdownMenuSeparator className="bg-white/10" />
                 <DropdownMenuItem className="text-red-300 focus:text-red-200" onSelect={async () => { await signOut(auth); window.location.assign('/admin/login'); /* full reload: clears every in-memory cache on shared desks */ }}><LogOut className="mr-2 h-4 w-4" /> Sign out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </header>
-        <main ref={main} className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 md:pb-24">
+        {/* The one page-level scroll container. Data pages in "fill" mode (AdminShell) keep it
+            still on wide screens and scroll their own data region instead. */}
+        <main ref={main} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto flex h-full w-full max-w-[1760px] flex-col px-4 pt-4 sm:px-5 lg:px-6 lg:pt-5 xl:px-8">
             {/* Sections load inside the shell — the sidebar and header stay put */}
             <Suspense fallback={<div className="space-y-4" role="status" aria-label="Loading section"><div className="h-10 w-64 animate-pulse rounded-lg bg-ink-900 motion-reduce:animate-none" /><div className="h-32 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /><div className="h-64 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /></div>}>
               <Outlet />

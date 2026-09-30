@@ -180,7 +180,7 @@ function PersonItem({ p }: { p: Person }) {
           </span>
         </summary>
         <div className="space-y-3 px-4 pb-4 pl-11">
-          {p.existing && <p className="text-xs text-ink-400">Already a member as <Link to={`/admin/members/${p.existing.id}`} className="text-brand-400 hover:underline">{p.existing.name}</Link>. Rows are added as their history; nothing on the member changes.</p>}
+          {p.existing && <p className="text-xs text-ink-400">Already a member as <Link to={`/admin/members/${p.existing.id}`} className="text-brand-fg hover:underline">{p.existing.name}</Link>. Rows are added as their history; nothing on the member changes.</p>}
           {p.conflicts.map((c) => <p key={c} className="text-xs text-amber-100">{c}</p>)}
           <PersonTree p={p} />
         </div>
@@ -259,7 +259,7 @@ export function ImportReport({ result, children }: { result: ImportResult; child
               <li key={t.row} className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[4.5rem_minmax(0,1fr)_9rem] sm:items-baseline sm:gap-3">
                 <span className="font-mono text-xs text-ink-500">Row {t.row}</span>
                 <span className="min-w-0">
-                  {t.memberId && !t.memberId.startsWith('np:') ? <Link to={`/admin/members/${t.memberId}`} className="font-semibold text-white hover:text-brand-400">{t.name}</Link> : <span className="font-semibold text-white">{t.name}</span>}
+                  {t.memberId && !t.memberId.startsWith('np:') ? <Link to={`/admin/members/${t.memberId}`} className="font-semibold text-white hover:text-brand-fg">{t.name}</Link> : <span className="font-semibold text-white">{t.name}</span>}
                   <span className="text-ink-400"> · “{t.packageRaw}” · {t.amountPaise ? rupees(t.amountPaise) : '—'}{t.paidOn ? ` · ${fmtDate(t.paidOn)}` : ''}</span>
                   {t.note && <span className="block text-xs text-ink-500">{t.note}</span>}
                 </span>

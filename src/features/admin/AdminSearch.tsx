@@ -103,7 +103,7 @@ const AdminSearch = () => {
     <div ref={box} className="relative w-full max-w-md">
       <label className="relative block">
         <span className="sr-only">Search members, trainers, events and enquiries</span>
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" aria-hidden />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" aria-hidden />
         <input
           ref={input}
           role="combobox"
@@ -120,18 +120,18 @@ const AdminSearch = () => {
           }}
           aria-label="Search members, trainers, events, payments and device user IDs"
           placeholder="Search members, payments, events…  ( / )"
-          className="h-10 w-full rounded-xl border border-zinc-700 bg-zinc-800 pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-green-400 focus:outline-none"
+          className="h-10 w-full rounded-xl border border-white/15 bg-field pl-9 pr-3 text-sm text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none"
         />
       </label>
       {open && q.trim().length >= 2 && (
-        <ul id="admin-search-results" role="listbox" className="absolute left-0 right-0 top-12 z-50 max-h-96 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 p-1 shadow-2xl">
-          {hits.length === 0 && <li className="px-3 py-3 text-sm text-gray-500">No matches for “{q.trim()}”</li>}
+        <ul id="admin-search-results" role="listbox" className="absolute left-0 right-0 top-12 z-50 max-h-96 overflow-y-auto rounded-xl border border-white/15 bg-ink-900 p-1 shadow-2xl">
+          {hits.length === 0 && <li className="px-3 py-3 text-sm text-ink-500">No matches for “{q.trim()}”</li>}
           {hits.map((h, i) => (
             <li key={`${h.group}-${h.id}`} role="option" aria-selected={i === cursor}>
               <button type="button" onMouseEnter={() => setCursor(i)} onClick={() => go(h)}
-                className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left', i === cursor ? 'bg-zinc-800' : '')}>
-                <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-500">{h.group}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{h.title}</span><span className="block truncate text-xs text-gray-500">{h.sub}</span></span>
+                className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left', i === cursor ? 'bg-white/[0.06]' : '')}>
+                <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wider text-ink-500">{h.group}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{h.title}</span><span className="block truncate text-xs text-ink-500">{h.sub}</span></span>
               </button>
             </li>
           ))}

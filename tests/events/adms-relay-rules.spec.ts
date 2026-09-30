@@ -108,9 +108,13 @@ test('the handshake and every scan reach the old server unchanged; its replies r
   expect(received.at(-1)!.body).toBe(attlog);                                      // byte for byte, all three lines
 });
 
-test('the CRM records only its linked members, judged by their membership', async () => {
+test('every punch is kept; linked members are judged by their membership, unlinked users stay unresolved', async () => {
   const events = await list('accessEvents');
-  expect(events.map((e) => e.fields.deviceUserId.stringValue).sort()).toEqual(['501', '502']);   // 999 isn't a CRM member
+  expect(events.map((e) => e.fields.deviceUserId.stringValue).sort()).toEqual(['501', '502', '999']);
+  const unknown = events.find((e) => e.fields.deviceUserId.stringValue === '999')!.fields;
+  expect(unknown.personType.stringValue).toBe('unknown');                         // kept, not matched to anyone
+  expect(unknown.result.stringValue).toBe('unknown_user');
+  expect(unknown.memberId).toEqual({ nullValue: null });
   const asha = events.find((e) => e.fields.deviceUserId.stringValue === '501')!.fields;
   expect(asha.result.stringValue).toBe('granted');
   expect(asha.at.stringValue).toBe('2026-09-29T12:35:10.000Z');                  // 18:05:10 India time

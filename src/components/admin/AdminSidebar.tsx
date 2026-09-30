@@ -77,7 +77,7 @@ const AdminSidebar = ({ active, open, onClose, collapsed, onToggleCollapsed, unr
       ? <span className={icons ? 'absolute right-1.5 top-1 h-2 w-2 rounded-full bg-red-500' : 'ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white'}>{icons ? <span className="sr-only">{unreadEnquiries} unread</span> : unreadEnquiries}</span>
       : null;
     const cls = `group relative flex w-full items-center gap-3 rounded-lg ${icons ? 'justify-center px-0 py-2.5' : small ? 'px-3 py-1.5' : 'px-3 py-2'} ${small ? 'text-[13px]' : 'text-sm'} font-semibold transition-colors motion-reduce:transition-none ${on
-      ? 'bg-brand-400/[0.12] text-brand-300 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-brand-400'
+      ? 'bg-brand-400/[0.12] text-brand-fg before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-brand-400'
       : small ? 'text-ink-500 hover:bg-white/[0.04] hover:text-white' : 'text-ink-300 hover:bg-white/[0.04] hover:text-white'}`;
     const inner = (
       <>
@@ -93,11 +93,11 @@ const AdminSidebar = ({ active, open, onClose, collapsed, onToggleCollapsed, unr
   return (
     <>
       {open && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden />}
-      <aside className={`fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-white/[0.06] bg-ink-900 transition-[transform,width] duration-300 motion-reduce:transition-none ${icons ? 'md:w-16' : 'md:w-60'} w-64 ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
-        <div className={`flex h-16 flex-shrink-0 items-center border-b border-white/[0.06] ${icons ? 'justify-center px-2' : 'justify-between px-5'}`}>
+      <aside className={`fixed left-0 top-0 z-40 flex h-[100dvh] flex-col border-r border-white/[0.08] bg-rail transition-[transform,width] duration-300 motion-reduce:transition-none ${icons ? 'md:w-16' : 'md:w-60'} w-64 ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+        <div className={`flex h-14 flex-shrink-0 items-center border-b border-white/[0.08] ${icons ? 'justify-center px-2' : 'justify-between px-5'}`}>
           {icons
             ? <img src="/images/logo.webp" alt="Crunch Fitness" className="h-8 w-8 object-contain" />
-            : <div className="min-w-0"><p className="font-display text-xl font-bold uppercase leading-none tracking-wide text-white">Crunch Fitness</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-400">Gym admin</p></div>}
+            : <div className="min-w-0"><p className="font-display text-xl font-bold uppercase leading-none tracking-wide text-white">Crunch Fitness</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-fg">Gym admin</p></div>}
           <button onClick={onClose} className="p-1 text-ink-400 hover:text-white md:hidden" aria-label="Close menu"><X size={18} /></button>
         </div>
 
@@ -152,7 +152,7 @@ export const AdminBottomNav = ({ active, onMore }: { active: NavKey; onMore: () 
     {BOTTOM.map((b) => {
       const on = active === b.key || (b.key === 'payments' && (active === 'dues' || active === 'revenue')) || (b.key === 'attendance' && active === 'access');
       return (
-        <Link key={b.key} to={b.to} aria-current={on ? 'page' : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${on ? 'text-brand-300' : 'text-ink-400'}`}>
+        <Link key={b.key} to={b.to} aria-current={on ? 'page' : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${on ? 'text-brand-fg' : 'text-ink-400'}`}>
           {b.icon}{b.label}
         </Link>
       );

@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         // Primary call to action — the only filled brand button on a screen
-        default: "btn-sweep bg-brand-400 text-ink-950 hover:bg-brand-300 hover:shadow-[0_10px_30px_-12px_rgba(176,212,63,0.6)] disabled:bg-ink-800 disabled:text-ink-500 disabled:opacity-100",
+        default: "btn-sweep bg-brand-400 text-on-brand hover:bg-brand-300 hover:shadow-[0_10px_30px_-12px_rgba(176,212,63,0.6)] disabled:bg-ink-800 disabled:text-ink-500 disabled:opacity-100",
         // Secondary action on dark surfaces
         outline: "border border-white/20 bg-transparent text-white hover:border-white/40 hover:bg-white/5",
         // Tertiary / quiet actions

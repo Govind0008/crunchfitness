@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Timestamp } from 'firebase-admin/firestore';
 import { adminProblem, firestoreOrNull, requireAdmin } from './_lib/firebase.js';
 import { PROBE_SN } from './_lib/diagnostics.js';
+import { backfill, reconcile } from './_lib/reconcile.js';
 
 // Diagnostics for the device connection (the ADMS relay at /iclock/*). Read-only: nothing here
 // sends anything to a device or to the old attendance server's /iclock endpoints.
@@ -12,6 +13,11 @@ import { PROBE_SN } from './_lib/diagnostics.js';
 //   GET  /api/adms?check=status     admins: every serial that has contacted us, and when
 //   POST /api/adms?check=selftest   admins: DNS, HTTPS, /iclock route and reply format, checked
 //                                   from the server using the reserved self-test serial
+//   GET  /api/adms?check=reconcile&from=YYYY-MM-DD&to=YYYY-MM-DD
+//                                   admins: punches vs attendance — every gap, nothing changed
+//   POST /api/adms?check=backfill&from=…&to=…
+//                                   admins: create only the missing attendance the preview lists
+//                                   (idempotent; the access events themselves are never changed)
 
 const GYM = 'crunch-wakad';
 const UPSTREAM = (process.env.ADMS_UPSTREAM ?? 'http://122.160.158.120:5072').replace(/\/$/, '');
@@ -118,6 +124,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const who = await requireAdmin(req.headers.authorization);
   if (!who) { res.status(401).json({ error: 'Sign in as an admin' }); return; }
   if (check === 'status' && req.method === 'GET') { res.status(200).json(await status()); return; }
+  if (check === 'reconcile' || check === 'backfill') {
+    const from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
+    const ymd = /^\d{4}-\d{2}-\d{2}$/;
+    const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+    if (!ymd.test(from) || !ymd.test(to) || !(days >= 0 && days <= 92)) { res.status(400).json({ error: 'Choose a date range of up to 3 months' }); return; }
+    const fs = firestoreOrNull()!;
+    if (check === 'reconcile' && req.method === 'GET') { res.status(200).json(await reconcile(fs, from, to)); return; }
+    if (check === 'backfill' && req.method === 'POST') {
+      const result = await backfill(fs, from, to);
+      console.log(JSON.stringify({ adms: true, kind: 'attendance backfill', by: who.email, from, to, ...result }));
+      res.status(200).json(result);
+      return;
+    }
+  }
   if (check === 'selftest' && req.method === 'POST') {
     const proto = String(req.headers['x-forwarded-proto'] ?? 'https').split(',')[0];
     const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '');

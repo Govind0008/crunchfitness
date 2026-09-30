@@ -36,7 +36,96 @@
 
     --brand-hsl: 77 64% 54%;
     color-scheme: dark;
+
+    /* Themed palette (RGB channels). Dark is the default everywhere. */
+    --c-ink-950: 10 10 11;
+    --c-ink-900: 17 17 19;
+    --c-ink-850: 22 22 24;
+    --c-ink-800: 28 28 31;
+    --c-ink-700: 42 42 46;
+    --c-ink-600: 58 58 63;
+    --c-ink-500: 92 92 99;
+    --c-ink-400: 139 139 147;
+    --c-ink-300: 180 180 186;
+    --c-ink-200: 214 214 218;
+    --c-white: 255 255 255;
+    --c-brand-fg: 195 225 99;     /* brand-300 */
+    --c-brand-100: 234 245 200;
+    --c-brand-200: 216 236 152;
+    --c-amber-100: 254 243 199;
+    --c-amber-200: 253 230 138;
+    --c-red-50: 254 242 242;
+    --c-red-100: 254 226 226;
+    --c-red-200: 254 202 202;
+    --c-red-300: 252 165 165;
+    --c-sky-100: 224 242 254;
+    --c-sky-200: 186 230 253;
+    --c-rail: 17 17 19;           /* = ink-900: the dark sidebar as it always was */
+    --c-field: 17 17 19;          /* = ink-900: inputs as they always were */
+    --scroll-thumb: #2a2a2e;
+    --scroll-track: #0a0a0b;
   }
+
+  /* Staff-area light theme — set on <html> by the admin and marketing shells only (see
+     src/lib/theme.ts), so dialogs and menus rendered in portals are themed too. The neutral
+     scale is re-mapped (not inverted): 950 stays "page background", 900 "card", white "text". */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --c-ink-950: 238 238 230;     /* app background: warm neutral */
+    --c-ink-900: 255 255 253;     /* cards */
+    --c-ink-850: 246 246 240;
+    --c-ink-800: 231 231 222;     /* chips, skeletons, hover fills */
+    --c-ink-700: 214 214 204;
+    --c-ink-600: 190 190 180;
+    --c-ink-500: 100 100 96;      /* muted text: 5.4:1 on cards */
+    --c-ink-400: 82 82 78;
+    --c-ink-300: 56 56 54;
+    --c-ink-200: 36 36 35;
+    --c-white: 22 22 20;          /* text: deep charcoal */
+    --c-rail: 228 228 218;        /* sidebar: a step darker than the page */
+    --c-field: 249 249 244;       /* inputs: tinted, not card-white */
+    --c-brand-fg: 74 96 14;
+    --c-brand-100: 47 58 18;
+    --c-brand-200: 61 77 18;
+    --c-amber-100: 120 53 15;
+    --c-amber-200: 146 64 14;
+    --c-red-50: 127 29 29;
+    --c-red-100: 127 29 29;
+    --c-red-200: 153 27 27;
+    --c-red-300: 185 28 28;
+    --c-sky-100: 12 74 110;
+    --c-sky-200: 7 89 133;
+    --scroll-thumb: #bebeb4;
+    --scroll-track: #eeeee6;
+
+    --background: 60 12% 92%;
+    --foreground: 240 6% 7%;
+    --card: 60 33% 99%;
+    --card-foreground: 240 6% 7%;
+    --popover: 60 33% 99%;
+    --popover-foreground: 240 6% 7%;
+    --primary-foreground: 240 5% 6%;
+    --secondary: 60 5% 92%;
+    --secondary-foreground: 240 6% 10%;
+    --muted: 60 5% 93%;
+    --muted-foreground: 240 4% 36%;
+    --accent: 60 5% 91%;
+    --accent-foreground: 240 6% 7%;
+    --border: 60 6% 82%;
+    --input: 60 5% 76%;
+    --ring: 77 75% 32%;
+  }
+
+  /* Hairlines carry the structure in the light theme (shadows alone wash out), so the few
+     low-opacity border utilities the staff area uses are drawn a little firmer there. Dark is
+     untouched: these selectors only exist under [data-theme="light"]. */
+  :root[data-theme="light"] .border-white\/\[0\.06\],
+  :root[data-theme="light"] .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--c-white) / 0.1); }
+  :root[data-theme="light"] .border-white\/\[0\.08\],
+  :root[data-theme="light"] .divide-white\/\[0\.08\] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--c-white) / 0.13); }
+  :root[data-theme="light"] .border-white\/10 { border-color: rgb(var(--c-white) / 0.15); }
+  /* Cards lift off the page with a whisper of shadow (light only) */
+  :root[data-theme="light"] [data-admin-shell] .rounded-2xl.bg-ink-900 { box-shadow: 0 1px 2px rgb(40 40 20 / 0.05); }
 
   @media (min-width: 768px) {
     :root { --nav-h: 4.5rem; }
@@ -48,7 +137,7 @@
 
   html {
     scrollbar-width: thin;
-    scrollbar-color: #3a3a3f #0a0a0b;
+    scrollbar-color: var(--scroll-thumb) var(--scroll-track);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -65,12 +154,12 @@
 
   ::selection {
     background: hsl(var(--brand-hsl) / 0.35);
-    color: #fff;
+    color: rgb(var(--c-white));
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: #0a0a0b; }
-  ::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 999px; border: 2px solid #0a0a0b; }
+  ::-webkit-scrollbar-track { background: var(--scroll-track); }
+  ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 999px; border: 2px solid var(--scroll-track); }
   ::-webkit-scrollbar-thumb:hover { background: #3a3a3f; }
 
   /* One consistent, clearly visible keyboard focus style across the site */

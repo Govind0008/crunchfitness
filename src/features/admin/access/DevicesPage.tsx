@@ -12,7 +12,7 @@ import { fmtTime } from '@/features/admin/members/lookups';
 import ConnectionDiagnostics from './ConnectionDiagnostics';
 
 const blank: DeviceInput = { name: 'Main entrance', model: 'eSSL X2008', serialNumber: '', location: '', protocol: 'adms' };
-const healthTone = (h: ReturnType<typeof deviceHealth>) => (h === 'online' ? 'bg-brand-400/15 text-brand-300' : h === 'offline' ? 'bg-red-500/15 text-red-200' : 'bg-white/[0.06] text-ink-300');
+const healthTone = (h: ReturnType<typeof deviceHealth>) => (h === 'online' ? 'bg-brand-400/15 text-brand-fg' : h === 'offline' ? 'bg-red-500/15 text-red-200' : 'bg-white/[0.06] text-ink-300');
 
 /**
  * Settings → Access control → Devices. Staff record which devices exist; whether a device is

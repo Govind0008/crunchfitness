@@ -71,7 +71,7 @@ const EventControl = () => {
 
       {/* Next step — the admin never has to guess */}
       <section aria-labelledby="next-heading" className="rounded-3xl border border-brand-400/30 bg-brand-400/[0.06] p-6 sm:p-8">
-        <p id="next-heading" className="hud text-brand-400">Next step</p>
+        <p id="next-heading" className="hud text-brand-fg">Next step</p>
         <p className="mt-3 max-w-2xl text-lg text-white">{next.explain}</p>
         {blockOpen && <p className="mt-2 text-sm text-amber-200">Add at least one category (Edit details → Competition) before opening registration.</p>}
         <div className="mt-6 flex flex-wrap items-center gap-3">

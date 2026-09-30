@@ -6,7 +6,7 @@ import { formatPhone } from '@/lib/admin/phone';
 import { fmtDate, fmtTime } from '@/features/admin/members/lookups';
 
 export const PaymentStatus = ({ p }: { p: Pick<Payment, 'status'> }) => (
-  <span className={cn('inline-block rounded-full px-2.5 py-1 text-xs font-bold', p.status === 'paid' ? 'bg-brand-400/15 text-brand-300' : 'bg-white/10 text-ink-400 line-through')}>
+  <span className={cn('inline-block rounded-full px-2.5 py-1 text-xs font-bold', p.status === 'paid' ? 'bg-brand-400/15 text-brand-fg' : 'bg-white/10 text-ink-400 line-through')}>
     {p.status === 'paid' ? 'Paid' : 'Void'}
   </span>
 );

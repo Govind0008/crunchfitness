@@ -27,7 +27,7 @@ const Section = ({ n, title, hint, open, onToggle, children }: { n: number; titl
       </button>
     ) : (
       <div className="flex items-center gap-3">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-400 text-xs font-bold text-ink-950" aria-hidden>{n}</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-400 text-xs font-bold text-on-brand" aria-hidden>{n}</span>
         <legend className="font-sans text-sm font-bold text-white">{title}</legend>
       </div>
     )}
@@ -164,7 +164,7 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
       {step === 'done' && saved && (
         <div role="status" className="space-y-6">
           <div className="text-center">
-            <CheckCircle2 className="mx-auto h-12 w-12 text-brand-400" aria-hidden />
+            <CheckCircle2 className="mx-auto h-12 w-12 text-brand-fg" aria-hidden />
             <p className="mt-3 font-display text-3xl font-bold uppercase text-white">{saved.name} is added</p>
             <p className="mt-1 text-sm text-ink-300">{saved.membershipEnd ? `Membership until ${saved.membershipEnd.split('-').reverse().join('/')}` : 'No membership dates yet'}</p>
             {note && <p className="mt-2 text-xs text-amber-200">{note}</p>}

@@ -49,10 +49,10 @@ const MarketingLogin = () => {
 
       <main className="flex items-center px-5 pb-16 pt-2 sm:px-10 lg:px-16 lg:py-16">
         <div className="w-full max-w-md">
-          <p className="hud text-brand-400 m-rise">The Creative Desk</p>
+          <p className="hud text-brand-fg m-rise">The Creative Desk</p>
           <h1 className="mt-5 font-display text-5xl font-bold uppercase leading-[0.9] sm:text-6xl">
             <span className="m-line"><span>Build the brand.</span></span>
-            <span className="m-line"><span style={{ transitionDelay: '90ms' }} className="text-brand-400">Tell the story.</span></span>
+            <span className="m-line"><span style={{ transitionDelay: '90ms' }} className="text-brand-fg">Tell the story.</span></span>
           </h1>
 
           <form onSubmit={submit} className="m-rise mt-12 space-y-8" style={{ '--d': 180 } as CSSProperties} noValidate>
@@ -70,9 +70,9 @@ const MarketingLogin = () => {
             </div>
             {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
             <button type="submit" disabled={busy || !email || !password}
-              className="group flex h-14 w-full items-center justify-between rounded-full bg-brand-400 pl-7 pr-2 text-base font-bold text-ink-950 transition-colors hover:bg-brand-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-ink-500">
+              className="group flex h-14 w-full items-center justify-between rounded-full bg-brand-400 pl-7 pr-2 text-base font-bold text-on-brand transition-colors hover:bg-brand-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-ink-500">
               {busy ? 'Signing in…' : 'Enter Marketing Desk'}
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink-950 text-brand-400 transition-transform duration-200 group-hover:translate-x-0.5 group-disabled:bg-white/10 group-disabled:text-ink-500"><ArrowRight size={18} /></span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink-950 text-brand-fg transition-transform duration-200 group-hover:translate-x-0.5 group-disabled:bg-white/10 group-disabled:text-ink-500"><ArrowRight size={18} /></span>
             </button>
           </form>
           <p className="mt-10 text-xs text-ink-500">Gym staff running members and payments? <Link to="/admin/login" className="text-ink-300 underline-offset-4 hover:underline">Admin sign in</Link></p>

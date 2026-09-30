@@ -73,7 +73,7 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
 
   const StepDot = ({ n, label }: { n: Step; label: string }) => (
     <li className="flex items-center gap-2">
-      <span className={cn('flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold', step > n ? 'bg-brand-400 text-ink-950' : step === n ? 'bg-white text-ink-950' : 'bg-white/[0.08] text-ink-500')}>{step > n ? <Check size={14} aria-hidden /> : n}</span>
+      <span className={cn('flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold', step > n ? 'bg-brand-400 text-on-brand' : step === n ? 'bg-white text-on-brand' : 'bg-white/[0.08] text-ink-500')}>{step > n ? <Check size={14} aria-hidden /> : n}</span>
       <span className={cn('text-xs font-semibold', step === n ? 'text-white' : 'text-ink-500')}>{label}</span>
     </li>
   );
@@ -98,13 +98,13 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
       {step === 2 && (
         <section aria-label="Choose device">
           {devices === null ? <div className="h-20 animate-pulse rounded-xl bg-ink-900" /> : devices.length === 0 ? (
-            <p className="rounded-xl border border-white/[0.08] p-4 text-sm text-ink-300">No fingerprint device is set up yet. An admin can add it in <Link to="/admin/settings/access" className="font-semibold text-brand-400 hover:underline">Settings → Access control</Link>.</p>
+            <p className="rounded-xl border border-white/[0.08] p-4 text-sm text-ink-300">No fingerprint device is set up yet. An admin can add it in <Link to="/admin/settings/access" className="font-semibold text-brand-fg hover:underline">Settings → Access control</Link>.</p>
           ) : (
             <div className="space-y-2" role="radiogroup" aria-label="Device">
               {devices.map((d) => (
                 <button key={d.id} type="button" role="radio" aria-checked={deviceId === d.id} onClick={() => setDeviceId(d.id)}
                   className={cn('flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors', deviceId === d.id ? 'border-brand-400 bg-brand-400/[0.06]' : 'border-white/[0.1] hover:border-white/25')}>
-                  <Fingerprint className={deviceId === d.id ? 'text-brand-400' : 'text-ink-500'} size={22} aria-hidden />
+                  <Fingerprint className={deviceId === d.id ? 'text-brand-fg' : 'text-ink-500'} size={22} aria-hidden />
                   <span><span className="block font-semibold text-white">{d.name}</span><span className="text-xs text-ink-400">{d.model}{d.location ? ` · ${d.location}` : ''}</span></span>
                 </button>
               ))}
@@ -141,15 +141,15 @@ const EnrollWizard = ({ m, existing, onDone }: { m: Member; existing: BiometricI
         return (
           <section aria-label="Enrol on device">
             <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-center">
-              <Fingerprint className={cn('mx-auto h-12 w-12', saved ? 'text-brand-400' : failed ? 'text-red-300' : 'text-amber-200 motion-safe:animate-pulse')} aria-hidden />
+              <Fingerprint className={cn('mx-auto h-12 w-12', saved ? 'text-brand-fg' : failed ? 'text-red-300' : 'text-amber-200 motion-safe:animate-pulse')} aria-hidden />
               <p className="mt-3 font-display text-2xl font-bold uppercase text-white">{headline}</p>
               <p className="mt-1 text-sm text-ink-300">{detail}</p>
               <p className="mt-2 font-mono text-4xl font-bold text-white" aria-label={`Device user ID ${identity.deviceUserId}`}>{identity.deviceUserId}</p>
             </div>
             <ol className="mt-4 space-y-2 text-sm" aria-label="Enrolment status">
-              <li className="flex items-center gap-2 text-white"><Check size={16} className="text-brand-400" aria-hidden /> User ID reserved</li>
-              {commandIds && <li className={cn('flex items-center gap-2', remote?.add?.status === 'done' ? 'text-white' : 'text-amber-100')}>{remote?.add?.status === 'done' ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Created on the device{remote?.add?.status === 'failed' ? ' — failed' : remote?.add?.status === 'done' ? '' : ' — waiting'}</li>}
-              <li className={cn('flex items-center gap-2', saved ? 'text-white' : 'text-amber-100')}>{saved ? <Check size={16} className="text-brand-400" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Fingerprint saved on device{saved ? (identity.status === 'ENROLLED' ? ' (confirmed by staff)' : ' (reported by the device)') : ' — waiting'}</li>
+              <li className="flex items-center gap-2 text-white"><Check size={16} className="text-brand-fg" aria-hidden /> User ID reserved</li>
+              {commandIds && <li className={cn('flex items-center gap-2', remote?.add?.status === 'done' ? 'text-white' : 'text-amber-100')}>{remote?.add?.status === 'done' ? <Check size={16} className="text-brand-fg" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Created on the device{remote?.add?.status === 'failed' ? ' — failed' : remote?.add?.status === 'done' ? '' : ' — waiting'}</li>}
+              <li className={cn('flex items-center gap-2', saved ? 'text-white' : 'text-amber-100')}>{saved ? <Check size={16} className="text-brand-fg" aria-hidden /> : <span className="ml-1 h-2 w-2 rounded-full bg-amber-300" aria-hidden />} Fingerprint saved on device{saved ? (identity.status === 'ENROLLED' ? ' (confirmed by staff)' : ' (reported by the device)') : ' — waiting'}</li>
             </ol>
             {!online && !ACCESS_CONNECTED && <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] p-3 text-xs text-amber-100">The device isn’t connected, so this screen can’t see it. When the device shows the fingerprint saved, confirm it here.</p>}
             {identity.status === 'PENDING' && (!auto || failed) && <Button size="lg" className="mt-5" disabled={busy} onClick={confirm}>{busy ? 'Saving…' : 'Fingerprint saved on device'}</Button>}

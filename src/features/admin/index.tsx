@@ -6,6 +6,7 @@ import MemberProfile from './members/MemberProfile';
 import ImportMembers from './members/ImportMembers';
 import AttendancePage from './AttendancePage';
 import TrainersPage from './TrainersPage';
+import TrainerProfile from './trainers/TrainerProfile';
 import ActivityPage from './ActivityPage';
 import SettingsPage from './SettingsPage';
 import GymSetup from './GymSetup';
@@ -45,6 +46,7 @@ const AdminApp = () => (
       <Route path="members/:id/edit" element={<MemberForm />} />
       <Route path="attendance" element={<AttendancePage />} />
       <Route path="trainers" element={<TrainersPage />} />
+      <Route path="trainers/:id" element={<TrainerProfile />} />
       <Route path="activity" element={<ActivityPage />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="settings/setup" element={<GymSetup />} />

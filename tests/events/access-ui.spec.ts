@@ -219,7 +219,7 @@ test('navigation: grouped sidebar collapses; phones get the bottom bar', async (
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Blog');
 });
 
-test('match device users: the reader’s user list, clear suggestions, link without touching the device', async ({ page, isMobile }) => {
+test('match device users: the device’s user list, each link chosen by staff — never by a similar name', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop');
   // What the access reader on the gym PC uploads: the device and its own user list
   await seedDoc('gyms/crunch-wakad/devices/devM', { gymId: 'crunch-wakad', name: 'Gym door', model: 'eSSL X2008', serialNumber: 'JJA1254700696', location: '', protocol: 'sdk', enabled: true, nextUserId: 1, lastSeenAt: null, lastSyncAt: null, firmware: null, lastError: null });
@@ -231,12 +231,15 @@ test('match device users: the reader’s user list, clear suggestions, link with
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Match device users');
   const list = page.getByRole('list', { name: 'Device users' });
   const meera = list.getByRole('listitem').filter({ hasText: '#501' });
-  await expect(meera).toContainText('Suggested:');
-  await expect(meera).toContainText('Meera Iyer');
-  await expect(list.getByRole('listitem').filter({ hasText: '#502' })).toContainText('No matching member');   // never guessed
-  await meera.getByRole('button', { name: 'Link' }).click();
+  await expect(meera).not.toContainText('Meera Iyer');                                  // a similar name is not a link
+  await expect(page.getByRole('button', { name: /suggested/i })).toHaveCount(0);
+  await expect(list.getByRole('listitem').filter({ hasText: '#502' })).toContainText('Not linked');
+  await meera.getByRole('button', { name: 'Choose member' }).click();
+  const picker = page.getByRole('dialog', { name: 'Device user #501' });
+  await picker.getByLabel('Which member is this?').fill('Meera');
+  await picker.getByRole('list', { name: 'Matching members' }).getByRole('button', { name: /Meera Iyer/ }).click();
   await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toHaveCount(0);   // done: it leaves "Not linked"
-  await page.getByRole('group', { name: 'Filter device users' }).getByRole('button', { name: /Linked/ }).click();
+  await page.getByRole('group', { name: 'Filter device users' }).getByRole('button', { name: /Members/ }).click();
   await expect(list.getByRole('listitem')).toHaveCount(1);
   await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toContainText('Waiting for the device');   // the reader confirms it
 });

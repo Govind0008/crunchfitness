@@ -1,11 +1,11 @@
 import type { IncomingMessage } from 'node:http';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { firestoreOrNull } from './_lib/firebase.js';
+import { ingestScans } from './_lib/ingest.js';
 import { PROBE_SN, logLine, recordContact, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
 import {
-  OUR_ID, commandText, eventKey, ownHandshake, parseAttlog, parseCommandResults, parseFingerprintPins, parseUsers, scanResult, toIso,
-  type CommandType, type MemberLike, type Scan,
+  OUR_ID, commandText, ownHandshake, parseAttlog, parseCommandResults, parseFingerprintPins, parseUsers, type CommandType,
 } from './_lib/adms.js';
 
 // ADMS relay for the gym's fingerprint device (eSSL X2008). The device's "Cloud Server" points
@@ -81,45 +81,6 @@ async function heartbeat(fs: Firestore, deviceId: string, extra: Record<string, 
   if (!Object.keys(extra).length && Date.now() - lastBeat < 60_000) return;
   lastBeat = Date.now();
   await devRef(fs, deviceId).update({ lastSeenAt: FieldValue.serverTimestamp(), lastError: null, connection: 'relay', ...extra });
-}
-
-/** Scans of linked members → accessEvents (others are ignored: the CRM only shows its own members). */
-async function recordScans(fs: Firestore, deviceId: string, scans: Scan[]) {
-  if (!scans.length) return 0;
-  const pins = [...new Set(scans.map((s) => s.pin))];
-  const idSnaps = await fs.getAll(...pins.map((p) => fs.collection('biometricIdentities').doc(`${deviceId}_${p}`)));
-  const identities = new Map(idSnaps.filter((s) => s.exists).map((s) => [s.get('deviceUserId') as string, { id: s.id, ...s.data() } as { id: string; memberId: string; status: string }]));
-  const memberIds = [...new Set([...identities.values()].map((i) => i.memberId))];
-  const memberSnaps = memberIds.length ? await fs.getAll(...memberIds.map((id) => fs.collection('members').doc(id))) : [];
-  const members = new Map(memberSnaps.filter((s) => s.exists).map((s) => [s.id, s.data() as MemberLike & { lastVisitAt?: Timestamp }]));
-
-  const batch = fs.batch();
-  const visits = new Map<string, Date>();
-  let n = 0;
-  for (const s of scans) {
-    const ident = identities.get(s.pin);
-    const member = ident && members.get(ident.memberId);
-    if (!ident || !member) continue;
-    const day = s.time.slice(0, 10);
-    const { result, reason } = scanResult(ident.status, member, day);
-    batch.set(fs.collection('accessEvents').doc(eventKey(GYM, deviceId, s.pin, s.time)), {
-      gymId: GYM, deviceId, deviceUserId: s.pin, memberId: ident.memberId, at: toIso(s.time), verify: s.verify, result, reason,
-      statusCode: s.status, receivedAt: FieldValue.serverTimestamp(), source: 'adms-relay',
-    });
-    n++;
-    if (result === 'granted') { const t = new Date(toIso(s.time)); if (!visits.has(ident.memberId) || visits.get(ident.memberId)! < t) visits.set(ident.memberId, t); }
-    // A scan proves this user ID really exists on the device
-    if (['PENDING', 'ENROLLED', 'SYNC_FAILED'].includes(ident.status)) {
-      batch.update(fs.collection('biometricIdentities').doc(ident.id), { status: 'SYNCED', lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() });
-      ident.status = 'SYNCED';
-    }
-  }
-  for (const [memberId, t] of visits) {
-    const last = members.get(memberId)?.lastVisitAt?.toDate();
-    if (!last || last < t) batch.update(fs.collection('members').doc(memberId), { lastVisitAt: Timestamp.fromDate(t) });
-  }
-  if (n || visits.size) await batch.commit();
-  return n;
 }
 
 /** The device's users (IDs and names only) for the CRM's Match users screen. */
@@ -253,7 +214,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       await heartbeat(fs, deviceId);
       if (path === 'cdata' && req.method === 'POST' && reply.status < 300) {
-        if (table === 'ATTLOG') await recordScans(fs, deviceId, parseAttlog(text));
+        if (table === 'ATTLOG') await ingestScans(fs, deviceId, parseAttlog(text));
         if (table === 'OPERLOG' || table === 'USERINFO' || /(^|\n)USER /.test(text)) await recordUsers(fs, deviceId, parseUsers(text));
         await recordFingerprints(fs, deviceId, parseFingerprintPins(text));
       }

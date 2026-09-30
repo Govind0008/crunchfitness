@@ -11,7 +11,7 @@ turned on for the collection-group scope. That index is not created automaticall
 
 The emulators don't enforce indexes, so the emulator tests can't prove an index exists.
 
-Checked 2026-09-28, branch `redesign/premium-motion`.
+Checked 2026-09-28, branch `redesign/premium-motion`. Attendance, access and paging indexes checked 2026-09-30.
 
 ## Indexes in `firestore.indexes.json`
 
@@ -25,6 +25,44 @@ Checked 2026-09-28, branch `redesign/premium-motion`.
 
 Indexes 2–4 were never recorded in the repo. They're added so the file matches what the app
 needs, and so `firebase deploy --only firestore:indexes` can't offer to delete them.
+
+## Attendance, access and paging (checked 2026-09-30)
+
+Production was listed read-only on 2026-09-30 (no index was created, changed or deleted).
+
+| # | Collection | Fields | Query that uses it | Production |
+|---|---|---|---|---|
+| 6 | `accessEvents` | `gymId` ↑, `at` ↓ | Access → Activity (everyone), dashboard "punches today" count, attendance check (server) | Exists |
+| 7 | `accessEvents` | `gymId` ↑, `result` ↑, `at` ↑ | Access summary: granted-today count | Exists |
+| 8 | `accessEvents` | `gymId` ↑, `result` ↑, `at` ↓ | Same count; recorded so a deploy doesn't offer to delete it | Exists |
+| 9 | `accessEvents` | `gymId` ↑, `memberId` ↑, `at` ↓ | Member profile integrity check (`accessEventsOfMember`), Activity filtered to one member ("Punches" link) | **Missing: create it.** This is why a member's punches couldn't be read; the profile now shows the query error instead of 0 |
+| 10 | `accessEvents` | `gymId` ↑, `personType` ↑, `at` ↓ | Activity filter Members / Trainers / Unresolved; dashboard "unresolved today" count | **New: create it.** Until then, those filters show a "needs an index" message, and the dashboard shows "—" for unresolved |
+| 11 | `checkins` | `memberId` ↑, `at` ↑ | Existing (member check-in history) | Exists |
+| 12 | `checkins` | `memberId` ↑, `at` ↓ | Recorded so a deploy doesn't offer to delete it | Exists |
+| 13 | `checkins` | `sources` (array-contains), `at` ↓ | Attendance → Fingerprint filter | **New: create it** |
+| 14 | `checkins` | `method` ↑, `at` ↓ | Attendance → Front desk filter | **New: create it** |
+| 15 | `trainerAttendance` | `trainerId` ↑, `date` ↑ | Trainer profile → Attendance (one month) | **New: create it** |
+| 16 | `trainerLeave` | `status` ↑, `from` ↑ | Trainers → Attendance: approved leave covering a day | **New: create it** |
+
+Queries in this work that need no composite index:
+
+| Query | Why no index |
+|---|---|
+| Member visits (`checkins` `memberId ==`, limit 300) | Equality only. The profile's visit counts depend on this query only, so they don't need index 9 |
+| Visits for a day (`checkins` `at` range + `orderBy('at')`) and visit counts | Single field |
+| Trainer attendance for a day (`trainerAttendance` `date ==`) | Equality only |
+| Trainer leave (`trainerLeave` `trainerId ==`) | Equality only |
+| Trainer device links (`biometricIdentities` `gymId ==` + `trainerId ==`) | Equality only, merged |
+| Assigned members (`members` `trainerId ==`, paged by document) | Equality only |
+| Activity log, paged (`activity` `orderBy('at')` + `startAfter`) | Single field |
+| Members list paging (`limit(size + 1)` + `startAfter`) | Same indexes as before; page size doesn't change the index |
+| Attendance check (server): `checkins` `date` range | Single field |
+
+Paging never counts a collection. Each page reads `size + 1` documents; the extra document only
+says whether there's a next page.
+
+To create the new indexes after review: `firebase deploy --only firestore:indexes`. It adds the
+indexes in the file and doesn't change rules. If it offers to **delete** an index, answer **No**.
 
 ## Queries that need no composite index
 

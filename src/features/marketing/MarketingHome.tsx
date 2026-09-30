@@ -47,7 +47,7 @@ const MarketingHome = () => {
     <>
       <Seo title="Creative Desk | Crunch Fitness" description="Staff area" noindex />
       <header>
-        <p className="hud text-brand-400">The Creative Desk</p>
+        <p className="hud text-brand-fg">The Creative Desk</p>
         <h1 className="mt-4 max-w-3xl font-display text-5xl font-bold uppercase leading-[0.9] text-white sm:text-6xl">Build the brand. Tell the story.</h1>
       </header>
       {error && <p role="alert" className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">Some numbers couldn’t load — {error}</p>}
@@ -70,8 +70,8 @@ const MarketingHome = () => {
             { to: '/marketing/events', label: 'Upload event media', icon: <ImagePlus size={18} /> },
             { to: '/marketing/social', label: 'Manage social', icon: <Instagram size={18} /> },
           ].map((a) => (
-            <Link key={a.label} to={a.to} className="flex min-h-[3.5rem] items-center gap-3 rounded-xl bg-white/[0.05] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-400 hover:text-ink-950 [&:hover_span]:text-ink-950">
-              <span className="text-brand-400">{a.icon}</span>{a.label}
+            <Link key={a.label} to={a.to} className="flex min-h-[3.5rem] items-center gap-3 rounded-xl bg-white/[0.05] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-400 hover:text-on-brand [&:hover_span]:text-on-brand">
+              <span className="text-brand-fg">{a.icon}</span>{a.label}
             </Link>
           ))}
         </div>
@@ -84,7 +84,7 @@ const MarketingHome = () => {
             <ul className="mt-3 divide-y divide-white/[0.06]">
               {events.slice(0, 5).map((e) => (
                 <li key={e.id}><Link to={`/marketing/events/${e.id}`} className="group flex items-center gap-4 py-3">
-                  <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-white group-hover:text-brand-300">{e.title}</span><span className="text-xs text-ink-500">{formatEventDate(e.eventDate)}{e.coverImage ? '' : ' · no cover photo yet'}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-white group-hover:text-brand-fg">{e.title}</span><span className="text-xs text-ink-500">{formatEventDate(e.eventDate)}{e.coverImage ? '' : ' · no cover photo yet'}</span></span>
                   <span className="text-xs font-semibold text-ink-300">{STATUS[e.status].admin}</span>
                   <ArrowRight className="h-4 w-4 text-ink-600" aria-hidden />
                 </Link></li>

@@ -51,7 +51,7 @@ const MemberPt = ({ m, pt, trainers, onChange, startAdd, onPay }: { m: Member; p
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-semibold text-white">{p.packageName}</span>
                   <span className="flex gap-1.5">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', st === 'current' ? 'bg-brand-400/15 text-brand-300' : 'bg-white/[0.06] text-ink-400')}>{PERIOD_LABEL[st]}</span>
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', st === 'current' ? 'bg-brand-400/15 text-brand-fg' : 'bg-white/[0.06] text-ink-400')}>{PERIOD_LABEL[st]}</span>
                     <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', ptPaid(p) ? 'bg-white/[0.06] text-ink-300' : 'bg-amber-400/15 text-amber-100')}>{ptPaid(p) ? 'Paid' : 'Not paid yet'}</span>
                   </span>
                 </div>

@@ -111,7 +111,7 @@ const ResultsTab = ({ ev, registrations, results }: { ev: CrunchEvent; registrat
             <ol className="mt-4 space-y-3">
               {ranked.slice(0, 3).map((r, i) => (
                 <li key={r.id} className="flex items-baseline gap-3">
-                  <span className={cn('w-10 font-display text-2xl font-bold', i === 0 ? 'text-brand-400' : 'text-ink-400')}>{ORD[r.rank - 1] ?? `${r.rank}th`}</span>
+                  <span className={cn('w-10 font-display text-2xl font-bold', i === 0 ? 'text-brand-fg' : 'text-ink-400')}>{ORD[r.rank - 1] ?? `${r.rank}th`}</span>
                   <span className="min-w-0 flex-1 truncate text-white">{r.displayName}</span>
                   <span className="text-sm tabular-nums text-ink-300">{formatScore(r.score, cat)}</span>
                 </li>

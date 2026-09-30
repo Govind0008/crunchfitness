@@ -2,6 +2,8 @@ import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, FileText, Instagram, LayoutGrid, LogOut, Megaphone, Menu, UserSquare, X } from 'lucide-react';
 import { signOut } from 'firebase/auth';
+import { useStaffTheme } from '@/lib/theme';
+import ThemeSwitch from '@/components/admin/ThemeSwitch';
 import { auth } from '@/lib/firebase-auth';
 import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
@@ -38,7 +40,7 @@ const MarketingRoute = ({ children }: { children: ReactNode }) => {
       <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
         <Seo title="Creative Desk | Crunch Fitness" description="Staff area" noindex />
         <div className="max-w-md">
-          <p className="hud text-brand-400">The Creative Desk</p>
+          <p className="hud text-brand-fg">The Creative Desk</p>
           <h1 className="mt-4 font-display text-4xl font-bold uppercase text-white">No marketing access</h1>
           <p className="mt-4 text-ink-300">You’re signed in as <strong className="text-white">{user.email}</strong>. Ask the gym owner to add this account to the marketing team in Settings → Staff access.</p>
           <Button variant="outline" className="mt-8" onClick={() => signOut(auth)}>Sign out</Button>
@@ -58,6 +60,7 @@ const Frame = () => {
   const navigate = useNavigate();
   const { role, user } = useRole();
   const [open, setOpen] = useState(false);
+  const theme = useStaffTheme();
   const main = useRef<HTMLElement>(null);
   useEffect(() => { main.current?.scrollTo({ top: 0 }); setOpen(false); }, [pathname]);
   const current = (to: string, end?: boolean) => (end ? pathname.replace(/\/$/, '') === to : pathname.startsWith(to));
@@ -70,7 +73,7 @@ const Frame = () => {
         <div className="flex items-start justify-between border-b border-white/[0.06] px-5 py-5">
           <div className="min-w-0">
             <p className="font-display text-xl font-bold uppercase leading-none tracking-wide text-white">Creative Desk</p>
-            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-400">Crunch Fitness</p>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-fg">Crunch Fitness</p>
             <p className="mt-2 truncate text-xs text-ink-500">{user?.email}</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} className="p-1 text-ink-400 hover:text-white md:hidden" aria-label="Close menu"><X size={18} /></button>
@@ -80,13 +83,14 @@ const Frame = () => {
             const on = current(n.to, n.end);
             return (
               <Link key={n.to} to={n.to} aria-current={on ? 'page' : undefined}
-                className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition-colors', on ? 'bg-brand-400/15 text-brand-300' : 'text-ink-400 hover:bg-white/[0.04] hover:text-white')}>
+                className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition-colors', on ? 'bg-brand-400/15 text-brand-fg' : 'text-ink-400 hover:bg-white/[0.04] hover:text-white')}>
                 {n.icon} {n.label}
               </Link>
             );
           })}
         </nav>
         <div className="space-y-0.5 border-t border-white/[0.06] px-3 py-3">
+          <ThemeSwitch value={theme.pref} onChange={theme.choose} className="mb-2" />
           {role?.role === 'admin' && (
             <Link to="/admin" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-ink-400 hover:bg-white/[0.04] hover:text-white"><ArrowLeft size={16} /> Gym admin</Link>
           )}

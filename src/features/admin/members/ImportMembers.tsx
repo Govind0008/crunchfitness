@@ -57,7 +57,7 @@ function mapRows(rows: string[][], plans: PlanRef[]): Parsed[] | string {
 }
 
 const STATE_UI: Record<RowState, { label: string; cls: string }> = {
-  valid: { label: 'Ready', cls: 'bg-brand-400/15 text-brand-300' },
+  valid: { label: 'Ready', cls: 'bg-brand-400/15 text-brand-fg' },
   duplicate: { label: 'Already a member', cls: 'bg-amber-400/15 text-amber-200' },
   in_file: { label: 'Repeated in file', cls: 'bg-amber-400/15 text-amber-200' },
   invalid: { label: 'Missing information', cls: 'bg-red-500/15 text-red-200' },
@@ -107,7 +107,7 @@ const CsvImport = () => {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-brand-400 px-5 py-2.5 text-sm font-semibold text-ink-950 hover:bg-brand-300 focus-within:ring-2 focus-within:ring-brand-400/50">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-brand-400 px-5 py-2.5 text-sm font-semibold text-on-brand hover:bg-brand-300 focus-within:ring-2 focus-within:ring-brand-400/50">
           <FileUp className="h-4 w-4" aria-hidden /> Choose CSV file
           <input type="file" accept=".csv,text/csv" className="sr-only" aria-label="Choose CSV file" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </label>

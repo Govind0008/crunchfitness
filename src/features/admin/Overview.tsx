@@ -31,9 +31,9 @@ const greeting = () => {
 };
 
 const Panel = ({ id, title, link, children, className }: { id: string; title: string; link?: { to: string; label: string }; children: ReactNode; className?: string }) => (
-  <section aria-labelledby={id} className={cn('rounded-2xl border border-white/[0.08] bg-ink-900 p-5', className)}>
+  <section aria-labelledby={id} className={cn('flex min-w-0 flex-col rounded-2xl border border-white/[0.08] bg-ink-900 p-4', className)}>
     <div className="flex items-center justify-between gap-3"><h2 id={id} className="font-sans text-sm font-bold uppercase tracking-wider text-white">{title}</h2>{link && <Link to={link.to} className="text-xs text-ink-400 hover:text-white">{link.label} →</Link>}</div>
-    <div className="mt-4">{children}</div>
+    <div className="mt-3 min-h-0 flex-1">{children}</div>
   </section>
 );
 
@@ -79,51 +79,53 @@ const Overview = () => {
 
   return (
     <AdminShell title={greeting()} nav="dashboard" area="Dashboard" bare>
-      <header className="mb-8">
-        <h1 className="font-display text-5xl font-bold uppercase leading-none text-white sm:text-6xl">{greeting()}</h1>
-        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.24em] text-ink-400">{GYM.name.replace(' Club', '')} · Wakad</p>
-        <p className="mt-4 text-base text-ink-300">{!alerts ? 'Checking what needs your attention…' : alerts.length ? 'Here’s what needs your attention today.' : 'Nothing needs your attention right now.'}</p>
+      <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl font-bold uppercase leading-none tracking-wide text-white">{greeting()}</h1>
+          <p className="mt-1 text-sm text-ink-400">{!alerts ? 'Checking what needs your attention…' : alerts.length ? 'Here’s what needs your attention today.' : 'Nothing needs your attention right now.'}</p>
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink-500">{GYM.name.replace(' Club', '')} · Wakad · {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' })}</p>
       </header>
       {failed && <div className="mb-6"><ErrorNote what="Some of today’s numbers couldn’t load." error={failed} onRetry={() => dash.refetch()} /></div>}
 
       <section aria-label="Today at a glance" className="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-900 lg:grid-cols-4">
-        {loading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 animate-pulse border-white/[0.06] p-5 motion-reduce:animate-none [&:not(:last-child)]:border-r" />) : [
+        {loading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[5.25rem] animate-pulse border-white/[0.06] p-5 motion-reduce:animate-none [&:not(:last-child)]:border-r" />) : [
           { label: 'Active members', value: !membersUnavailable && counts?.total ? counts.active : '—', sub: membersUnavailable ? 'Unavailable' : !counts?.total ? 'No members added yet' : `of ${counts.total} member${counts.total === 1 ? '' : 's'}`, to: '/admin/members?filter=active' },
-          { label: 'Check-ins today', value: checkIns ?? '—', sub: checkIns == null ? 'Unavailable' : access?.scansToday ? `Manual · plus ${access.scansToday} door scans` : 'Manual check-ins', to: '/admin/attendance' },
+          { label: 'Visits today', value: checkIns ?? '—', sub: checkIns == null ? 'Unavailable' : d?.visitsWeek != null ? `${d.visitsWeek} this week · fingerprint and desk` : 'Fingerprint and front desk', to: '/admin/attendance' },
           { label: 'Today’s collection', value: collection_ && range === 'today' ? rupees(collection_.paise) : todays ? rupees(split.membership + split.pt + split.other) : '…', sub: todays?.length ? `Membership ${rupees(split.membership)} · PT ${rupees(split.pt)} · Other ${rupees(split.other)}` : 'No payments yet today', to: '/admin/payments' },
           { label: 'Renewals due', value: due ? due.length : '—', sub: due?.length ? `Estimated next renewals ${rupees(dueEstimate)}` : 'No renewals due', to: '/admin/payments/dues', warn: !!due?.length },
         ].map((k) => (
-          <Link key={k.label} to={k.to} className="group border-white/[0.06] p-5 transition-colors hover:bg-white/[0.03] max-lg:[&:nth-child(odd)]:border-r max-lg:[&:nth-child(-n+2)]:border-b lg:[&:not(:last-child)]:border-r">
+          <Link key={k.label} to={k.to} className="group border-white/[0.06] px-4 py-3 transition-colors hover:bg-white/[0.03] max-lg:[&:nth-child(odd)]:border-r max-lg:[&:nth-child(-n+2)]:border-b lg:[&:not(:last-child)]:border-r">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">{k.label}</p>
-            <p className={cn('mt-1 font-display text-4xl font-bold leading-none tabular-nums', k.warn ? 'text-amber-200' : 'text-white')}>{k.value}</p>
+            <p className={cn('mt-1 font-display text-3xl font-bold leading-none tabular-nums', k.warn ? 'text-amber-200' : 'text-white')}>{k.value}</p>
             <p className="mt-1.5 truncate text-xs text-ink-500 group-hover:text-ink-400">{k.sub}</p>
           </Link>
         ))}
       </section>
 
-      <section aria-labelledby="actions-heading" className="mt-6">
+      <section aria-labelledby="actions-heading" className="mt-3">
         <h2 id="actions-heading" className="sr-only">Quick actions</h2>
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {([
-            { task: 'add', label: 'Add member', icon: <UserPlus size={20} /> },
-            { task: 'pay', label: 'Collect payment', icon: <IndianRupee size={20} /> },
-            { task: 'checkin', label: 'Check in', icon: <ClipboardCheck size={20} /> },
-            { task: 'enroll', label: 'Enroll access', icon: <Fingerprint size={20} /> },
+            { task: 'add', label: 'Add member', icon: <UserPlus size={18} /> },
+            { task: 'pay', label: 'Collect payment', icon: <IndianRupee size={18} /> },
+            { task: 'checkin', label: 'Check in', icon: <ClipboardCheck size={18} /> },
+            { task: 'enroll', label: 'Enroll access', icon: <Fingerprint size={18} /> },
           ] as const).map((q, i) => (
-            <button key={q.label} type="button" onClick={() => { setEnrollFor(null); setTask(q.task); }} aria-haspopup="dialog" className={cn('flex min-h-16 items-center gap-3 rounded-2xl px-4 py-3 text-left text-base font-bold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950',
-              i === 0 ? 'bg-brand-400 text-ink-950 hover:bg-brand-300' : 'border border-white/[0.1] bg-ink-900 text-white hover:border-brand-400/50 hover:bg-white/[0.03] [&>span]:text-brand-400')}>
+            <button key={q.label} type="button" onClick={() => { setEnrollFor(null); setTask(q.task); }} aria-haspopup="dialog" className={cn('flex min-h-12 items-center gap-3 rounded-xl px-4 py-2.5 text-left text-sm font-bold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950',
+              i === 0 ? 'bg-brand-400 text-on-brand hover:bg-brand-300' : 'border border-white/[0.1] bg-ink-900 text-white hover:border-brand-400/50 hover:bg-white/[0.03] [&>span]:text-brand-fg')}>
               <span>{q.icon}</span>{q.label}
             </button>
           ))}
         </div>
       </section>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-5">
+      <div className="mt-4 grid gap-3 lg:grid-cols-5">
         <Panel id="attention-heading" title="Needs attention" className="lg:col-span-3">
           {!alerts ? <SkeletonRows rows={3} /> : alerts.length === 0 ? <EmptyNote title="All clear" body="No renewals, enquiries or access issues waiting." /> : (
             <ul className="-mt-1 divide-y divide-white/[0.06]">
               {alerts.map((a) => (
-                <li key={a.what} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <li key={a.what} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
                   <span className={cn('h-2 w-2 shrink-0 rounded-full', a.tone === 'warn' ? 'bg-amber-300' : 'bg-sky-300')} aria-hidden />
                   <span className="min-w-0 flex-1 text-sm text-white">{a.what}</span>
                   <Button asChild size="sm" variant="outline"><Link to={a.to}>{a.action}</Link></Button>
@@ -134,10 +136,10 @@ const Overview = () => {
         </Panel>
         <Panel id="activity-heading" title="Recent activity" link={{ to: '/admin/activity', label: 'View all activity' }} className="lg:col-span-2">
           {!activity ? <SkeletonRows rows={4} /> : activity.length === 0 ? <EmptyNote title="Quiet so far" body="Payments, new members and check-ins will show here as they happen." /> : (
-            <ol className="-mt-1 space-y-3 text-sm">
+            <ol className="-mt-1 max-h-72 space-y-2.5 overflow-y-auto overscroll-contain pr-1 text-sm" tabIndex={0} aria-label="Recent activity">
               {activity.map((a) => (
-                <li key={a.id} className="grid grid-cols-[3.5rem_1fr] gap-3">
-                  <span className="pt-0.5 font-mono text-xs tabular-nums text-ink-500">{clock(a.at)}</span>
+                <li key={a.id} className="grid grid-cols-[4.25rem_1fr] gap-2">
+                  <span className="whitespace-nowrap pt-0.5 font-mono text-xs tabular-nums text-ink-500">{clock(a.at)}</span>
                   <span className="min-w-0 text-white">{a.action}{typeof a.meta?.name === 'string' ? <span className="text-ink-400"> · {a.meta.name}</span> : null}{typeof a.meta?.amount === 'string' ? <span className="text-ink-400"> · {a.meta.amount}</span> : null}</span>
                 </li>
               ))}
@@ -146,44 +148,47 @@ const Overview = () => {
         </Panel>
       </div>
 
-      <h2 className="mb-3 mt-10 font-sans text-xs font-bold uppercase tracking-[0.18em] text-ink-400">Today’s operations</h2>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <h2 className="mb-2 mt-5 font-sans text-xs font-bold uppercase tracking-[0.18em] text-ink-400">Today’s operations</h2>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Panel id="ops-att" title="Attendance" link={{ to: '/admin/attendance', label: 'Open' }}>
-          <p className="font-display text-4xl font-bold tabular-nums text-white">{checkIns ?? '—'}<span className="ml-2 font-sans text-sm font-normal text-ink-400">check-ins</span></p>
-          <p className="mt-1 text-xs text-ink-500">{access?.scansToday ? `Manual · plus ${access.scansToday} door scans` : 'Manual check-ins today'}</p>
+          <p className="font-display text-3xl font-bold tabular-nums text-white">{checkIns ?? '—'}<span className="ml-2 font-sans text-sm font-normal text-ink-400">visit{checkIns === 1 ? '' : 's'} today</span></p>
+          <p className="mt-1 text-xs text-ink-500">{d?.visitsWeek != null ? `${d.visitsWeek} this week · ` : ''}one per member per day</p>
+          <div className="mt-4 border-t border-white/[0.06] pt-3">
+            <div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Trainers</p><Link to="/admin/trainers?tab=attendance" className="text-xs text-ink-400 hover:text-white">Attendance →</Link></div>
+            {!d?.trainers ? <p className="mt-1 text-sm text-ink-500">{d ? 'Unavailable' : '…'}</p> : (
+              <p className="mt-1 text-sm text-ink-200"><span className="font-semibold text-white">{d.trainers.present}</span> of {d.trainers.team} present · {d.trainers.completed} completed{d.trainers.missing ? <> · <span className="text-amber-200">{d.trainers.missing} missing check-out</span></> : null}</p>
+            )}
+          </div>
         </Panel>
         <Panel id="payments-heading" title="Payments" link={{ to: '/admin/payments', label: 'Open' }}>
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="font-display text-4xl font-bold tabular-nums text-white">{collection_ ? rupees(collection_.paise) : '…'}</p>
-            <div className="flex gap-1" role="group" aria-label="Collection period">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+            <p className="font-display text-3xl font-bold tabular-nums text-white">{collection_ ? rupees(collection_.paise) : '…'}</p>
+            <div className="flex gap-1 whitespace-nowrap" role="group" aria-label="Collection period">
               {(Object.keys(RANGE_LABEL) as Range[]).map((r) => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)} className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', range === r ? 'bg-white text-ink-950' : 'text-ink-400 hover:text-white')}>{RANGE_LABEL[r]}</button>)}
             </div>
           </div>
           <p className="mt-1 text-xs text-ink-500">{range === 'today' ? (todays?.length ? `${todays.filter((p) => p.status === 'paid').length} payment${todays.length === 1 ? '' : 's'}${lastPayment ? ` · last ${PAYMENT_LABEL[paymentTypeOf(lastPayment)].toLowerCase()} from ${lastPayment.memberName}` : ''}` : 'Today’s collection is clear.') : collection_ ? `${collection_.payments} receipt${collection_.payments === 1 ? '' : 's'}` : ''}</p>
         </Panel>
-        <Panel id="access-heading" title="Access control" link={{ to: '/admin/access', label: 'Open' }} className="sm:col-span-2 xl:col-span-1">
+        <Panel id="access-heading" title="Access control" link={{ to: '/admin/access', label: 'Open' }} >
           {!access ? <SkeletonRows rows={2} /> : (
             <>
               <dl className="grid grid-cols-3 gap-2 text-sm">
                 <div><dt className="text-xs text-ink-500">Devices</dt><dd className="font-display text-2xl font-bold text-white">{access.devices.length ? `${online} / ${access.devices.length}` : '—'}</dd></div>
-                <div><dt className="text-xs text-ink-500">Verified</dt><dd className="font-display text-2xl font-bold text-white">{access.grantedToday}</dd></div>
-                <div><dt className="text-xs text-ink-500">Not let in</dt><dd className="font-display text-2xl font-bold text-white">{access.scansToday - access.grantedToday}</dd></div>
+                <div><dt className="text-xs text-ink-500">Punches</dt><dd className="font-display text-2xl font-bold text-white">{access.scansToday}</dd></div>
+                <div><dt className="text-xs text-ink-500">Unresolved</dt><dd className={cn('font-display text-2xl font-bold', access.unresolvedToday ? 'text-amber-200' : 'text-white')}>{access.unresolvedToday ?? '—'}</dd></div>
               </dl>
               <p className="mt-2 text-xs text-ink-500">{access.pending ? `${access.pending} enrolment${access.pending === 1 ? '' : 's'} waiting` : 'No enrolments waiting'}{access.failed ? ` · ${access.failed} sync failed` : ''}</p>
               {!ACCESS_CONNECTED && <p className="mt-2 text-xs text-amber-200/90">Device integration not configured — the F22 still runs through the old system.</p>}
             </>
           )}
         </Panel>
-      </div>
-
-      <div className="mt-6">
         <Panel id="events-heading" title="Upcoming events" link={{ to: '/admin/events', label: 'All events' }}>
           {!events ? <SkeletonRows rows={2} /> : upcoming.length === 0 ? (
             <EmptyNote title="No upcoming events" body="Nothing scheduled yet."><Button asChild size="sm"><Link to="/admin/events/new"><CalendarPlus /> Create event</Link></Button></EmptyNote>
           ) : (
             <ul className="-mt-1 divide-y divide-white/[0.06]">
               {upcoming.map((e) => (
-                <li key={e.id}><Link to={`/admin/events/${e.id}`} className="flex items-center gap-4 py-3 transition-colors hover:text-brand-300">
+                <li key={e.id}><Link to={`/admin/events/${e.id}`} className="flex items-center gap-4 py-2 transition-colors hover:text-brand-fg">
                   <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-white">{e.title}</span><span className="text-xs text-ink-500">{formatEventDate(e.eventDate)} · {e.registrationCount} registered</span></span>
                   <span className="text-xs font-semibold text-ink-300">{STATUS[e.status].admin}</span>
                 </Link></li>
@@ -192,7 +197,8 @@ const Overview = () => {
           )}
         </Panel>
       </div>
-      <p className="mt-6 text-xs text-ink-500">“Expiring soon” means within {expDays} days — change it in Settings. Renewal amounts are estimates from current plan prices, not money owed.</p>
+
+      <p className="mt-4 text-xs text-ink-500">“Expiring soon” means within {expDays} days — change it in Settings. Renewal amounts are estimates from current plan prices, not money owed.</p>
 
       <AddMemberDrawer open={task === 'add'} onOpenChange={(o) => !o && setTask(null)} />
       <SideDrawer open={task === 'pay'} onOpenChange={(o) => !o && setTask(null)} title="Collect payment" description="Find the member, then record what they paid">

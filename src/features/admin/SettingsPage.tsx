@@ -44,7 +44,7 @@ const StaffAccess = () => {
         {!adding && <Button size="sm" variant="outline" onClick={() => { setAdding(true); setMsg(null); }}><UserPlus /> Add marketing login</Button>}
       </div>
       <p className="mt-1 text-sm text-ink-400">Marketing logins use the Creative Desk (<code className="text-ink-200">/marketing/login</code>). They can’t see members, phone numbers, payments or check-ins. Trainer logins are under Trainers.</p>
-      {msg && <p role={msg.ok ? 'status' : 'alert'} className={msg.ok ? 'mt-3 text-sm text-brand-300' : 'mt-3 text-sm text-red-300'}>{msg.text}</p>}
+      {msg && <p role={msg.ok ? 'status' : 'alert'} className={msg.ok ? 'mt-3 text-sm text-brand-fg' : 'mt-3 text-sm text-red-300'}>{msg.text}</p>}
       {adding && (
         <form onSubmit={add} className="mt-4 grid gap-3 rounded-xl border border-white/10 p-4 sm:grid-cols-3" noValidate>
           <Field label="Name" htmlFor="st-name"><input id="st-name" className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>

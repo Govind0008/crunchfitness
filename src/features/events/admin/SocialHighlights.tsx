@@ -40,7 +40,7 @@ const SocialHighlights = () => {
             {items.map((h) => (
               <li key={h.id} className="flex flex-wrap items-center gap-3 p-4">
                 <a href={h.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sm text-white underline-offset-4 hover:underline">{h.url}</a>
-                <span className={h.visible ? 'text-xs font-bold text-brand-400' : 'text-xs text-ink-500'}>{h.visible ? 'On website' : 'Hidden'}</span>
+                <span className={h.visible ? 'text-xs font-bold text-brand-fg' : 'text-xs text-ink-500'}>{h.visible ? 'On website' : 'Hidden'}</span>
                 <Button size="sm" variant="secondary" onClick={() => setHighlightVisible(h.id, !h.visible)}>{h.visible ? <><EyeOff /> Hide</> : <><Eye /> Show</>}</Button>
                 <ConfirmButton size="sm" variant="secondary" confirm={{ title: 'Remove this post?', body: 'It will no longer appear on the website.' }} onConfirm={() => removeHighlight(h.id)}><Trash2 /><span className="sr-only">Remove</span></ConfirmButton>
               </li>
