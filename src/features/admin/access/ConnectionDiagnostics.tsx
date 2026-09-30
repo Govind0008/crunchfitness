@@ -28,7 +28,10 @@ const when = (iso: string | null) => (iso ? fmtTime({ toDate: () => new Date(iso
 async function call<T>(check: string, method = 'GET'): Promise<T> {
   const token = await auth.currentUser?.getIdToken();
   const r = await fetch(`/api/adms?check=${check}`, { method, headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  if (!r.ok) throw new Error(r.status === 401 ? 'Only admins can see device diagnostics.' : r.status === 404 ? 'The diagnostics service isn’t deployed yet.' : `HTTP ${r.status}`);
+  if (!r.ok) {
+    const detail = await r.json().then((j: { error?: string }) => j.error).catch(() => '');
+    throw new Error(r.status === 401 ? 'Only admins can see device diagnostics.' : r.status === 404 ? 'The diagnostics service isn’t deployed yet.' : detail || `HTTP ${r.status}`);
+  }
   return r.json() as Promise<T>;
 }
 
