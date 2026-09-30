@@ -449,7 +449,7 @@ const MemberProfile = () => {
                 {shown.slice(0, 100).map((v) => (
                   <li key={v.id} className="flex items-center gap-4 px-4 py-3 text-sm">
                     <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', v.kind === 'manual' ? 'bg-sky-300' : 'bg-brand-400')} aria-hidden />
-                    <span className="min-w-0 flex-1 truncate text-white">{v.how}{v.punches && v.punches > 1 ? <span className="text-ink-400"> · {v.punches} punches, last {fmtWhen(v.lastAt ?? v.at).split(', ').pop()}</span> : null}</span>
+                    <span className="min-w-0 flex-1 truncate text-white">{v.how}{v.punches && v.punches > 1 ? <span className="text-ink-400"> · scanned {v.punches} times (again at {fmtWhen(v.lastAt ?? v.at).split(', ').pop()})</span> : null}</span>
                     {v.eventIds?.length ? <Link to={`/admin/access?member=${m.id}&day=${v.day}`} className="text-xs text-ink-400 hover:text-white">Punches</Link> : null}
                     <span className="tabular-nums text-ink-400">{fmtWhen(v.at)}</span>
                   </li>

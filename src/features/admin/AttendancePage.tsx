@@ -64,16 +64,16 @@ const AttendancePage = () => {
             : p.rows.length === 0 && !(source !== 'biometric' && earlier.length) ? <EmptyNote title={isToday ? 'No visits yet today' : 'No visits that day'} body={isToday ? 'Members appear here when they punch in or are checked in at the desk.' : 'Nothing was recorded for this day.'} />
             : (
               <DataRegion>
-                <HeadRow className="md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]"><span>First in</span><span>Member</span><span>Source</span><span>Punches</span><span className="hidden xl:block">Device</span></HeadRow>
+                <HeadRow className="md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]"><span>Arrived</span><span>Member</span><span>Source</span><span>Scans</span><span className="hidden xl:block">Device</span></HeadRow>
                 <ul className="divide-y divide-white/[0.06]" aria-label="Visits">
                   {p.rows.map((v) => (
                     <li key={v.id}>
                       <Link to={`/admin/members/${v.memberId}?tab=attendance`} className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.03] md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]">
                         <span className="font-mono tabular-nums text-ink-400">{clock(v.at?.toMillis())}</span>
                         <span className="min-w-0"><span className="block truncate font-semibold text-white">{v.memberName || 'Member'}</span>
-                          <span className="block truncate text-xs text-ink-400 md:hidden">{v.punchCount && v.punchCount > 1 ? `${v.punchCount} punches, last ${clock(v.lastAt?.toMillis())}` : v.punchCount ? '1 punch' : 'Checked in at the desk'}</span></span>
+                          <span className="block truncate text-xs text-ink-400 md:hidden">{v.punchCount && v.punchCount > 1 ? `Scanned ${v.punchCount} times · again at ${clock(v.lastAt?.toMillis())}` : v.punchCount ? '1 punch' : 'Checked in at the desk'}</span></span>
                         <span><Pill tone={sourceOf(v) === 'Front desk' ? 'info' : 'ok'}>{sourceOf(v) === 'Front desk' ? 'Desk' : sourceOf(v) === 'Fingerprint' ? 'Fingerprint' : 'Both'}</Pill></span>
-                        <span className="hidden text-ink-300 md:block">{v.punchCount ? `${v.punchCount}${v.punchCount > 1 ? ` · last ${clock(v.lastAt?.toMillis())}` : ''}` : '—'}</span>
+                        <span className="hidden text-ink-300 md:block">{v.punchCount ? `${v.punchCount}${v.punchCount > 1 ? ` · again at ${clock(v.lastAt?.toMillis())}` : ''}` : '—'}</span>
                         <span className="hidden truncate text-ink-300 xl:block">{v.deviceId ? devices?.get(v.deviceId) ?? 'Device' : 'Front desk'}</span>
                       </Link>
                     </li>
@@ -91,7 +91,7 @@ const AttendancePage = () => {
               </DataRegion>
             )}
           <Pagination p={p} label="Visits" count={p.rows?.length} />
-          <p className="mt-2 flex-shrink-0 text-xs text-ink-500">A member who punches several times in a day is one visit. Every punch, including ones not linked to anyone yet, is in <Link to="/admin/access?tab=activity" className="font-semibold text-ink-300 hover:text-white">Access → Activity</Link>.</p>
+          <p className="mt-2 flex-shrink-0 text-xs text-ink-500">The device is at the entrance, so a scan means arriving; more scans the same day (coming back in, or a second try) stay one visit. Every punch, including ones not linked to anyone yet, is in <Link to="/admin/access?tab=activity" className="font-semibold text-ink-300 hover:text-white">Access → Activity</Link>.</p>
         </section>
 
         <aside className="order-first flex-shrink-0 space-y-3 xl:order-none" aria-label="Attendance details">

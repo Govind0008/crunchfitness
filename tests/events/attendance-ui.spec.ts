@@ -64,7 +64,7 @@ test('member profile: visits come from attendance records; punches missing from 
   const list = page.getByRole('list', { name: 'Attendance history' });
   await expect(list.getByRole('listitem')).toHaveCount(1);                              // two punches, one visit
   await expect(list).toContainText('Fingerprint');
-  await expect(list).toContainText('2 punches');
+  await expect(list).toContainText('scanned 2 times');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await shot(page, 'member-attendance-dark');
 
