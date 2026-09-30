@@ -81,7 +81,7 @@ const PlansPage = () => {
             </div>
           )}
           <div className="flex flex-wrap gap-2 border-t border-white/[0.08] pt-5">
-            <Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing === 'new' ? 'Add plan' : 'Save plan'}</Button>
+            <Button type="submit" loading={busy} loadingText="Saving…">{editing === 'new' ? 'Add plan' : 'Save plan'}</Button>
             <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             {editing && editing !== 'new' && <ConfirmButton size="default" variant="secondary" className="ml-auto" confirm={{ title: `Delete the ${editing.duration} plan?`, body: 'It disappears from the website. Members already on it keep their dates; their plan shows as “no longer exists”.' }} onConfirm={async () => { await deletePlan(editing, actor); setEditing(null); }}><Trash2 /><span className="sr-only">Delete plan</span></ConfirmButton>}
           </div>

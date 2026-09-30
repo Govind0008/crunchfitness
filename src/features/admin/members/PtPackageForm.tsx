@@ -41,7 +41,7 @@ const PtPackageForm = ({ m, trainers, onSaved, onCancel }: { m: Member; trainers
       <Field label="Notes" hint="Optional" htmlFor="pt-notes"><input id="pt-notes" className={inputCls} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
       <p className="text-xs text-ink-500 sm:col-span-2">Personal training is separate from the gym membership — it doesn’t extend it or open the door.</p>
       <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save PT package'}</Button>
+        <Button type="submit" loading={busy} loadingText="Saving…">Save PT package</Button>
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </form>

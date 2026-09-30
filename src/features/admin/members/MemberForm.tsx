@@ -125,7 +125,7 @@ const MemberForm = () => {
         <Field label="Notes" hint="Optional — visible to staff only" htmlFor="m-notes"><textarea id="m-notes" rows={3} className={cn(inputCls, 'h-auto py-3')} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
         <p className="text-xs text-ink-500">Adding a member doesn’t create a login. Client-portal logins are still created by the member’s trainer in the trainer portal.</p>
         <div className="flex gap-3 border-t border-white/[0.08] pt-6">
-          <Button type="submit" size="lg" disabled={busy}>{busy ? 'Saving…' : existing ? 'Save changes' : 'Add member'}</Button>
+          <Button type="submit" size="lg" loading={busy} loadingText="Saving…">{existing ? 'Save changes' : 'Add member'}</Button>
           <Button asChild variant="ghost" size="lg"><Link to={existing ? `/admin/members/${existing.id}` : '/admin/members'}>Cancel</Link></Button>
         </div>
       </form>

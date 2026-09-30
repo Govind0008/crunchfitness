@@ -112,7 +112,7 @@ const TrainersPage = () => {
           <Field label="Email" htmlFor="tl-email"><input id="tl-email" type="email" autoComplete="off" className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Password" hint="At least 8 characters — share it privately" htmlFor="tl-pw"><input id="tl-pw" type="password" autoComplete="new-password" className={inputCls} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
           <div className="flex gap-2 border-t border-white/[0.08] pt-5">
-            <Button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create login'}</Button>
+            <Button type="submit" loading={busy} loadingText="Creating…">Create login</Button>
             <Button type="button" variant="ghost" onClick={() => setLoginFor(null)}>Cancel</Button>
           </div>
         </form>

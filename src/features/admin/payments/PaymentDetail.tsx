@@ -93,7 +93,7 @@ const PaymentDetail = () => {
           {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy} className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/5">Cancel</AlertDialogCancel>
-            <Button variant="destructive" disabled={busy} onClick={doVoid}>{busy ? 'Voiding…' : 'Void payment'}</Button>
+            <Button variant="destructive" loading={busy} loadingText="Voiding…" onClick={doVoid}>Void payment</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -22,6 +22,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="preload" as="image" href="/images/hero-deadlift-640.webp" imagesrcset="/images/hero-deadlift-640.webp 640w, /images/hero-deadlift-1200.webp 1200w" imagesizes="(min-width: 1024px) 54vw, 100vw" />
   <meta name="theme-color" content="#0a0a0b" />
+  <!-- Staff area only: apply the saved Light/Dark/System theme before the first paint, so the
+       boot screen and shell never flash the wrong theme. Mirrors src/lib/theme.ts. -->
+  <script>
+    (function () {
+      try {
+        var p = location.pathname;
+        if (!/^\/(admin|marketing)(\/|$)/.test(p) || /^\/(admin|marketing)\/login/.test(p)) return;
+        var t = localStorage.getItem('crunch.admin.theme') || 'dark';
+        if (t === 'system') t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+      } catch (e) { /* storage blocked: the dark default applies */ }
+    })();
+  </script>
 
   <meta property="og:site_name" data-seo-fallback content="Crunch Fitness Club" />
   <meta property="og:title" data-seo-fallback content="Crunch Fitness Club | Strength-First Gym in Wakad, Pune" />

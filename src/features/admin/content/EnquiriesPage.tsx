@@ -124,7 +124,7 @@ const EnquiriesPage = () => {
           <Field label="Interested in" hint="Optional, e.g. 3 Months" htmlFor="ne-plan"><input id="ne-plan" className={inputCls} value={f.plan} onChange={(e) => setF({ ...f, plan: e.target.value })} /></Field>
           <Field label="Note" hint="Optional" htmlFor="ne-msg"><textarea id="ne-msg" rows={3} className={cn(inputCls, 'h-auto py-3')} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} /></Field>
           <Field label="Follow up on" hint="Optional" htmlFor="ne-follow"><input id="ne-follow" type="date" className={inputCls} value={f.followUpOn} onChange={(e) => setF({ ...f, followUpOn: e.target.value })} /></Field>
-          <div className="flex gap-2"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add enquiry'}</Button><Button type="button" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button></div>
+          <div className="flex gap-2"><Button type="submit" loading={busy} loadingText="Saving…">Add enquiry</Button><Button type="button" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button></div>
         </form>
       </SideDrawer>
     </AdminShell>

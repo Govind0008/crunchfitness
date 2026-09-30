@@ -38,7 +38,7 @@ export const ManualCheckout = ({ day, onClose, onDone }: { day: TrainerDay | nul
         <Field label="Left at" htmlFor="mc-time"><input id="mc-time" type="time" className={inputCls} value={time} onChange={(e) => setTime(e.target.value)} /></Field>
         <Field label="Reason" htmlFor="mc-reason"><input id="mc-reason" className={inputCls} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} /></Field>
         <div className="flex gap-2 border-t border-white/[0.08] pt-5">
-          <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add check-out'}</Button>
+          <Button type="submit" loading={busy} loadingText="Saving…">Add check-out</Button>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
       </form>
@@ -81,7 +81,7 @@ export const LeaveDrawer = ({ open, trainer, existing, onClose, onDone }: { open
         <Field label="Reason" htmlFor="lv-reason"><input id="lv-reason" className={inputCls} value={f.reason} maxLength={300} onChange={(e) => setF({ ...f, reason: e.target.value })} /></Field>
         <Field label="Notes" hint="Optional" htmlFor="lv-notes"><textarea id="lv-notes" rows={3} className={`${inputCls} h-auto py-3`} value={f.notes} maxLength={1000} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <div className="flex gap-2 border-t border-white/[0.08] pt-5">
-          <Button type="submit" disabled={busy}>{busy ? 'Saving…' : existing ? 'Save changes' : 'Record leave'}</Button>
+          <Button type="submit" loading={busy} loadingText="Saving…">{existing ? 'Save changes' : 'Record leave'}</Button>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
       </form>

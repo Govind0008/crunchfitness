@@ -87,7 +87,7 @@ const OffersPage = () => {
           </fieldset>
           <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" className="h-5 w-5 accent-[#b0d43f]" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Show on the website between these dates (untick to keep it as a draft)</label>
           <div className="flex flex-wrap gap-2 border-t border-white/[0.08] pt-5">
-            <Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing === 'new' ? 'Create offer' : 'Save offer'}</Button>
+            <Button type="submit" loading={busy} loadingText="Saving…">{editing === 'new' ? 'Create offer' : 'Save offer'}</Button>
             <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             {editing && editing !== 'new' && <>
               <Button type="button" variant="outline" className="ml-auto" onClick={async () => { await setOfferActive(editing, !editing.active); setEditing(null); }}>{editing.active ? 'Switch off' : 'Switch on'}</Button>

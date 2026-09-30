@@ -3,6 +3,7 @@ import { RotateCcw, Search } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import TableSkeleton from '@/components/loading/TableSkeleton';
 
 // Small shared pieces for the admin: side drawers, status dots, friendly errors, skeletons.
 
@@ -48,17 +49,8 @@ export const ErrorNote = ({ what, error, onRetry }: { what: string; error?: stri
   );
 };
 
-/** Placeholder rows shaped like the list that's loading. */
-export const SkeletonRows = ({ rows = 4, className }: { rows?: number; className?: string }) => (
-  <div className={cn('space-y-2', className)} role="status" aria-label="Loading">
-    {Array.from({ length: rows }).map((_, i) => (
-      <div key={i} className="flex items-center gap-3 rounded-xl bg-ink-900 p-3">
-        <div className="h-9 w-9 animate-pulse rounded-full bg-white/[0.06] motion-reduce:animate-none" />
-        <div className="flex-1 space-y-2"><div className="h-3 w-1/3 animate-pulse rounded bg-white/[0.06] motion-reduce:animate-none" /><div className="h-2.5 w-1/2 animate-pulse rounded bg-white/[0.04] motion-reduce:animate-none" /></div>
-      </div>
-    ))}
-  </div>
-);
+/** Placeholder rows shaped like the list that's loading (the shared TableSkeleton). */
+export const SkeletonRows = TableSkeleton;
 
 /** An empty state that reads as intentional, with the next step. */
 export const EmptyNote = ({ title, body, children }: { title: string; body: string; children?: ReactNode }) => (

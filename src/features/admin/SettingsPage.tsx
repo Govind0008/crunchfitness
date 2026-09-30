@@ -51,7 +51,7 @@ const StaffAccess = () => {
           <Field label="Email" htmlFor="st-email"><input id="st-email" type="email" autoComplete="off" className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Password" hint="At least 8 characters — share it privately" htmlFor="st-pw"><input id="st-pw" type="password" autoComplete="new-password" className={inputCls} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
           <div className="flex gap-2 sm:col-span-3">
-            <Button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create marketing login'}</Button>
+            <Button type="submit" loading={busy} loadingText="Creating…">Create marketing login</Button>
             <Button type="button" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </form>

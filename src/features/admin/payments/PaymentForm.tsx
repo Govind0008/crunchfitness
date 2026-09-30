@@ -269,7 +269,7 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
           </p>
         )}
         <div className="flex flex-wrap items-center gap-4 border-t border-white/[0.08] pt-6">
-          <Button type="submit" size="lg" disabled={saving}>{saving ? 'Saving…' : `Collect ${inSentence(paymentType)} · ${preview}`}</Button>
+          <Button type="submit" size="lg" loading={saving} loadingText="Saving…">{`Collect ${inSentence(paymentType)} · ${preview}`}</Button>
           {onCancel ? <Button type="button" variant="ghost" size="lg" onClick={onCancel}>Cancel</Button> : <Button asChild variant="ghost" size="lg"><Link to="/admin/payments">Cancel</Link></Button>}
           <p className="text-xs text-ink-500">A receipt number is issued when you collect.</p>
         </div>
