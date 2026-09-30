@@ -15,27 +15,52 @@ export interface LegacyRef {
   file: string;
   sheet: string;
   row: number;               // spreadsheet row number (1 = header)
-  srNo: string | null;       // the sheet's own "Sr No", when present
-  key: string;               // deterministic migration key (same row → same key, every time)
+  srNo: string | null;       // the sheet's own "Sr No", when present (not unique in every sheet)
+  key: string;               // deterministic migration key (file + sheet + row + the row's own fields)
+  /** Same payment whatever file or row it came from — how a copy in another file is recognised */
+  fingerprint?: string;
   highlight: string | null;  // cell fill colour in the sheet (meaning not recorded)
+  /** Every sheet row behind this record (a membership paid in two instalments has two) */
+  rows?: number[];
+  /** The sheet's own words, kept as written */
+  packageRaw?: string;
+  methodRaw?: string | null;
+  comment?: string | null;
+  feedback?: string | null;
 }
 
-/** The sheet's free-form "bal" column, kept as evidence — never treated as money owed. */
+/** The sheet's free-form "bal" / "Bal Amt" column, kept as evidence — never treated as money owed. */
 export interface LegacyBalance {
   /** A number found in the column: a CANDIDATE balance, unconfirmed */
   legacyBalanceAmountPaise?: number | null;
-  /** The text as written ("bal paid", "nill", "24 session") */
+  /** The text as written ("AM(A/C)", "2000 bal", "nill", "bal paid") */
+  legacyBalanceText?: string | null;
+  /** Older imports stored the same text under this name */
   legacyBalanceNote?: string | null;
 }
+export const balanceText = (b: LegacyBalance | undefined) => b?.legacyBalanceText ?? b?.legacyBalanceNote ?? null;
 
-export interface MembershipRecord extends LegacyBalance {
+/** How the sheet described the package — the original wording is always kept alongside. */
+export interface LegacyPackage {
+  originalPackageLabel?: string;
+  /** "8 months", "1 day" */
+  normalizedDuration?: string | null;
+  packageType?: 'regular' | 'bonus' | 'upgrade' | 'day' | null;
+  baseMonths?: number | null;
+  bonusMonths?: number | null;
+  totalMonths?: number | null;
+  days?: number | null;
+}
+
+export interface MembershipRecord extends LegacyBalance, LegacyPackage {
   id: string;
   memberId: string;
   planId: string | null;
   /** What it was called at the time ("12 Months", or the sheet's "12 month") */
   planLabel: string;
-  startDate: string;          // YYYY-MM-DD
-  endDate: string;            // YYYY-MM-DD
+  /** YYYY-MM-DD. Only imported history can lack dates (a day pass the sheet gave no dates for). */
+  startDate: string | null;
+  endDate: string | null;
   paymentId: string | null;
   source: 'payment' | 'legacy_excel';
   legacy?: LegacyRef;
@@ -43,7 +68,7 @@ export interface MembershipRecord extends LegacyBalance {
   createdAt?: Timestamp;
 }
 
-export interface PtPackage extends LegacyBalance {
+export interface PtPackage extends LegacyBalance, LegacyPackage {
   id: string;
   memberId: string;
   /** teamMembers id — only when actually known */

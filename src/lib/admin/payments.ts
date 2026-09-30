@@ -311,6 +311,14 @@ export function groupTotals<K extends string>(payments: Payment[], key: (p: Paym
 }
 
 /** CSV text with proper quoting (reports). */
+/** Save CSV text as a file (in the browser — nothing is uploaded anywhere). The byte-order mark makes Excel read ₹ and Indian names correctly. */
+export function downloadCsv(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([String.fromCharCode(0xfeff) + text], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function toCsv(rows: (string | number | null | undefined)[][]) {
   return rows.map((r) => r.map((v) => {
     const s = v == null ? '' : String(v);

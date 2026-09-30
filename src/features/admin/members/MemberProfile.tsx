@@ -11,7 +11,7 @@ import { accessEventsOfMember, identitiesOfMember } from '@/lib/access/store';
 import { activityFor, type ActivityEntry } from '@/lib/admin/activity';
 import { checkInsForPhone, manualCheckInsOf, periodStarts } from '@/lib/admin/attendance';
 import { METHOD_LABEL, PAYMENT_LABEL, TYPE_LABEL, parsePrice, paymentTypeOf, paymentsOfMember, receiptLabel, rupees, type Payment, type PaymentType } from '@/lib/admin/payments';
-import { PERIOD_LABEL, currentPt, membershipsOf, periodState, ptPackagesOf, sessionsLeft, type MembershipRecord, type PtPackage } from '@/lib/admin/packages';
+import { PERIOD_LABEL, balanceText, currentPt, membershipsOf, periodState, ptPackagesOf, sessionsLeft, type MembershipRecord, type PtPackage } from '@/lib/admin/packages';
 import { getSettings } from '@/lib/admin/settings';
 import { formatPhone, phoneKey } from '@/lib/admin/phone';
 import { STATUS, formatEventDate, formatScore, passNumber, type Category, type CrunchEvent, type Result } from '@/lib/events';
@@ -351,8 +351,9 @@ const MemberProfile = () => {
                 {memberships.map((r) => (
                   <li key={r.id}>
                     <div className="flex justify-between gap-3"><span className="text-white">{r.planLabel}</span><PeriodTag state={periodState(r, today)} /></div>
-                    <p className="text-xs text-ink-500">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}{r.source === 'legacy_excel' ? ' · from the old member sheet' : ''}</p>
-                    {r.legacyBalanceNote && <p className="text-xs text-ink-500">Old sheet “bal”: {r.legacyBalanceNote}</p>}
+                    <p className="text-xs text-ink-500">{r.startDate || r.endDate ? `${fmtDate(r.startDate) || '?'} – ${fmtDate(r.endDate) || '?'}` : 'Dates not recorded'}{r.source === 'legacy_excel' ? ` · from the old member sheet${r.legacy?.rows && r.legacy.rows.length > 1 ? ` (rows ${r.legacy.rows.join(', ')})` : r.legacy ? ` (row ${r.legacy.row})` : ''}` : ''}</p>
+                    {r.originalPackageLabel && r.originalPackageLabel !== r.planLabel && <p className="text-xs text-ink-500">Sheet says “{r.originalPackageLabel}”{r.packageType === 'bonus' ? ` — ${r.baseMonths} months + ${r.bonusMonths} bonus` : ''}</p>}
+                    {balanceText(r) && <p className="text-xs text-ink-500">Old sheet balance column: “{balanceText(r)}” (a note, not a due)</p>}
                   </li>
                 ))}
               </ul>

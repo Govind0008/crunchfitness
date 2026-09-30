@@ -45,29 +45,30 @@ test('preview → review → import → re-import changes nothing', async ({ pag
   await expect(page.getByText('Sheet “Sheet1” · 15 rows · 9 columns')).toBeVisible();
   // What was found, in plain words
   const found = page.getByLabel('What was found');
-  await expect(found).toContainText('13members found');
-  await expect(found).toContainText('11membership records');
-  await expect(found).toContainText('4PT records found');
-  await expect(found).toContainText('1need review');
-  await expect(page.getByRole('row', { name: /ankit naik/ }).first()).toContainText('already a member (Ankit Naik)');
-  // Preview: nothing flagged goes in until someone ticks it
+  await expect(found).toContainText('13unique members detected');
+  await expect(found).toContainText('11gym membership rows');
+  await expect(found).toContainText('4PT rows');
+  await expect(found).toContainText('0rows requiring review');
+  // The member preview: Ankit Naik is recognised as the existing member, with both his rows
+  const people = page.getByRole('list', { name: 'Members in the sheet' });
+  const ankit = people.getByRole('listitem').filter({ hasText: 'Ankit Naik' }).first();
+  await expect(ankit).toContainText('Existing member');
+  await expect(ankit).toContainText('2 sheet rows → 1 member');
+  // Preview: a numeric "bal" is a note, not a question — nothing waits
   const preview = page.getByLabel('Import preview');
-  await expect(preview).toContainText('11new members');
-  await expect(preview).toContainText('1existing members');
-  await expect(preview).toContainText('14payments');
-  await expect(preview).toContainText('1waiting for review');
-  await page.getByLabel('Include row 8').check();
   await expect(preview).toContainText('12new members');
+  await expect(preview).toContainText('1existing members');
   await expect(preview).toContainText('15payments');
   await expect(preview).toContainText('4PT records');
+  await expect(preview).toContainText('0waiting for review');
   await page.getByRole('button', { name: 'Import 12 new members · 15 payments' }).click();
 
   const done = page.getByRole('status', { name: 'Import complete' });
-  await expect(done).toContainText('12members added');
+  await expect(done).toContainText('12members created');
   await expect(done).toContainText('1existing members matched');
-  await expect(done).toContainText('11membership records');
-  await expect(done).toContainText('4PT records');
-  await expect(done).toContainText('15payments');
+  await expect(done).toContainText('11membership records created');
+  await expect(done).toContainText('4PT records created');
+  await expect(done).toContainText('15payments created');
   await expect(page.getByRole('list', { name: 'Import history' })).toContainText(basename(FIXTURE));
 
   // The same file again: every row is recognised, nothing can be added twice
@@ -119,7 +120,7 @@ test('member profile separates membership, PT and payments; existing data untouc
   await page.getByRole('tab', { name: 'PT', exact: true }).click();
   await expect(page.getByRole('list', { name: 'PT packages' })).toContainText('1 Month PT');
 
-  // The unconfirmed "bal 9000" on the reviewed row is a note, never a due
+  // The unconfirmed "bal 9000" is a note, never a due
   await page.goto('/admin/members/lx_9511611353');
   await page.getByRole('tab', { name: 'PT', exact: true }).click();
   await expect(page.getByRole('list', { name: 'PT packages' })).toContainText('not confirmed — not shown as due');

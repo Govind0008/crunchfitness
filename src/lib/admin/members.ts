@@ -205,6 +205,17 @@ export async function membersByPhoneKeys(keys: string[]): Promise<Map<string, Me
   return found;
 }
 
+/** Existing members with exactly one of these names (lower case). Only for rows that have no phone to match by. */
+export async function membersByNames(names: string[]): Promise<Map<string, Member[]>> {
+  const found = new Map<string, Member[]>();
+  const unique = [...new Set(names.map((n) => n.trim().toLowerCase().replace(/\s+/g, ' ')).filter((n) => n.length > 1))];
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(query(col(), where('nameLower', 'in', unique.slice(i, i + 30))));
+    snap.docs.forEach((d) => { const m = toMember(d); const k = m.name.trim().toLowerCase().replace(/\s+/g, ' '); found.set(k, [...(found.get(k) ?? []), m]); });
+  }
+  return found;
+}
+
 /** Renewals due: memberships that have expired, or expire within the window — soonest / most overdue first.
  *  (Members with no expiry, or marked inactive, aren't "due".) */
 /**

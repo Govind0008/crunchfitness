@@ -195,7 +195,11 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isAdmin()
         && request.resource.data.memberId is string
-        && request.resource.data.startDate is string && request.resource.data.endDate is string
+        && ((request.resource.data.startDate is string && request.resource.data.endDate is string)
+          // Imported history keeps the sheet's blanks (a day pass with no dates) — never invented
+          || (request.resource.data.source == 'legacy_excel'
+            && (request.resource.data.startDate == null || request.resource.data.startDate is string)
+            && (request.resource.data.endDate == null || request.resource.data.endDate is string)))
         && request.resource.data.source in ['payment', 'legacy_excel']
         && request.resource.data.createdAt == request.time;
       allow update: if isAdmin() && !changed().hasAny(['memberId', 'source', 'legacy', 'createdAt', 'paymentId']);
