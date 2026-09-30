@@ -52,7 +52,7 @@ const PaymentDetail = () => {
       }>
       {params.get('new') && p.status === 'paid' && (
         <p role="status" className="mb-6 flex items-center gap-2 rounded-xl border border-brand-400/30 bg-brand-400/10 p-4 text-sm text-white print:hidden">
-          <CheckCircle2 className="h-5 w-5 text-brand-400" aria-hidden /> Payment saved — receipt {p.receiptNo} is ready.
+          <CheckCircle2 className="h-5 w-5 text-brand-fg" aria-hidden /> Payment saved — receipt {p.receiptNo} is ready.
         </p>
       )}
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
@@ -61,7 +61,7 @@ const PaymentDetail = () => {
           <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-sm">
             <div className="flex items-center justify-between"><p className="font-semibold text-white">Details</p><PaymentStatus p={p} /></div>
             <dl className="mt-3 space-y-2">
-              <div className="flex justify-between gap-3"><dt className="text-ink-400">Member</dt><dd><Link to={`/admin/members/${p.memberId}`} className="text-white hover:text-brand-400">{p.memberName}</Link></dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-ink-400">Member</dt><dd><Link to={`/admin/members/${p.memberId}`} className="text-white hover:text-brand-fg">{p.memberName}</Link></dd></div>
               <div className="flex justify-between gap-3"><dt className="text-ink-400">Recorded</dt><dd className="text-right text-white">{fmtTime(p.createdAt)}<br /><span className="text-xs text-ink-500">{p.createdBy}</span></dd></div>
               {p.status === 'void' && <div className="flex justify-between gap-3"><dt className="text-ink-400">Voided</dt><dd className="text-right text-white">{fmtTime(p.voidedAt)}<br /><span className="text-xs text-ink-500">{p.voidedBy} · {p.voidReason}</span></dd></div>}
             </dl>

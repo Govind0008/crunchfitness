@@ -42,7 +42,7 @@ test('dashboard shows real zeros and real alerts — nothing invented', async ({
   await expect(metric(page, 'Today’s collection')).toContainText('₹0');
   await expect(metric(page, 'Today’s collection')).toContainText('No payments yet today');
   await expect(metric(page, 'Active members')).toContainText('No members added yet');
-  await expect(metric(page, 'Check-ins today')).toContainText('Manual check-ins');
+  await expect(metric(page, 'Visits today')).toContainText('fingerprint and desk');
   // The four front-desk jobs, and only those, are one click away
   const quick = page.getByRole('region', { name: 'Quick actions' });
   await expect(quick.getByRole('button')).toHaveText(['Add member', 'Collect payment', 'Check in', 'Enroll access']);
@@ -159,11 +159,11 @@ test('self check-in at /checkin: works once, duplicate is refused, admin sees it
   await expect(kiosk.getByRole('heading', { name: 'Already Checked In' })).toBeVisible();
 
   const page = await signIn(browser);
-  await expect(metric(page, 'Check-ins today')).toContainText('1');
+  await expect(metric(page, 'Visits today')).toContainText('1');
   await page.goto('/admin/attendance');
-  const today_ = page.getByRole('list', { name: 'Today’s check-ins' });
+  const today_ = page.getByRole('list', { name: 'Visits' });
   await expect(today_).toContainText('Asha Rao');
-  await expect(today_).toContainText('Manual · self check-in');
+  await expect(today_).toContainText('Self check-in (older PIN page)');
   await expect(page.locator('main')).not.toContainText(/class/i);                     // no class wording in the admin
   // The member profile finds the check-in by phone, even though it was typed differently
   await page.goto('/admin/members');
@@ -171,7 +171,7 @@ test('self check-in at /checkin: works once, duplicate is refused, admin sees it
   await page.getByRole('tab', { name: 'Attendance', exact: true }).click();
   const att = page.getByRole('region', { name: 'Attendance' });
   await expect(att).toContainText('1 visit in total');
-  await expect(att.getByRole('list', { name: 'Attendance history' })).toContainText('Manual · earlier self check-in');
+  await expect(att.getByRole('list', { name: 'Attendance history' })).toContainText('Earlier self check-in');
 });
 
 test('front-desk check-in without a class: once per day, in one attendance history', async ({ browser }) => {
@@ -189,15 +189,15 @@ test('front-desk check-in without a class: once per day, in one attendance histo
   await page.keyboard.press('Escape');
 
   await page.goto('/admin/attendance');
-  await expect(page.getByRole('list', { name: 'Today’s check-ins' })).toContainText('Manual · front desk');
+  await expect(page.getByRole('list', { name: 'Visits' })).toContainText('Checked in at the desk');
   await page.getByRole('link', { name: 'Asha Rao' }).first().click();
   await page.getByRole('tab', { name: 'Attendance', exact: true }).click();
   const att = page.getByRole('region', { name: 'Attendance' });
   await expect(att).toContainText('2 visits in total');
   const filter = att.getByRole('group', { name: 'Show' });
-  await filter.getByRole('button', { name: 'Manual' }).click();
+  await filter.getByRole('button', { name: 'Front desk' }).click();
   await expect(att.getByRole('list', { name: 'Attendance history' }).getByRole('listitem')).toHaveCount(2);
-  await filter.getByRole('button', { name: 'Biometric' }).click();
+  await filter.getByRole('button', { name: 'Fingerprint' }).click();
   await expect(att).toContainText('No visits');                                       // the device isn't connected: nothing invented
 });
 

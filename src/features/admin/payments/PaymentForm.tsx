@@ -180,7 +180,7 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
             {TYPES.map(({ t, title, sub, icon }) => (
               <button key={t} type="button" role="radio" aria-checked={paymentType === t} onClick={() => changeType(t)}
                 className={cn('flex items-start gap-3 rounded-xl border p-4 text-left transition-colors motion-reduce:transition-none', paymentType === t ? 'border-brand-400 bg-brand-400/[0.08]' : 'border-white/[0.1] hover:border-white/25')}>
-                <span className={cn('mt-0.5', paymentType === t ? 'text-brand-400' : 'text-ink-500')}>{icon}</span>
+                <span className={cn('mt-0.5', paymentType === t ? 'text-brand-fg' : 'text-ink-500')}>{icon}</span>
                 <span><span className="block font-semibold text-white">{title}</span><span className="text-xs text-ink-400">{sub}</span></span>
               </button>
             ))}

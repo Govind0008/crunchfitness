@@ -28,7 +28,7 @@ export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
       <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
         <Seo title="Admin | Crunch Fitness" description="Staff area" noindex />
         <div className="max-w-md">
-          <p className="hud text-brand-400">Crunch admin</p>
+          <p className="hud text-brand-fg">Crunch admin</p>
           <h1 className="mt-4 font-display text-4xl font-bold uppercase text-white">{marketing ? 'This is a marketing account' : 'This account can’t use the admin yet'}</h1>
           <p className="mt-4 text-ink-300">
             You’re signed in as <strong className="text-white">{user.email}</strong>.{' '}
@@ -50,37 +50,45 @@ export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
  * Page content inside the persistent AdminLayout (which owns the sidebar, header and guard).
  * `nav` / `area` are kept for call-site compatibility; the layout derives both from the URL.
  */
-export const AdminShell = ({ title, subtitle, back, children, actions, bare }: {
+export const AdminShell = ({ title, subtitle, back, children, actions, bare, fill, width = 'wide' }: {
   title: string; back?: { to: string; label: string }; children: ReactNode; actions?: ReactNode;
   /** One line under the title: "14 total · 1 active" */
   subtitle?: ReactNode;
   nav?: NavKey; area?: string;
   /** The page draws its own heading (e.g. the member profile's header) */
   bare?: boolean;
+  /**
+   * A data page (list/table): from 1024px wide the page stays within the viewport and its
+   * <DataRegion> scrolls instead, so the toolbar and pagination never scroll away. Phones and
+   * short windows scroll the page as usual.
+   */
+  fill?: boolean;
+  /** 'wide' uses the whole content area (lists, dashboards); 'form' keeps a readable measure */
+  width?: 'wide' | 'form';
 }) => (
-  <>
+  <div className={cn('flex flex-col pb-24 md:pb-6', fill && 'lg:min-h-0 lg:flex-1', width === 'form' && 'w-full max-w-4xl')}>
     <Seo title={`${title} | Crunch admin`} description="Staff area" noindex />
     {back && (
-      <Link to={back.to} className="mb-5 inline-flex items-center gap-2 text-sm text-ink-400 hover:text-white">
+      <Link to={back.to} className="mb-3 inline-flex w-fit items-center gap-1.5 text-sm text-ink-400 hover:text-white">
         <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
       </Link>
     )}
     {!bare && (
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="mb-4 flex flex-shrink-0 flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="font-display text-4xl font-bold uppercase leading-none sm:text-5xl">{title}</h1>
-          {subtitle && <p className="mt-2 text-sm text-ink-400">{subtitle}</p>}
+          <h1 className="font-display text-3xl font-bold uppercase leading-none tracking-wide">{title}</h1>
+          {subtitle && <p className="mt-1 text-sm text-ink-400">{subtitle}</p>}
         </div>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       </div>
     )}
     {children}
-  </>
+  </div>
 );
 
 const PILL: Record<EventStatus, string> = {
   draft: 'bg-white/10 text-ink-200',
-  registration_open: 'bg-brand-400 text-ink-950',
+  registration_open: 'bg-brand-400 text-on-brand',
   registration_closed: 'bg-white/15 text-white',
   check_in: 'bg-sky-400/20 text-sky-200',
   live: 'bg-red-500 text-white',
@@ -128,7 +136,7 @@ export const ConfirmButton = ({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/5">Cancel</AlertDialogCancel>
-              <AlertDialogAction className="rounded-full bg-brand-400 text-ink-950 hover:bg-brand-300" onClick={(e) => { e.preventDefault(); run(); }} disabled={busy}>
+              <AlertDialogAction className="rounded-full bg-brand-400 text-on-brand hover:bg-brand-300" onClick={(e) => { e.preventDefault(); run(); }} disabled={busy}>
                 {busy ? 'Working…' : 'Yes, continue'}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -147,7 +155,7 @@ export const Field = ({ label, hint, children, htmlFor }: { label: string; hint?
   </div>
 );
 
-export const inputCls = 'h-12 w-full rounded-xl border border-white/15 bg-ink-900 px-4 text-base text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30';
+export const inputCls = 'h-12 w-full rounded-xl border border-white/15 bg-field px-4 text-base text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30';
 
 export const Empty = ({ title, body, children }: { title: string; body: string; children?: ReactNode }) => (
   <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center">

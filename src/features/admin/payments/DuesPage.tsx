@@ -39,7 +39,7 @@ const DuesPage = () => {
             return (
               <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
                 <span className="min-w-0 flex-1">
-                  <Link to={`/admin/members/${m.id}`} className="block truncate font-semibold text-white hover:text-brand-400">{m.name}</Link>
+                  <Link to={`/admin/members/${m.id}`} className="block truncate font-semibold text-white hover:text-brand-fg">{m.name}</Link>
                   <span className="text-sm tabular-nums text-ink-400">{formatPhone(m.phone)} · {m.planId ? plans.get(m.planId)?.duration ?? 'Unknown plan' : 'No plan'}</span>
                 </span>
                 <span className="text-right text-sm">

@@ -62,16 +62,16 @@ const GymSetup = () => {
       <ol className="max-w-3xl space-y-3">
         {steps.map((s, i) => (
           <li key={s.title} className="flex gap-4 rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
-            <span className={cn('flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold', s.state === 'done' ? 'bg-brand-400 text-ink-950' : s.state === 'waiting' ? 'border border-amber-300/50 text-amber-200' : 'border border-white/20 text-ink-400')}>
+            <span className={cn('flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold', s.state === 'done' ? 'bg-brand-400 text-on-brand' : s.state === 'waiting' ? 'border border-amber-300/50 text-amber-200' : 'border border-white/20 text-ink-400')}>
               {s.state === 'done' ? <Check size={16} aria-hidden /> : s.state === 'waiting' ? <Circle size={10} aria-hidden /> : i + 1}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="font-semibold text-white">{i + 1}. {s.title}</h2>
-                <span className={cn('text-xs font-semibold', s.state === 'done' ? 'text-brand-300' : s.state === 'waiting' ? 'text-amber-200' : 'text-ink-400')}>{s.state === 'done' ? 'Done' : s.state === 'waiting' ? 'Waiting on device details' : 'To do'}</span>
+                <span className={cn('text-xs font-semibold', s.state === 'done' ? 'text-brand-fg' : s.state === 'waiting' ? 'text-amber-200' : 'text-ink-400')}>{s.state === 'done' ? 'Done' : s.state === 'waiting' ? 'Waiting on device details' : 'To do'}</span>
               </div>
               <p className="mt-1 break-words text-sm text-ink-400">{s.body}</p>
-              {s.to && <Link to={s.to.href} className="mt-2 inline-block text-sm font-semibold text-brand-400 hover:underline">{s.to.label} →</Link>}
+              {s.to && <Link to={s.to.href} className="mt-2 inline-block text-sm font-semibold text-brand-fg hover:underline">{s.to.label} →</Link>}
             </div>
           </li>
         ))}

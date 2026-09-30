@@ -1,8 +1,10 @@
 // Attendance records.
-//  • `checkins` — front-desk manual check-ins: one per member per day ({date}_{memberId}).
+//  • `checkins` — member visits: one per member per local day ({date}_{memberId}), from the front
+//    desk (manual) or from fingerprint punches (biometric, written by the device relay).
 //  • `attendance` — earlier check-ins from the class-PIN page (/checkin). Classes are retired from
 //    the admin; these stay readable as historical manual records.
-//  • Door scans from the fingerprint device live in `accessEvents` (see lib/access).
+//  • Every raw punch from the fingerprint device lives in `accessEvents` (see lib/access); a
+//    member's punches for a day are folded into that day's `checkins` visit.
 import {
   collection, doc, getCountFromServer, getDocs, increment, limit, orderBy, query, runTransaction, serverTimestamp,
   Timestamp, getDoc, setDoc, updateDoc, where,
@@ -35,6 +37,10 @@ const toRec = (d: { id: string; data: () => Record<string, unknown> }) => ({ id:
 
 export async function checkInsSince(start: Timestamp, n = 500) {
   const snap = await getDocs(query(col(), where('checkedInAt', '>=', start), orderBy('checkedInAt', 'desc'), limit(n)));
+  return snap.docs.map(toRec);
+}
+export async function checkInsBetween(start: Timestamp, end: Timestamp, n = 300) {
+  const snap = await getDocs(query(col(), where('checkedInAt', '>=', start), where('checkedInAt', '<', end), orderBy('checkedInAt', 'desc'), limit(n)));
   return snap.docs.map(toRec);
 }
 export async function countSince(start: Timestamp) {
@@ -99,8 +105,14 @@ export async function lastCheckIns(keys: string[], days = 60): Promise<Map<strin
 }
 
 // ── Manual check-ins (no class) ──────────────────────────────────────────────
+/**
+ * A member's visit on one local day (checkins/{date}_{memberId}): from the front desk ("manual")
+ * or from fingerprint punches ("biometric", written by the device relay with the ids of the
+ * punches it contains). One per member per day, whatever the source.
+ */
 export interface ManualCheckIn {
-  id: string; memberId: string; memberName: string; memberPhoneKey: string; date: string; method: 'manual'; by: string; at?: Timestamp;
+  id: string; memberId: string; memberName: string; memberPhoneKey: string; date: string; method: 'manual' | 'biometric'; by: string; at?: Timestamp;
+  lastAt?: Timestamp; sources?: ('manual' | 'biometric')[]; eventIds?: string[]; punchCount?: number; deviceId?: string; deviceUserId?: string;
 }
 const mcol = () => collection(db, 'checkins');
 const toManual = (d: { id: string; data: () => Record<string, unknown> }) => ({ id: d.id, ...d.data() }) as ManualCheckIn;
@@ -131,6 +143,22 @@ export async function manualCheckInsSince(start: Timestamp, n = 500) {
   const snap = await getDocs(query(mcol(), where('at', '>=', start), orderBy('at', 'desc'), limit(n)));
   return snap.docs.map(toManual);
 }
+export type VisitSource = 'all' | 'biometric' | 'manual';
+/**
+ * One day's visits, newest first (paged with usePaged). Fingerprint = any visit with a punch;
+ * front desk = checked in by staff. Each maps to one index: sources (contains) + at · method + at.
+ */
+export function visitsQuery(day: string, source: VisitSource) {
+  const start = Timestamp.fromDate(new Date(`${day}T00:00:00+05:30`));
+  const end = Timestamp.fromMillis(start.toMillis() + 86_400_000);
+  const by = source === 'biometric' ? [where('sources', 'array-contains', 'biometric')] : source === 'manual' ? [where('method', '==', 'manual')] : [];
+  return query(mcol(), ...by, where('at', '>=', start), where('at', '<', end), orderBy('at', 'desc'));
+}
+export const toVisit = toManual;
+export async function countVisitsBetween(start: Timestamp, end: Timestamp) {
+  return (await getCountFromServer(query(mcol(), where('at', '>=', start), where('at', '<', end)))).data().count;
+}
+/** Visits (checkins) since a moment — every source: front desk and fingerprint. */
 export async function countManualSince(start: Timestamp) {
   return (await getCountFromServer(query(mcol(), where('at', '>=', start)))).data().count;
 }

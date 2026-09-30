@@ -10,13 +10,15 @@ import { paymentsBetween, type Payment } from '@/lib/admin/payments';
 import { recentActivity, type ActivityEntry } from '@/lib/admin/activity';
 import { deviceHealth } from '@/lib/access';
 import { accessSummary, todayStartIso, type AccessSummary } from '@/lib/access/store';
+import { listTeam, trainerAttendanceOn } from '@/lib/admin/trainerAttendance';
 import { PUBLIC_STATUSES, normalizeEvent, type CrunchEvent } from '@/lib/events';
 
 export interface Alert { tone: 'info' | 'warn'; what: string; action: string; to: string }
 
 export interface Dash {
   expDays: number; counts: MemberCounts; membersUnavailable: boolean; checkIns: number | null; events: CrunchEvent[]; todays: Payment[] | null;
-  due: Member[] | null; access: AccessSummary | null; activity: ActivityEntry[]; alerts: Alert[]; failed: string | null;
+  due: Member[] | null; access: AccessSummary | null;
+  visitsWeek: number | null; trainers: { team: number; present: number; completed: number; missing: number } | null; activity: ActivityEntry[]; alerts: Alert[]; failed: string | null;
 }
 /** Everything on the dashboard in one round of parallel queries (cached between visits). */
 export async function loadDashboard(today: string): Promise<Dash> {
@@ -35,8 +37,13 @@ export async function loadDashboard(today: string): Promise<Dash> {
     membersDue(settings.expiringSoonDays),
     accessSummary(todayStartIso(today)),
     recentActivity(8),
+    Promise.all([countManualSince(periodStarts().week), countSince(periodStarts().week).catch(() => 0)]).then(([a, b]) => a + b),
+    Promise.all([listTeam(), trainerAttendanceOn(today)]).then(([team, days]) => ({
+      team: team.length, present: days.filter((d) => d.punchCount > 0).length,
+      completed: days.filter((d) => d.status === 'COMPLETED').length, missing: days.filter((d) => d.status === 'MISSING_CHECKOUT').length,
+    })),
   ]);
-  const NAMES = ['members', 'check-ins', 'events', 'enquiries', 'renewals', 'today’s payments', 'dues', 'access control', 'activity'];
+  const NAMES = ['members', 'visits', 'events', 'enquiries', 'renewals', 'today’s payments', 'dues', 'access control', 'activity', 'visits this week', 'trainer attendance'];
   const failedParts = parts.map((r, i) => (r.status === 'rejected' ? NAMES[i] : null)).filter(Boolean);
   const val = <T,>(i: number, fallback: T): T => (parts[i].status === 'fulfilled' ? (parts[i] as PromiseFulfilledResult<T>).value : fallback);
   const mc = val<MemberCounts | null>(0, null);
@@ -53,6 +60,7 @@ export async function loadDashboard(today: string): Promise<Dash> {
   if (overdue) a.push({ tone: 'warn', what: `${overdue} ${overdue === 1 ? 'membership has' : 'memberships have'} expired and ${overdue === 1 ? 'is' : 'are'} due for renewal`, action: 'See dues', to: '/admin/payments/dues' });
   if (mc?.expiring) a.push({ tone: 'warn', what: `${mc.expiring} ${mc.expiring === 1 ? 'membership expires' : 'memberships expire'} in the next ${settings.expiringSoonDays} days`, action: 'See who', to: '/admin/members?filter=expiring' });
   if (acc?.failed) a.push({ tone: 'warn', what: `${acc.failed} biometric ${acc.failed === 1 ? 'sync has' : 'syncs have'} failed`, action: 'Fix access', to: '/admin/access' });
+  if (acc?.unresolvedToday) a.push({ tone: 'warn', what: `${acc.unresolvedToday} punch${acc.unresolvedToday === 1 ? '' : 'es'} today from device users not linked to anyone`, action: 'Review', to: '/admin/access?tab=activity&who=unknown' });
   if (acc?.pending) a.push({ tone: 'info', what: `${acc.pending} biometric ${acc.pending === 1 ? 'enrolment is' : 'enrolments are'} waiting for the device`, action: 'See enrolments', to: '/admin/access' });
   acc?.devices.filter((d) => deviceHealth(d) === 'offline').forEach((d) => a.push({ tone: 'warn', what: `${d.name} (${d.model}) is offline`, action: 'Check device', to: '/admin/settings/access' }));
   if (acc && acc.devices.length && mc && mc.active > acc.enrolled) a.push({ tone: 'info', what: `${mc.active - acc.enrolled} active ${mc.active - acc.enrolled === 1 ? 'member isn’t' : 'members aren’t'} enrolled on a biometric device`, action: 'See members', to: '/admin/members?filter=active' });
@@ -67,6 +75,7 @@ export async function loadDashboard(today: string): Promise<Dash> {
     expDays: settings.expiringSoonDays, counts: mc ?? { total: 0, active: 0, inactive: 0, expiring: 0, withExpiry: 0 }, membersUnavailable: !mc,
     checkIns: val<number | null>(1, null), events: evs, todays: val<Payment[] | null>(5, null), due: val<Member[] | null>(6, null), access: acc,
     activity: val<ActivityEntry[] | null>(8, null) ?? [], alerts: a,
+    visitsWeek: val<number | null>(9, null), trainers: val<Dash['trainers']>(10, null),
     failed: failedParts.length ? `${failedParts.join(', ')} couldn’t load (${(parts.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason?.message ?? 'error'})` : null,
   };
 }

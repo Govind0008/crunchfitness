@@ -1,5 +1,11 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
+import colors from "tailwindcss/colors";
+
+// Colours that change with the staff-area theme are CSS variables (RGB channels, so opacity
+// modifiers like bg-white/[0.08] keep working). Their defaults are the dark values, so pages
+// outside the staff area look exactly as before; src/index.css holds both palettes.
+const v = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
 
 export default {
 	darkMode: ["class"],
@@ -60,8 +66,8 @@ export default {
 				// Brand lime — derived from the logo mark (#8CAE36), lifted for dark UI
 				brand: {
 					50:  '#f6fbe8',
-					100: '#eaf5c8',
-					200: '#d8ec98',
+					100: v('brand-100'),
+					200: v('brand-200'),
 					300: '#c3e163',
 					400: '#b0d43f',
 					500: '#9cc02f',
@@ -69,20 +75,33 @@ export default {
 					700: '#6a8424',
 					800: '#4d5f1c',
 					900: '#2f3a12',
+					// Brand-coloured text and icons (lime on dark, deep olive on light)
+					fg: v('brand-fg'),
 				},
-				// Neutral surfaces for the dark UI (slightly warm, never pure grey-blue)
+				// Neutral surfaces (slightly warm, never pure grey-blue) — themed: see src/index.css
 				ink: {
-					950: '#0a0a0b',
-					900: '#111113',
-					850: '#161618',
-					800: '#1c1c1f',
-					700: '#2a2a2e',
-					600: '#3a3a3f',
-					500: '#5c5c63',
-					400: '#8b8b93',
-					300: '#b4b4ba',
-					200: '#d6d6da',
+					950: v('ink-950'),
+					900: v('ink-900'),
+					850: v('ink-850'),
+					800: v('ink-800'),
+					700: v('ink-700'),
+					600: v('ink-600'),
+					500: v('ink-500'),
+					400: v('ink-400'),
+					300: v('ink-300'),
+					200: v('ink-200'),
 				},
+				// "white" is the primary text/foreground colour; it turns near-black in the light theme
+				white: v('white'),
+				// Staff-area surfaces: the sidebar/header rail and form fields (distinct from cards in light)
+				rail: v('rail'),
+				field: v('field'),
+				// Text on a lime (brand-400) surface: always near-black, in either theme
+				'on-brand': '#0a0a0b',
+				// Status text shades (only ever used for text) — darker in the light theme
+				amber: { ...colors.amber, 100: v('amber-100'), 200: v('amber-200') },
+				red: { ...colors.red, 50: v('red-50'), 100: v('red-100'), 200: v('red-200'), 300: v('red-300') },
+				sky: { ...colors.sky, 100: v('sky-100'), 200: v('sky-200') },
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',

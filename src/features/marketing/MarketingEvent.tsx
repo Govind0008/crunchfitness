@@ -59,7 +59,7 @@ const MarketingEvent = () => {
           <Field label="Location" htmlFor="mk-loc"><input id="mk-loc" className={inputCls} value={form.location} onChange={(e) => set('location', e.target.value)} /></Field>
           <Field label="Who can take part" htmlFor="mk-elig"><textarea id="mk-elig" rows={3} className={cn(inputCls, 'h-auto py-3')} value={form.eligibility} onChange={(e) => set('eligibility', e.target.value)} /></Field>
           <Field label="Rules" htmlFor="mk-rules"><textarea id="mk-rules" rows={5} className={cn(inputCls, 'h-auto py-3')} value={form.rules} onChange={(e) => set('rules', e.target.value)} /></Field>
-          {msg && <p role={msg.ok ? 'status' : 'alert'} className={msg.ok ? 'text-sm text-brand-300' : 'text-sm text-red-300'}>{msg.text}</p>}
+          {msg && <p role={msg.ok ? 'status' : 'alert'} className={msg.ok ? 'text-sm text-brand-fg' : 'text-sm text-red-300'}>{msg.text}</p>}
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" size="lg" disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save page text'}</Button>
             <p className="text-xs text-ink-500">Date, registration and capacity are set by an admin.</p>

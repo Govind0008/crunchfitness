@@ -11,7 +11,7 @@ import {
 import { AdminShell, ConfirmButton, Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { fmtDate } from '@/features/admin/members/lookups';
-import { EmptyNote, ErrorNote, ListBox, ListToolbar, Pill, SideDrawer, SkeletonRows, type Tone } from '../kit';
+import { DataRegion, EmptyNote, ErrorNote, ListToolbar, Pill, SideDrawer, SkeletonRows, type Tone } from '../kit';
 import { useOpenFromParam } from '../useOpenFromParam';
 
 const TONE: Record<EnquiryStatus, Tone> = { new: 'ok', contacted: 'info', follow_up: 'warn', converted: 'muted', closed: 'muted' };
@@ -56,7 +56,7 @@ const EnquiriesPage = () => {
   };
 
   return (
-    <AdminShell title="Enquiries" nav="enquiries" area="Growth" subtitle={rows ? `${count('new')} awaiting reply · ${openCount} open` : '…'}
+    <AdminShell title="Enquiries" nav="enquiries" area="Growth" fill subtitle={rows ? `${count('new')} awaiting reply · ${openCount} open` : '…'}
       actions={<Button onClick={() => { setAdding(true); setFormErr(null); }}><Plus /> Add enquiry</Button>}>
       {error && <div className="mb-5"><ErrorNote what="Couldn’t load enquiries." error={error} /></div>}
       <ListToolbar search={q} onSearch={setQ} placeholder="Search by name or phone" label="Filter enquiries" value={status} onChange={(k) => setStatus(k as typeof status)}
@@ -67,7 +67,8 @@ const EnquiriesPage = () => {
           ? <EmptyNote title="No enquiries" body="No enquiries waiting for follow-up."><Button onClick={() => setAdding(true)}><Plus /> Add enquiry</Button></EmptyNote>
           : <EmptyNote title="Nothing here" body="No enquiries match this filter." />
       ) : (
-        <ListBox label="Enquiries">
+        <DataRegion>
+        <ul className="divide-y divide-white/[0.06]" aria-label="Enquiries">
           {shown.map((e) => (
             <li key={e.id}>
               <button type="button" onClick={() => setOpenId(e.id)} className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03] md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
@@ -81,7 +82,8 @@ const EnquiriesPage = () => {
               </button>
             </li>
           ))}
-        </ListBox>
+        </ul>
+        </DataRegion>
       )}
 
       <SideDrawer open={!!open} onOpenChange={(o) => !o && setOpenId(null)} title={open?.name ?? 'Enquiry'} description={open ? `${enquirySource(open)} · ${when(open.submittedAt)}` : undefined}>

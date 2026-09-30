@@ -34,7 +34,7 @@ const MediaTab = ({ ev }: { ev: CrunchEvent }) => {
   return (
     <div>
       <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 p-8 text-center hover:border-white/40 focus-within:border-brand-400">
-        <ImagePlus className="h-8 w-8 text-brand-400" aria-hidden />
+        <ImagePlus className="h-8 w-8 text-brand-fg" aria-hidden />
         <span className="font-semibold text-white">Upload photos or videos</span>
         <span className="text-sm text-ink-400">New uploads are hidden until you choose “Show on website”.</span>
         <input type="file" accept="image/*,video/*" multiple className="sr-only" onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} aria-label="Upload photos or videos" />
@@ -60,9 +60,9 @@ const MediaTab = ({ ev }: { ev: CrunchEvent }) => {
                     ? <video src={m.url} className="h-full w-full object-cover" muted playsInline controls preload="metadata" />
                     : <img src={m.url} alt={m.caption || 'Event photo'} className="h-full w-full object-cover" loading="lazy" />}
                   <div className="absolute left-2 top-2 flex flex-wrap gap-1.5">
-                    <span className={cn('rounded-full px-2.5 py-1 text-xs font-bold', m.visible ? 'bg-brand-400 text-ink-950' : 'bg-ink-950/80 text-ink-300')}>{m.visible ? 'On website' : 'Hidden'}</span>
+                    <span className={cn('rounded-full px-2.5 py-1 text-xs font-bold', m.visible ? 'bg-brand-400 text-on-brand' : 'bg-ink-950/80 text-ink-300')}>{m.visible ? 'On website' : 'Hidden'}</span>
                     {isCover && <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-ink-950">Cover</span>}
-                    {m.kind === 'winner' && <span className="rounded-full bg-amber-300 px-2.5 py-1 text-xs font-bold text-ink-950">Winner</span>}
+                    {m.kind === 'winner' && <span className="rounded-full bg-amber-300 px-2.5 py-1 text-xs font-bold text-on-brand">Winner</span>}
                   </div>
                 </div>
                 <div className="space-y-3 p-3">

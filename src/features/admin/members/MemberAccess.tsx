@@ -14,7 +14,7 @@ import { useActor } from '@/features/events/admin/actor';
 import { fmtDate, fmtTime } from './lookups';
 
 const Tone = ({ tone, children }: { tone: 'ok' | 'bad' | 'wait' | 'muted'; children: ReactNode }) => (
-  <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-bold', { ok: 'bg-brand-400/15 text-brand-300', bad: 'bg-red-500/15 text-red-200', wait: 'bg-amber-400/15 text-amber-100', muted: 'bg-white/[0.06] text-ink-300' }[tone])}>{children}</span>
+  <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-bold', { ok: 'bg-brand-400/15 text-brand-fg', bad: 'bg-red-500/15 text-red-200', wait: 'bg-amber-400/15 text-amber-100', muted: 'bg-white/[0.06] text-ink-300' }[tone])}>{children}</span>
 );
 const toneOf = (s: BiometricIdentity['status']) => (s === 'SYNCED' || s === 'ENROLLED' ? 'ok' : s === 'SYNC_FAILED' ? 'bad' : s === 'PENDING' || s === 'SYNCING' ? 'wait' : 'muted');
 
@@ -85,7 +85,7 @@ const MemberAccess = ({ m, identities, onChange, startEnrol }: { m: Member; iden
             </div>
           )}
         </div>
-        {msg && <p role={msg.ok ? 'status' : 'alert'} className={cn('mt-4 text-sm', msg.ok ? 'text-brand-300' : 'text-red-300')}>{msg.text}</p>}
+        {msg && <p role={msg.ok ? 'status' : 'alert'} className={cn('mt-4 text-sm', msg.ok ? 'text-brand-fg' : 'text-red-300')}>{msg.text}</p>}
       </section>
 
       <section aria-label="Biometric" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
@@ -126,7 +126,7 @@ const MemberAccess = ({ m, identities, onChange, startEnrol }: { m: Member; iden
           <div className="mt-4 rounded-xl border border-brand-400/25 p-4">
             <p className="text-sm font-semibold text-white">Enroll {m.name}</p>
             {devices && devices.length === 0 ? (
-              <p className="mt-2 text-sm text-ink-400">No biometric device is set up yet. <Link to="/admin/settings/access" className="font-semibold text-brand-400 hover:underline">Add the device</Link> first (Settings → Access control).</p>
+              <p className="mt-2 text-sm text-ink-400">No biometric device is set up yet. <Link to="/admin/settings/access" className="font-semibold text-brand-fg hover:underline">Add the device</Link> first (Settings → Access control).</p>
             ) : (
               <ol className="mt-3 space-y-4 text-sm">
                 <li><Field label="1. Device" htmlFor="enr-device">

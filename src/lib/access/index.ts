@@ -55,7 +55,11 @@ export const STAFF_SETTABLE: BiometricStatus[] = ['PENDING', 'ENROLLED', 'DISABL
 export interface BiometricIdentity {
   id: string;                 // `${deviceId}_${deviceUserId}` — one person per device user ID
   gymId: string;
-  memberId: string;
+  /** Who this device user is: a member (gym attendance) or a trainer (staff attendance). Older
+   *  records have no type and are members. */
+  personType?: 'member' | 'trainer';
+  memberId: string | null;
+  trainerId?: string | null;
   deviceId: string;
   deviceUserId: string;       // the ID typed/shown on the device (e.g. "1042")
   method: 'fingerprint' | 'face' | 'card' | 'unknown';
@@ -125,7 +129,16 @@ export interface AccessEvent {
   gymId: string;
   deviceId: string;
   deviceUserId: string;
+  /** Resolved at the moment of the punch: member, trainer, or unknown (not linked yet) */
+  personType?: 'member' | 'trainer' | 'unknown';
   memberId: string | null;
+  trainerId?: string | null;
+  /** The attendance record this punch belongs to ("checkins/…" or "trainerAttendance/…") */
+  attendanceRef?: string | null;
+  /** Gym-local calendar day of the punch */
+  localDate?: string;
+  /** The name stored on the device, for unknown device users */
+  deviceUserName?: string;
   /** ISO instant (converted using the gym's timezone) */
   at: string;
   verify: VerifyMethod;

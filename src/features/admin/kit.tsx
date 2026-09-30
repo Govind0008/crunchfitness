@@ -23,7 +23,7 @@ export const SideDrawer = ({ open, onOpenChange, title, description, children }:
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'info';
 const DOT: Record<Tone, string> = { ok: 'bg-brand-400', warn: 'bg-amber-300', bad: 'bg-red-400', muted: 'bg-ink-500', info: 'bg-sky-300' };
-const TEXT: Record<Tone, string> = { ok: 'text-brand-300', warn: 'text-amber-100', bad: 'text-red-200', muted: 'text-ink-300', info: 'text-sky-200' };
+const TEXT: Record<Tone, string> = { ok: 'text-brand-fg', warn: 'text-amber-100', bad: 'text-red-200', muted: 'text-ink-300', info: 'text-sky-200' };
 /** "● Access enabled" — colour plus words, never colour alone. */
 export const StatusDot = ({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) => (
   <span className={cn('inline-flex items-center gap-2 text-sm font-semibold', TEXT[tone], className)}>
@@ -78,18 +78,18 @@ export function ListToolbar<K extends string>({ search, onSearch, placeholder, s
   segments?: { id: K; label: string; count?: number }[]; value?: K; onChange?: (k: K) => void; label?: string; extra?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+    <div className="mb-3 flex flex-shrink-0 flex-col gap-2 lg:flex-row lg:items-center">
       <label className="relative block flex-1">
         <span className="sr-only">{placeholder}</span>
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" aria-hidden />
         <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder}
-          className="h-12 w-full rounded-xl border border-white/15 bg-ink-900 pl-11 pr-4 text-base text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none" />
+          className="h-10 w-full rounded-xl border border-white/15 bg-field pl-11 pr-4 text-sm text-white placeholder:text-ink-500 focus:border-brand-400 focus:outline-none" />
       </label>
       {segments && onChange && (
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-ink-900 p-1" role="group" aria-label={label ?? 'Filter'}>
           {segments.map((s) => (
             <button key={s.id} type="button" onClick={() => onChange(s.id)} aria-pressed={value === s.id}
-              className={cn('whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-colors', value === s.id ? 'bg-white text-ink-950' : 'text-ink-300 hover:text-white')}>
+              className={cn('whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors', value === s.id ? 'bg-white text-ink-950' : 'text-ink-300 hover:text-white')}>
               {s.label}{s.count != null && <span className={cn('ml-1 tabular-nums', value === s.id ? 'text-ink-600' : 'text-ink-500')}>{s.count}</span>}
             </button>
           ))}
@@ -103,8 +103,54 @@ export function ListToolbar<K extends string>({ search, onSearch, placeholder, s
 /** Status pill used by every list: one shape, one set of tones. */
 export const Pill = ({ tone, children }: { tone: Tone; children: ReactNode }) => (
   <span className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold', {
-    ok: 'bg-brand-400/15 text-brand-300', warn: 'bg-amber-400/15 text-amber-100', bad: 'bg-red-500/15 text-red-200', muted: 'bg-white/[0.06] text-ink-300', info: 'bg-sky-300/15 text-sky-100',
+    ok: 'bg-brand-400/15 text-brand-fg', warn: 'bg-amber-400/15 text-amber-100', bad: 'bg-red-500/15 text-red-200', muted: 'bg-white/[0.06] text-ink-300', info: 'bg-sky-300/15 text-sky-100',
   }[tone])}>{children}</span>
+);
+
+/**
+ * Previous / Next for a cursor-paginated list (see usePaged). Pages are numbered as you walk them;
+ * there's no "page 7 of 40" because counting a large collection costs a read per document.
+ */
+export const Pagination = ({ p, label, count }: {
+  p: { page: number; size: number; hasPrev: boolean; hasNext: boolean; loading: boolean; prev: () => void; next: () => void; setSize: (s: 25 | 50 | 100) => void };
+  label: string; count?: number;
+}) => {
+  if (!p.hasPrev && !p.hasNext && (count ?? 0) < 25) return null;   // one short page: nothing to page through
+  const from = (p.page - 1) * p.size + 1;
+  return (
+    <nav aria-label={`${label} pages`} className="mt-3 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 text-sm">
+      <p className="tabular-nums text-ink-400" aria-live="polite">
+        {count ? <>Showing <span className="text-white">{from}–{from + count - 1}</span></> : `Page ${p.page}`}{p.loading && <span className="ml-2 text-ink-500">Loading…</span>}
+      </p>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-ink-400">
+          <span className="hidden sm:inline">Per page</span>
+          <select value={p.size} onChange={(e) => p.setSize(Number(e.target.value) as 25 | 50 | 100)} aria-label="Rows per page"
+            className="h-9 rounded-lg border border-white/15 bg-field px-2 text-white focus:border-brand-400 focus:outline-none">
+            {[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <Button size="sm" variant="outline" onClick={p.prev} disabled={!p.hasPrev || p.loading}>Previous</Button>
+        <span className="min-w-[4.5rem] text-center tabular-nums text-ink-300">Page {p.page}</span>
+        <Button size="sm" variant="outline" onClick={p.next} disabled={!p.hasNext || p.loading}>Next</Button>
+      </div>
+    </nav>
+  );
+};
+
+/**
+ * The scrolling part of a data page. Inside an AdminShell with `fill`, it takes the height left
+ * over and scrolls on its own (from 1024px wide); pagination goes after it, outside the scroll.
+ * Give header rows `sticky top-0` (see <HeadRow>) so they stay visible.
+ */
+export const DataRegion = ({ children, className, label }: { children: ReactNode; className?: string; label?: string }) => (
+  <div className={cn('overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-900 lg:flex lg:min-h-[14rem] lg:flex-1 lg:flex-col', className)}>
+    <div className="relative lg:min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain" {...(label ? { role: 'region', 'aria-label': label, tabIndex: 0 } : {})}>{children}</div>
+  </div>
+);
+/** Column labels for a list inside a DataRegion: hidden on phones (rows become cards), sticky above. */
+export const HeadRow = ({ className, children }: { className: string; children: ReactNode }) => (
+  <div aria-hidden className={cn('sticky top-0 z-10 hidden gap-x-3 border-b border-white/[0.08] bg-ink-850 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500 md:grid', className)}>{children}</div>
 );
 
 /** The shared list container: one bordered surface, hairline dividers. */

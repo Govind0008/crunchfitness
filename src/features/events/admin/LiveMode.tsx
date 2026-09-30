@@ -24,7 +24,7 @@ const LiveMode = () => {
     <AdminShell title="Event day" back={{ to: `/admin/events/${ev.id}`, label: ev.title }}>
       <div className="-mt-4 mb-8 flex flex-wrap items-center gap-3">
         <StatusPill status={ev.status} className="px-4 py-1.5 text-sm" />
-        {ev.status === 'live' && ev.paused && <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold uppercase text-ink-950">Paused</span>}
+        {ev.status === 'live' && ev.paused && <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold uppercase text-on-brand">Paused</span>}
         <span className="text-sm text-ink-400">The website shows: “{ev.paused && ev.status === 'live' ? 'Short break' : STATUS[ev.status].public}”</span>
       </div>
 

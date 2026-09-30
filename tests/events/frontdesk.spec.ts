@@ -88,7 +88,7 @@ test('receptionist: find → check membership → check in → payment with disc
   await page.goto('/admin');
   const glance = page.getByRole('region', { name: 'Today at a glance' });
   await expect(glance.getByRole('link').filter({ hasText: 'Today’s collection' })).toContainText('₹6,000');
-  await expect(glance.getByRole('link').filter({ hasText: 'Check-ins today' })).toContainText('1');
+  await expect(glance.getByRole('link').filter({ hasText: 'Visits today' })).toContainText('1');
   if (!isMobile) {
     await page.goto('/admin/revenue');
     await expect(page.getByRole('region', { name: 'New vs renewal' })).toContainText('Renewal');

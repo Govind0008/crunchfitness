@@ -54,7 +54,7 @@ const StaffCheckIn = ({ initialMemberId, autoFocus, onDone, framed = true }: {
 
   const body = (
     <>
-      {msg && <p role={msg.ok ? 'status' : 'alert'} className={cn('mb-3 flex items-center gap-2 text-sm', msg.ok ? 'text-brand-300' : 'text-amber-200')}>{msg.ok && <CheckCircle2 className="h-4 w-4" aria-hidden />}{msg.text}</p>}
+      {msg && <p role={msg.ok ? 'status' : 'alert'} className={cn('mb-3 flex items-center gap-2 text-sm', msg.ok ? 'text-brand-fg' : 'text-amber-200')}>{msg.ok && <CheckCircle2 className="h-4 w-4" aria-hidden />}{msg.text}</p>}
       <div className={cn('grid gap-3', framed && 'md:grid-cols-[1fr_auto] md:items-end')}>
         {member ? (
           <div className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-white/15 px-4 py-2">

@@ -63,6 +63,10 @@ export async function identitiesOfMember(memberId: string): Promise<BiometricIde
   const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('memberId', '==', memberId)));
   return snap.docs.map((d) => withId<BiometricIdentity>(d));
 }
+export async function identitiesOfTrainer(trainerId: string): Promise<BiometricIdentity[]> {
+  const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('trainerId', '==', trainerId)));
+  return snap.docs.map((d) => withId<BiometricIdentity>(d));
+}
 export async function identitiesByStatus(statuses: BiometricStatus[], n = 500): Promise<BiometricIdentity[]> {
   const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('status', 'in', statuses), limit(n)));
   return snap.docs.map((d) => withId<BiometricIdentity>(d));
@@ -89,7 +93,12 @@ export class DeviceUserTakenError extends Error {}
  * the ID can't be handed to two people. Status starts as PENDING — nothing is on the device yet
  * as far as this system knows.
  */
-export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'>, device: AccessDevice, actor: AdminActor, opts: { existingId?: string; method: BiometricIdentity['method'] }) {
+/**
+ * Link a device user ID to one person — a member (their punches become gym attendance) or a
+ * trainer (staff attendance). Always an explicit choice by staff; never inferred from a name.
+ */
+export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'> & { personType?: 'member' | 'trainer' }, device: AccessDevice, actor: AdminActor, opts: { existingId?: string; method: BiometricIdentity['method'] }) {
+  const trainer = member.personType === 'trainer';
   const deviceRef = doc(devicesCol(), device.id);
   return runTransaction(db, async (tx) => {
     const d = await tx.get(deviceRef);
@@ -115,12 +124,13 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'>, devi
     const ref = doc(idCol(), identityId(device.id, userId));
     if ((await tx.get(ref)).exists()) throw new DeviceUserTakenError(`Device user ${userId} is already linked to someone on ${device.name}.`);
     tx.set(ref, {
-      gymId, memberId: member.id, deviceId: device.id, deviceUserId: userId, method: opts.method, status: 'PENDING',
+      gymId, personType: trainer ? 'trainer' : 'member', memberId: trainer ? null : member.id, trainerId: trainer ? member.id : null,
+      deviceId: device.id, deviceUserId: userId, method: opts.method, status: 'PENDING',
       enrolledAt: null, lastSyncedAt: null, lastSyncAttemptAt: null, lastSyncError: null,
       createdBy: actor.email, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
     if (!opts.existingId) tx.update(deviceRef, { nextUserId: next });
-    logTo(tx, actor, 'Biometric enrolment started', 'member', member.id, { name: member.name, device: device.name, deviceUserId: userId });
+    logTo(tx, actor, trainer ? 'Trainer linked to device user' : 'Biometric enrolment started', trainer ? 'trainer' : 'member', member.id, { name: member.name, device: device.name, deviceUserId: userId });
     return userId;
   });
 }
@@ -130,7 +140,8 @@ export async function setIdentityStatus(identity: BiometricIdentity, status: Ext
   const b = writeBatch(db);
   b.update(doc(idCol(), identity.id), { status, ...(status === 'ENROLLED' ? { enrolledAt: serverTimestamp() } : {}), updatedAt: serverTimestamp() });
   const action = { PENDING: 'Biometric enrolment restarted', ENROLLED: 'Fingerprint enrolled on device', DISABLED: 'Device access disabled', REMOVED: 'Removed from device' }[status];
-  logTo(b, actor, action, 'member', identity.memberId, { name: memberName, deviceUserId: identity.deviceUserId });
+  const trainer = identity.personType === 'trainer';
+  logTo(b, actor, action, trainer ? 'trainer' : 'member', trainer ? identity.trainerId ?? null : identity.memberId, { name: memberName, deviceUserId: identity.deviceUserId });
   await b.commit();
 }
 
@@ -152,6 +163,23 @@ export async function accessEventsSince(sinceIso: string, n = 100): Promise<Acce
   const snap = await getDocs(query(evCol(), where('gymId', '==', gymId), where('at', '>=', sinceIso), orderBy('at', 'desc'), limit(n)));
   return snap.docs.map((d) => withId<AccessEvent>(d));
 }
+export type ActivityWho = 'all' | 'member' | 'trainer' | 'unknown';
+/**
+ * The access activity list's query (paged with usePaged). Each filter maps to one composite index:
+ * gymId + at · gymId + personType + at · gymId + memberId + at — all newest first.
+ */
+export function accessEventsQuery(f: { who: ActivityWho; memberId?: string; day?: string }) {
+  const parts = [where('gymId', '==', gymId)];
+  if (f.memberId) parts.push(where('memberId', '==', f.memberId));
+  else if (f.who !== 'all') parts.push(where('personType', '==', f.who));
+  if (f.day) {
+    parts.push(where('at', '>=', todayStartIso(f.day)));
+    parts.push(where('at', '<', new Date(Date.parse(todayStartIso(f.day)) + 86_400_000).toISOString()));
+  }
+  return query(evCol(), ...parts, orderBy('at', 'desc'));
+}
+export const toAccessEvent = (d: { id: string; data: () => DocumentData }) => withId<AccessEvent>(d);
+
 export async function accessEventsOfMember(memberId: string, n = 50): Promise<AccessEvent[]> {
   const snap = await getDocs(query(evCol(), where('gymId', '==', gymId), where('memberId', '==', memberId), orderBy('at', 'desc'), limit(n)));
   return snap.docs.map((d) => withId<AccessEvent>(d));
@@ -165,6 +193,8 @@ export interface AccessSummary {
   failed: number;
   enrolled: number;
   blocked: number;
+  /** Punches today not linked to a member or trainer (null if that count couldn't be read) */
+  unresolvedToday: number | null;
 }
 /** Everything on the dashboard's access card — counts only, nothing downloaded in bulk. */
 export async function accessSummary(todayStartIso: string): Promise<AccessSummary> {
@@ -179,7 +209,9 @@ export async function accessSummary(todayStartIso: string): Promise<AccessSummar
     c(query(idCol(), where('gymId', '==', gymId), where('status', 'in', ['ENROLLED', 'SYNCED']))),
     c(query(collection(db, 'members'), where('accessOverride', 'in', ['blocked', 'suspended']))),
   ]);
-  return { devices, scansToday, grantedToday, pending, failed, enrolled, blocked };
+  // Its own index (gymId + personType + at): if that isn't published yet, the rest still shows
+  const unresolvedToday = await c(query(evCol(), where('gymId', '==', gymId), where('personType', '==', 'unknown'), where('at', '>=', todayStartIso), orderBy('at', 'desc'))).catch(() => null);
+  return { devices, scansToday, grantedToday, pending, failed, enrolled, blocked, unresolvedToday };
 }
 
 /** Midnight in the gym's timezone today, as an ISO instant (India has no DST: +05:30). */

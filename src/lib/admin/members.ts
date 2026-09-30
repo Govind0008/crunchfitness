@@ -146,7 +146,8 @@ export async function memberCounts(expiringDays: number): Promise<MemberCounts> 
 export type MemberFilter = 'all' | 'active' | 'expiring' | 'inactive' | 'expired' | 'no_membership';
 export const PAGE = 50;
 
-export async function listMembers(filter: MemberFilter, expiringDays: number, after?: QueryDocumentSnapshot) {
+/** One page of a member list (cursor-based: `after` is the last document of the previous page). */
+export async function listMembers(filter: MemberFilter, expiringDays: number, after?: QueryDocumentSnapshot, size = PAGE) {
   const today = todayIST();
   const base = {
     all: query(col(), orderBy('nameLower')),
@@ -157,8 +158,10 @@ export async function listMembers(filter: MemberFilter, expiringDays: number, af
     expired: query(col(), where('activeUntil', '>', NEVER), where('activeUntil', '<', today), orderBy('activeUntil', 'desc')),
     no_membership: query(col(), where('membershipEnd', '==', null)),
   }[filter];
-  const snap = await getDocs(after ? query(base, startAfter(after), limit(PAGE)) : query(base, limit(PAGE)));
-  return { members: snap.docs.map(toMember), last: snap.docs[snap.docs.length - 1], more: snap.size === PAGE };
+  // One extra document tells us whether there is a next page (no count query)
+  const snap = await getDocs(after ? query(base, startAfter(after), limit(size + 1)) : query(base, limit(size + 1)));
+  const docs = snap.docs.slice(0, size);
+  return { members: docs.map(toMember), last: docs[docs.length - 1], more: snap.size > size };
 }
 
 /** Name / phone / email prefix search, or an exact member ID. Returns at most 20. */
@@ -311,9 +314,9 @@ export const memberCode = (id: string) => `M-${id.slice(0, 6).toUpperCase()}`;
 export async function membersByIds(ids: string[]): Promise<Member[]> {
   const unique = [...new Set(ids)];
   const found = new Map<string, Member>();
-  for (let i = 0; i < unique.length; i += 30) {
-    const snap = await getDocs(query(col(), where(documentId(), 'in', unique.slice(i, i + 30))));
-    snap.docs.forEach((d) => found.set(d.id, toMember(d)));
-  }
+  // Batches of 30 (Firestore's `in` limit), read in parallel
+  const chunks = Array.from({ length: Math.ceil(unique.length / 30) }, (_, i) => unique.slice(i * 30, i * 30 + 30));
+  const snaps = await Promise.all(chunks.map((c) => getDocs(query(col(), where(documentId(), 'in', c)))));
+  snaps.forEach((snap) => snap.docs.forEach((d) => found.set(d.id, toMember(d))));
   return unique.map((id) => found.get(id)).filter((m): m is Member => !!m);
 }

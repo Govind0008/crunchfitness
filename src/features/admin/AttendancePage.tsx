@@ -1,104 +1,101 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { attendanceQuery } from './pageData';
 import { useQuery } from '@tanstack/react-query';
-import { useCached } from './useCached';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Fingerprint } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { todayIST } from '@/lib/admin/members';
-import { peakHourOf } from '@/lib/admin/attendance';
+import { toVisit, visitsQuery, type ManualCheckIn, type VisitSource } from '@/lib/admin/attendance';
 import { AdminShell } from '@/features/events/admin/shared';
 import StaffCheckIn from './StaffCheckIn';
-import { ACCESS_CONNECTED, RESULT_LABEL, type AccessEvent } from '@/lib/access';
-import { accessEventsSince, listDevices, todayStartIso } from '@/lib/access/store';
-import { membersByIds } from '@/lib/admin/members';
-import { EmptyNote, ErrorNote, SkeletonRows } from './kit';
+import { usePaged } from './usePaged';
+import { DataRegion, EmptyNote, ErrorNote, HeadRow, Pagination, Pill, SkeletonRows } from './kit';
+import { useCached } from './useCached';
+import { listDevices } from '@/lib/access/store';
 
-const hourLabel = (h: number) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
+const clock = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '');
+const sourceOf = (v: ManualCheckIn) => {
+  const s = new Set(v.sources ?? [v.method ?? 'manual']);
+  return s.has('biometric') && s.has('manual') ? 'Fingerprint + front desk' : s.has('biometric') ? 'Fingerprint' : 'Front desk';
+};
 
-const Stat = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
-  <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
-    <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">{label}</p>
-    <p className="mt-2 font-display text-4xl font-bold leading-none tabular-nums text-white">{value}</p>
-    {sub && <p className="mt-2 text-xs text-ink-500">{sub}</p>}
-  </div>
-);
-
-/** Attendance — who came in today: front-desk check-ins and door scans, in one timeline. */
+/**
+ * Attendance — member visits for a day. One visit per member per day, whichever way they came
+ * in (fingerprint or front desk). Raw punches stay in Access → Activity.
+ */
 const AttendancePage = () => {
-  const [params] = useSearchParams();
-  const [filter, setFilter] = useState<'all' | 'biometric' | 'manual'>('all');
-  const day = todayIST();
-  const scansQ = useCached(['attendanceScans', day], () => accessEventsSince(todayStartIso(day), 100).catch((): AccessEvent[] => []));
-  const scans = scansQ.data;
+  const [params, setParams] = useSearchParams();
+  const today = todayIST();
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(params.get('day') ?? '') && params.get('day')! <= today ? params.get('day')! : today;
+  const [source, setSource] = useState<VisitSource>('all');
+  const setDay = (d: string) => setParams((p) => { const n = new URLSearchParams(p); if (!d || d === today) n.delete('day'); else n.set('day', d); return n; }, { replace: true });
+
   const att = useQuery(attendanceQuery(day));
-  const today = att.data?.today ?? null, earlier = att.data?.earlier ?? [], week = att.data?.week ?? null, month = att.data?.month ?? null;
+  const base = useMemo(() => visitsQuery(day, source), [day, source]);
+  const p = usePaged(`visits:${day}:${source}`, base, toVisit, 50);
+  const earlier = att.data?.earlier ?? [];
   const error = (att.error ? (att.error as Error).message : null) ?? att.data?.failed ?? null;
-  const load = () => { att.refetch(); scansQ.refetch(); };
-  const [names, setNames] = useState<Map<string, string>>(new Map());
-  const [deviceNames, setDeviceNames] = useState<Map<string, string>>(new Map());
-
-  // Names for door scans (members) and devices, in one batch each
-  useEffect(() => {
-    if (!scans?.length) return;
-    membersByIds([...new Set(scans.map((e) => e.memberId).filter((x): x is string => !!x))]).then((ms) => setNames(new Map(ms.map((m) => [m.id, m.name])))).catch(() => {});
-    listDevices().then((d) => setDeviceNames(new Map(d.map((x) => [x.id, x.name])))).catch(() => {});
-  }, [scans]);
-
-  // One timeline: front-desk check-ins, older PIN self check-ins, and door scans from the device
-  const entries = [
-    ...(today ?? []).map((r) => ({ id: `m-${r.id}`, at: r.at ? r.at.toMillis() : 0, name: r.memberName, how: 'Manual · front desk', kind: 'manual' as const, ok: true, to: `/admin/members/${r.memberId}` as string | null })),
-    ...earlier.map((r) => ({ id: `c-${r.id}`, at: r.checkedInAt?.toDate().getTime() ?? 0, name: r.memberName, how: 'Manual · self check-in', kind: 'manual' as const, ok: true, to: null as string | null })),
-    ...(scans ?? []).map((e) => ({ id: `s-${e.id}`, at: new Date(e.at).getTime(), name: (e.memberId && names.get(e.memberId)) || `Device user ${e.deviceUserId}`, how: `${e.verify === 'unknown' ? 'Biometric' : e.verify[0].toUpperCase() + e.verify.slice(1)} · ${deviceNames.get(e.deviceId) ?? 'Device'}${e.result === 'granted' ? '' : ` · ${RESULT_LABEL[e.result]}`}`, kind: 'biometric' as const, ok: e.result === 'granted', to: e.memberId ? `/admin/members/${e.memberId}` : null })),
-  ].filter((x) => filter === 'all' || x.kind === filter).sort((a, b) => b.at - a.at);
-  const peak = today && scans ? peakHourOf([...(today ?? []).map((r) => r.at?.toMillis() ?? 0), ...earlier.map((r) => r.checkedInAt?.toMillis() ?? 0), ...(scans ?? []).filter((e) => e.result === 'granted').map((e) => new Date(e.at).getTime())]) : null;
-  const total = (today?.length ?? 0) + earlier.length + (scans?.filter((e) => e.result === 'granted').length ?? 0);
-  const loading = !today || !scans;
+  const load = () => { void att.refetch(); p.refetch(); };
+  const isToday = day === today;
+  const devices = useCached(['accessDevices'], () => listDevices().then((d) => new Map(d.map((x) => [x.id, x.name])))).data;
 
   return (
-    <AdminShell title="Attendance" nav="attendance" area="Operations" bare>
-      <header className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink-400">Today’s attendance</p>
-        <h1 className="mt-1 font-display text-5xl font-bold uppercase leading-none">Attendance</h1>
-        <p className="mt-2 text-lg text-ink-200"><span className="font-display text-3xl font-bold tabular-nums text-white">{loading ? '…' : total}</span> check-ins today{peak ? <span className="text-sm text-ink-400"> · busiest around {hourLabel(peak[0])}</span> : null}</p>
-      </header>
-      {error && <div className="mb-6"><ErrorNote what="Couldn’t load today’s attendance." error={error} onRetry={load} /></div>}
-      <div className="mb-8"><StaffCheckIn initialMemberId={params.get('member')} autoFocus={params.has('checkin')} onDone={load} /></div>
+    <AdminShell title="Attendance" nav="attendance" area="Operations" fill
+      subtitle={<><span className="font-semibold tabular-nums text-white">{att.data ? att.data.day : '…'}</span> visit{att.data?.day === 1 ? '' : 's'} {isToday ? 'today' : `on ${new Date(`${day}T12:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}`} · {att.data?.week ?? '…'} this week · {att.data?.month ?? '…'} this month</>}>
+      {error && <div className="mb-3 flex-shrink-0"><ErrorNote what="Couldn’t load attendance." error={error} onRetry={load} /></div>}
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <section aria-labelledby="recent-h">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 id="recent-h" className="font-sans text-xs font-bold uppercase tracking-[0.16em] text-ink-400">Today</h2>
+      <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <section aria-labelledby="recent-h" className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
+          <div className="mb-3 flex flex-shrink-0 flex-wrap items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-sm text-ink-400"><span id="recent-h" className="font-sans text-xs font-bold uppercase tracking-[0.16em]">Visits on</span>
+              <input type="date" value={day} max={today} onChange={(e) => setDay(e.target.value)} className="h-9 rounded-lg border border-white/15 bg-field px-2 text-sm text-white focus:border-brand-400 focus:outline-none" />
+            </label>
+            <Link to="/admin/access?tab=integrity" className="order-last inline-flex items-center gap-1.5 text-xs font-semibold text-ink-400 hover:text-white sm:order-none sm:ml-auto sm:mr-2">
+              <Fingerprint className="h-4 w-4 text-brand-fg" aria-hidden /> Check punches against attendance
+            </Link>
             <div className="flex w-full gap-1 rounded-xl border border-white/[0.08] bg-ink-900 p-1 sm:w-auto" role="group" aria-label="Show">
-              {([['all', 'All'], ['biometric', 'Biometric'], ['manual', 'Manual']] as const).map(([k, l]) => (
-                <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={cn('flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors sm:flex-none', filter === k ? 'bg-white text-ink-950' : 'text-ink-300 hover:text-white')}>{l}</button>
+              {([['all', 'All'], ['biometric', 'Fingerprint'], ['manual', 'Front desk']] as const).map(([k, l]) => (
+                <button key={k} type="button" aria-pressed={source === k} onClick={() => setSource(k)} className={cn('flex-1 rounded-lg px-3 py-1 text-sm font-semibold transition-colors sm:flex-none', source === k ? 'bg-white text-ink-950' : 'text-ink-300 hover:text-white')}>{l}</button>
               ))}
             </div>
           </div>
-          {loading ? <SkeletonRows rows={5} /> : entries.length === 0 ? (
-            <EmptyNote title={filter === 'biometric' ? 'No door scans' : 'No check-ins yet today'}
-              body={filter === 'biometric' && !ACCESS_CONNECTED ? 'The fingerprint device isn’t connected to this system yet — its scans still go to the old system.' : 'They’ll appear here as members arrive.'} />
-          ) : (
-            <ol className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-900" aria-label="Today’s check-ins">
-              {entries.slice(0, 150).map((e) => {
-                const row = (
-                  <>
-                    <span className="w-12 flex-shrink-0 font-mono text-sm tabular-nums text-ink-400">{e.at ? new Date(e.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                    <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-white">{e.name}</span><span className={cn('block truncate text-xs', e.ok ? 'text-ink-400' : 'text-red-200')}>{e.how}</span></span>
-                    <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', e.kind === 'biometric' ? (e.ok ? 'bg-brand-400' : 'bg-red-400') : 'bg-sky-300')} aria-hidden />
-                  </>
-                );
-                return <li key={e.id}>{e.to ? <Link to={e.to} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-white/[0.03]">{row}</Link> : <div className="flex items-center gap-4 px-4 py-3">{row}</div>}</li>;
-              })}
-            </ol>
-          )}
-          <p className="mt-3 text-xs text-ink-500">Manual = checked in at the front desk (or self check-in on the older PIN page). Biometric = the fingerprint device.</p>
+          {p.error ? <ErrorNote what={/index/i.test(p.error) ? 'This filter needs a database index that isn’t published yet (see FIREBASE_INDEX_AUDIT.md).' : 'Couldn’t load visits.'} error={p.error} onRetry={p.refetch} />
+            : !p.rows ? <SkeletonRows rows={5} />
+            : p.rows.length === 0 && !(source !== 'biometric' && earlier.length) ? <EmptyNote title={isToday ? 'No visits yet today' : 'No visits that day'} body={isToday ? 'Members appear here when they punch in or are checked in at the desk.' : 'Nothing was recorded for this day.'} />
+            : (
+              <DataRegion>
+                <HeadRow className="md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]"><span>First in</span><span>Member</span><span>Source</span><span>Punches</span><span className="hidden xl:block">Device</span></HeadRow>
+                <ul className="divide-y divide-white/[0.06]" aria-label="Visits">
+                  {p.rows.map((v) => (
+                    <li key={v.id}>
+                      <Link to={`/admin/members/${v.memberId}?tab=attendance`} className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.03] md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]">
+                        <span className="font-mono tabular-nums text-ink-400">{clock(v.at?.toMillis())}</span>
+                        <span className="min-w-0"><span className="block truncate font-semibold text-white">{v.memberName || 'Member'}</span>
+                          <span className="block truncate text-xs text-ink-400 md:hidden">{v.punchCount && v.punchCount > 1 ? `${v.punchCount} punches, last ${clock(v.lastAt?.toMillis())}` : v.punchCount ? '1 punch' : 'Checked in at the desk'}</span></span>
+                        <span><Pill tone={sourceOf(v) === 'Front desk' ? 'info' : 'ok'}>{sourceOf(v) === 'Front desk' ? 'Desk' : sourceOf(v) === 'Fingerprint' ? 'Fingerprint' : 'Both'}</Pill></span>
+                        <span className="hidden text-ink-300 md:block">{v.punchCount ? `${v.punchCount}${v.punchCount > 1 ? ` · last ${clock(v.lastAt?.toMillis())}` : ''}` : '—'}</span>
+                        <span className="hidden truncate text-ink-300 xl:block">{v.deviceId ? devices?.get(v.deviceId) ?? 'Device' : 'Front desk'}</span>
+                      </Link>
+                    </li>
+                  ))}
+                  {source !== 'biometric' && !p.hasPrev && earlier.map((r) => (
+                    <li key={`c-${r.id}`} className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5 text-sm md:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)] xl:grid-cols-[4.5rem_minmax(0,1.6fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)]">
+                      <span className="font-mono tabular-nums text-ink-400">{clock(r.checkedInAt?.toMillis())}</span>
+                      <span className="min-w-0"><span className="block truncate font-semibold text-white">{r.memberName}</span><span className="block truncate text-xs text-ink-400">Self check-in (older PIN page)</span></span>
+                      <span><Pill tone="muted">PIN</Pill></span>
+                      <span className="hidden text-ink-300 md:block">—</span>
+                      <span className="hidden text-ink-300 xl:block">PIN page</span>
+                    </li>
+                  ))}
+                </ul>
+              </DataRegion>
+            )}
+          <Pagination p={p} label="Visits" count={p.rows?.length} />
+          <p className="mt-2 flex-shrink-0 text-xs text-ink-500">A member who punches several times in a day is one visit. Every punch, including ones not linked to anyone yet, is in <Link to="/admin/access?tab=activity" className="font-semibold text-ink-300 hover:text-white">Access → Activity</Link>.</p>
         </section>
 
-        <aside className="space-y-6" aria-label="Attendance details">
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="This week" value={week ?? '…'} sub="Manual check-ins since Monday" />
-            <Stat label="This month" value={month ?? '…'} sub="Manual check-ins" />
-          </div>
+        <aside className="order-first flex-shrink-0 space-y-3 xl:order-none" aria-label="Attendance details">
+          {isToday && <StaffCheckIn initialMemberId={params.get('member')} autoFocus={params.has('checkin')} onDone={load} />}
         </aside>
       </div>
     </AdminShell>
