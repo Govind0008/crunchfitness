@@ -38,6 +38,7 @@ test.beforeAll(async () => {
       if (upstreamDown) { req.socket.destroy(); return; }
       received.push({ method: req.method!, url: req.url!, body });
       const u = new URL(req.url!, 'http://x');
+      u.pathname = u.pathname.replace(/\.aspx$/, '');   // real ADMS servers answer both forms
       res.setHeader('Content-Type', 'text/plain');
       if (u.pathname === '/iclock/cdata' && req.method === 'GET') res.end(`GET OPTION FROM: ${u.searchParams.get('SN')}\nATTLOGStamp=12345\nDelay=10`);
       else if (u.pathname === '/iclock/cdata') res.end(`OK: ${body.split('\n').filter(Boolean).length}`);
@@ -215,4 +216,28 @@ test('diagnostics: health is public; status and self-test are admins only, and t
   expect(test.steps.map((s) => s.step)).toEqual(['DNS', 'HTTPS and /iclock route (handshake)', 'Command poll (getrequest)', 'Recording (Firestore)', 'Old attendance server reachable (TCP only)']);
   expect(test.steps.every((s) => s.ok), JSON.stringify(test.steps)).toBe(true);
   expect(received.length).toBe(before);                                             // the self-test never talks HTTP to the old server
+});
+
+test('firmware that adds ".aspx" (this X2008: /iclock/getrequest.aspx) works the same — and is forwarded as sent', async () => {
+  // A scan upload to cdata.aspx: forwarded byte for byte to the same path, and recorded
+  const attlog = '501\t2026-09-30 11:52:00\t0\t1\t0\t0\n';
+  const up = await send(`cdata.aspx?SN=${SN}&table=ATTLOG&Stamp=20000`, 'POST', attlog);
+  expect(await up.text()).toBe('OK: 1');
+  expect(received.at(-1)!.url).toBe(`/iclock/cdata.aspx?SN=${SN}&table=ATTLOG&Stamp=20000`);
+  expect(received.at(-1)!.body).toBe(attlog);
+  expect((await list('accessEvents')).some((e) => e.fields.at.stringValue === '2026-09-30T06:22:00.000Z')).toBe(true);
+
+  // A command poll to getrequest.aspx carries the CRM's queued command
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/c9', { type: 'enroll_fp', deviceUserId: '10062', status: 'queued', createdBy: 'x' });
+  const poll = await (await send(`getrequest.aspx?SN=${SN}`)).text();
+  expect(received.at(-1)!.url).toBe(`/iclock/getrequest.aspx?SN=${SN}`);
+  const ours = poll.split('\n').find((l) => l.includes('ENROLL_FP'))!;
+  expect(ours).toMatch(/^C:9\d{8}:ENROLL_FP PIN=10062\t/);
+
+  // …and its result, posted to devicecmd.aspx, is handled here (nothing to forward)
+  const before = received.length;
+  expect(await (await send(`devicecmd.aspx?SN=${SN}`, 'POST', `ID=${ours.split(':')[1]}&Return=0&CMD=ENROLL_FP\n`)).text()).toBe('OK');
+  expect(received.length).toBe(before);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/c9'))!.status.stringValue).toBe('done');
+  expect(JSON.stringify(await getDoc(`admsDiagnostics/${SN}`))).toContain('command result');
 });
