@@ -18,6 +18,8 @@ export function useRole() {
   const { user, loading: authLoading } = useAuth();
   const [role, setRole] = useState<RoleDoc | null>(null);
   const [loading, setLoading] = useState(true);
+  // The role couldn't be read (offline, rules): callers show a retry instead of waiting forever
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -25,10 +27,11 @@ export function useRole() {
 
     const unsub = onSnapshot(doc(db, 'userRoles', user.uid), (snap) => {
       setRole(snap.exists() ? (snap.data() as RoleDoc) : null);
+      setError(null);
       setLoading(false);
-    });
+    }, (e) => { setError(e.message); setLoading(false); });
     return unsub;
   }, [user, authLoading]);
 
-  return { role, loading, user };
+  return { role, loading, user, error };
 }

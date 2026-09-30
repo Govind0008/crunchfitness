@@ -155,7 +155,7 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
           </Section>
 
           <div className="sticky bottom-0 -mx-6 flex gap-2 border-t border-white/[0.08] bg-ink-950 px-6 py-4">
-            <Button type="submit" size="lg" disabled={busy}><UserPlus /> {busy ? 'Saving…' : 'Add member'}</Button>
+            <Button type="submit" size="lg" loading={busy} loadingText="Saving…"><UserPlus /> Add member</Button>
             <Button type="button" size="lg" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           </div>
         </form>

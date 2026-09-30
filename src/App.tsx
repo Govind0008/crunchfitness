@@ -9,6 +9,7 @@ import ScrollToTop from "@/components/ScrollToTop";
 import PageTransition from "@/components/PageTransition";
 import Navigation from "@/components/Navigation";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import AdminBoot from '@/components/loading/AdminBoot';
 
 // Rendered outside PageTransition so position:fixed is always relative to the viewport
 const GlobalUI = () => {
@@ -84,6 +85,8 @@ const App = () => (
         <ScrollToTop />
         {/* GlobalUI lives outside PageTransition so CSS transforms don't break position:fixed */}
         <GlobalUI />
+        {/* The admin's one boot screen, above the routes so it survives each loading step */}
+        <AdminBoot />
         <Suspense fallback={<PageLoader />}>
           <PageTransition>
             <Routes>

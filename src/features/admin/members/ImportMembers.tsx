@@ -148,7 +148,7 @@ const CsvImport = () => {
             </table>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button size="lg" disabled={busy || !summary.valid} onClick={run}>{busy ? 'Importing…' : `Import ${summary.valid} member${summary.valid === 1 ? '' : 's'}`}</Button>
+            <Button size="lg" disabled={!summary.valid} loading={busy} loadingText="Importing…" onClick={run}>{`Import ${summary.valid} member${summary.valid === 1 ? '' : 's'}`}</Button>
             <Button variant="ghost" onClick={() => setRows(null)}>Cancel</Button>
             <p className="text-xs text-ink-500">Only rows marked “Ready” are imported. Nothing is changed for existing members.</p>
           </div>
@@ -213,7 +213,7 @@ const FromTrainerClients = () => {
                 </li>
               ))}
             </ul>
-            <Button size="lg" className="mt-4" disabled={busy || (!toCreate.length && !toLink.length)} onClick={run}>{busy ? 'Working…' : `Add ${toCreate.length} · link ${toLink.length}`}</Button>
+            <Button size="lg" className="mt-4" disabled={!toCreate.length && !toLink.length} loading={busy} loadingText="Working…" onClick={run}>{`Add ${toCreate.length} · link ${toLink.length}`}</Button>
           </div>
         )
       )}

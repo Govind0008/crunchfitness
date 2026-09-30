@@ -65,17 +65,17 @@ const ReportsPage = () => {
             <Field label="From" htmlFor="rep-from"><input id="rep-from" type="date" className={`${inputCls} h-11`} value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>
             <Field label="To" htmlFor="rep-to"><input id="rep-to" type="date" className={`${inputCls} h-11`} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
           </div>
-          <Button className="mt-4" onClick={paymentsCsv} disabled={!!busy}><Download /> {busy === 'payments' ? 'Preparing…' : 'Download payments'}</Button>
+          <Button className="mt-4" onClick={paymentsCsv} disabled={!!busy && busy !== 'payments'} loading={busy === 'payments'} loadingText="Preparing…"><Download /> Download payments</Button>
         </section>
         <section aria-labelledby="r-mem" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
           <h2 id="r-mem" className="font-semibold text-white">Members</h2>
           <p className="mt-1 text-sm text-ink-400">All members with plan, dates, current status and trainer.</p>
-          <Button className="mt-4" onClick={membersCsv} disabled={!!busy}><Download /> {busy === 'members' ? 'Preparing…' : 'Download members'}</Button>
+          <Button className="mt-4" onClick={membersCsv} disabled={!!busy && busy !== 'members'} loading={busy === 'members'} loadingText="Preparing…"><Download /> Download members</Button>
         </section>
         <section aria-labelledby="r-due" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
           <h2 id="r-due" className="font-semibold text-white">Dues</h2>
           <p className="mt-1 text-sm text-ink-400">Expired and soon-expiring memberships with their plan’s current price.</p>
-          <Button className="mt-4" onClick={duesCsv} disabled={!!busy}><Download /> {busy === 'dues' ? 'Preparing…' : 'Download dues'}</Button>
+          <Button className="mt-4" onClick={duesCsv} disabled={!!busy && busy !== 'dues'} loading={busy === 'dues'} loadingText="Preparing…"><Download /> Download dues</Button>
         </section>
       </div>
     </AdminShell>

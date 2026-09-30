@@ -97,9 +97,9 @@ const BlogPage = () => {
           )}
           <div className="flex flex-wrap gap-2 border-t border-white/[0.08] pt-5">
             {editing === 'new' ? <>
-              <Button type="button" disabled={busy} onClick={(e) => save(e, true)}>{busy ? 'Saving…' : 'Publish'}</Button>
+              <Button type="button" loading={busy} loadingText="Saving…" onClick={(e) => save(e, true)}>Publish</Button>
               <Button type="button" variant="outline" disabled={busy} onClick={(e) => save(e, false)}>Save draft</Button>
-            </> : <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>}
+            </> : <Button type="submit" loading={busy} loadingText="Saving…">Save changes</Button>}
             <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             {editing && editing !== 'new' && <>
               <Button type="button" variant="outline" className="ml-auto" onClick={async () => { await setPostPublished(editing, !editing.published, actor); setEditing(null); }}>{editing.published ? 'Unpublish' : 'Publish'}</Button>

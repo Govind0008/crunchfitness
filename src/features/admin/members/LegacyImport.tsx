@@ -197,8 +197,8 @@ const LegacyImport = () => {
             <li>“Bal Amt” is kept as the sheet’s text. It never becomes a due.</li>
             <li>Payments keep the sheet’s Mode (or “Not recorded”), have no receipt number, and each names its sheet row.</li>
           </ul>
-          <Button size="lg" className="mt-5 w-full sm:w-auto" disabled={!!busy || plan.payments === 0} onClick={run}>
-            {busy ?? (plan.payments === 0 ? 'Nothing new to import' : `Import ${plan.membersToCreate} new member${plan.membersToCreate === 1 ? '' : 's'} · ${plan.payments} payment${plan.payments === 1 ? '' : 's'}`)}
+          <Button size="lg" className="mt-5 w-full sm:w-auto" disabled={plan.payments === 0} loading={!!busy} loadingText={busy} onClick={run}>
+            {(plan.payments === 0 ? 'Nothing new to import' : `Import ${plan.membersToCreate} new member${plan.membersToCreate === 1 ? '' : 's'} · ${plan.payments} payment${plan.payments === 1 ? '' : 's'}`)}
           </Button>
         </Step>
       )}

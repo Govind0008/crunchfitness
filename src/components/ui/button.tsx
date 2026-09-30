@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import ButtonLoader from "@/components/loading/ButtonLoader"
 
 const buttonVariants = cva(
   "group/btn inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold transition-[background-color,border-color,color,transform,box-shadow] duration-200 ease-out-expo hover:-translate-y-px active:translate-y-0 active:scale-[0.97] active:duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -39,19 +40,29 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /** Busy: shows a spinner (and `loadingText`), and blocks further clicks until it's done */
+  loading?: boolean
+  loadingText?: React.ReactNode
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, loadingText, children, disabled, onClick, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
+    const busy = loading && !asChild
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(buttonVariants({ variant, size, className }), busy && "cursor-progress")}
         ref={ref}
         // A plain <button> submits its form by default; only an explicit type="submit" should
         {...(asChild ? {} : { type: "button" as const })}
         {...props}
-      />
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
+        // Belt and braces: even if something re-enables it mid-flight, a busy button does nothing
+        onClick={busy ? (e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault() : onClick}
+      >
+        {busy ? <><ButtonLoader />{loadingText ?? children}</> : children}
+      </Comp>
     )
   }
 )

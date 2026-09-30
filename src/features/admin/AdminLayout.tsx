@@ -3,6 +3,8 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronRight, Command, LogOut, Menu, Monitor, Moon, Settings, Sun } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useStaffTheme, type ThemePref } from '@/lib/theme';
+import { markBootReady } from '@/components/loading/bootState';
+import PageSkeleton from '@/components/loading/PageSkeleton';
 import CommandPalette from './CommandPalette';
 import { signOut } from 'firebase/auth';
 import { collection, getCountFromServer, query, where } from 'firebase/firestore';
@@ -48,6 +50,10 @@ const LABEL: Partial<Record<NavKey, string>> = {
   posts: 'Blog', team: 'Team', offers: 'Offers', plans: 'Plans', enquiries: 'Enquiries',
 };
 const COLLAPSE_KEY = 'crunch.admin.sidebar.collapsed';
+
+/** Mounts only once the first page's code has loaded (same Suspense boundary as the Outlet):
+ *  that's when the boot screen may hand over. The page's own data shows skeletons from here. */
+const BootReady = () => { useEffect(() => { markBootReady(); }, []); return null; };
 
 const Frame = () => {
   const { pathname } = useLocation();
@@ -128,8 +134,9 @@ const Frame = () => {
         <main ref={main} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto flex h-full w-full max-w-[1760px] flex-col px-4 pt-4 sm:px-5 lg:px-6 lg:pt-5 xl:px-8">
             {/* Sections load inside the shell — the sidebar and header stay put */}
-            <Suspense fallback={<div className="space-y-4" role="status" aria-label="Loading section"><div className="h-10 w-64 animate-pulse rounded-lg bg-ink-900 motion-reduce:animate-none" /><div className="h-32 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /><div className="h-64 animate-pulse rounded-2xl bg-ink-900 motion-reduce:animate-none" /></div>}>
+            <Suspense fallback={<PageSkeleton variant={nav === 'dashboard' ? 'dashboard' : /^\/admin\/(members|trainers)\/[^/]+$/.test(pathname) && !pathname.endsWith('/new') && !pathname.endsWith('/import') ? 'profile' : 'table'} />}>
               <Outlet />
+              <BootReady />
             </Suspense>
           </div>
         </main>

@@ -45,7 +45,7 @@ const AttendanceCheck = () => {
       <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); void preview(); }}>
         <label className="text-sm text-ink-400">From<input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="mt-1 block h-10 rounded-lg border border-white/15 bg-field px-2 text-white focus:border-brand-400 focus:outline-none" /></label>
         <label className="text-sm text-ink-400">To<input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className="mt-1 block h-10 rounded-lg border border-white/15 bg-field px-2 text-white focus:border-brand-400 focus:outline-none" /></label>
-        <Button type="submit" disabled={busy || !from || !to}><SearchCheck /> {busy ? 'Checking…' : 'Check'}</Button>
+        <Button type="submit" disabled={!from || !to} loading={busy} loadingText="Checking…"><SearchCheck /> Check</Button>
       </form>
 
       {error && <div className="mt-4"><ErrorNote what="The check couldn’t run." error={error} onRetry={preview} /></div>}

@@ -145,7 +145,7 @@ const RegisterForm = ({ ev }: { ev: CrunchEvent }) => {
       </label>
       {error && <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</p>}
       <div className="flex flex-wrap items-center gap-4">
-        <Button type="submit" size="lg" disabled={busy}>{busy ? 'Registering…' : <>Register <ArrowRight /></>}</Button>
+        <Button type="submit" size="lg" loading={busy} loadingText="Registering…">{<>Register <ArrowRight /></>}</Button>
         <p id="reg-privacy" className="text-xs text-ink-500">Your phone and email are only seen by Crunch staff.</p>
       </div>
     </form>

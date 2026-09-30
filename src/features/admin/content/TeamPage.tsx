@@ -100,7 +100,7 @@ const TeamPage = ({ canRemove = true }: { canRemove?: boolean }) => {
             </div>
           )}
           <div className="flex flex-wrap gap-2 border-t border-white/[0.08] pt-5">
-            <Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing === 'new' ? 'Add team member' : 'Save profile'}</Button>
+            <Button type="submit" loading={busy} loadingText="Saving…">{editing === 'new' ? 'Add team member' : 'Save profile'}</Button>
             <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             {editing && editing !== 'new' && <>
               <Button type="button" variant="outline" className="ml-auto" onClick={async () => { await setTeamVisible(editing, editing.visible === false); setEditing(null); }}>{editing.visible === false ? 'Show on website' : 'Hide from website'}</Button>

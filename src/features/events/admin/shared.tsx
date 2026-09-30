@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { markBootReady } from '@/components/loading/bootState';
+import ButtonLoader from '@/components/loading/ButtonLoader';
 import { ActorContext, useActor } from './actor';
 import { Link, Navigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
@@ -19,9 +21,26 @@ import Seo from '@/components/site/Seo';
  * userRoles document says role "admin" can manage events.
  */
 export const EventAdminRoute = ({ children }: { children: ReactNode }) => {
-  const { role, loading, user } = useRole();
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-ink-950" role="status" aria-label="Loading"><div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-400 border-t-transparent" /></div>;
+  const { role, loading, user, error } = useRole();
+  // Anything other than "still checking" is an answer the boot screen can hand over to
+  // (the admin itself signals from inside the shell, once its first page has loaded)
+  const settled = !loading && (!user || !!error || role?.role !== 'admin');
+  useEffect(() => { if (settled) markBootReady(); }, [settled]);
+  // Covered by the boot screen on first entry; a plain placeholder if the check ever reruns
+  if (loading) return <div className="min-h-screen bg-ink-950" role="status" aria-label="Checking access" />;
   if (!user) return <Navigate to="/admin/login" replace />;
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
+        <div className="max-w-md" role="alert">
+          <p className="hud text-brand-fg">Crunch admin</p>
+          <h1 className="mt-4 font-display text-3xl font-bold uppercase text-white">Couldn’t check your access</h1>
+          <p className="mt-3 text-ink-300">The connection to the gym’s database failed. Check the internet connection and try again.</p>
+          <Button className="mt-6" onClick={() => window.location.reload()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
   if (role?.role !== 'admin') {
     const marketing = role?.role === 'marketing';
     return (
@@ -124,7 +143,7 @@ export const ConfirmButton = ({
   const run = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); setOpen(false); } };
   return (
     <>
-      <Button variant={variant} size={size} className={className} disabled={disabled || busy} onClick={() => (confirm ? setOpen(true) : run())}>
+      <Button variant={variant} size={size} className={className} disabled={disabled} loading={busy && !confirm} onClick={() => (confirm ? setOpen(true) : run())}>
         {children}
       </Button>
       {confirm && (
@@ -137,7 +156,7 @@ export const ConfirmButton = ({
             <AlertDialogFooter>
               <AlertDialogCancel className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/5">Cancel</AlertDialogCancel>
               <AlertDialogAction className="rounded-full bg-brand-400 text-on-brand hover:bg-brand-300" onClick={(e) => { e.preventDefault(); run(); }} disabled={busy}>
-                {busy ? 'Working…' : 'Yes, continue'}
+                {busy ? <><ButtonLoader className="h-4 w-4" /> Working…</> : 'Yes, continue'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
