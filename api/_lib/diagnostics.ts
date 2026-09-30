@@ -24,7 +24,8 @@ export interface RequestSummary {
 }
 
 /** What kind of ADMS request this is, in plain words. */
-export function requestKind(method: string, path: string, table: string) {
+export function requestKind(method: string, rawPath: string, table: string) {
+  const path = rawPath.replace(/\.aspx$/i, '');
   if (path === 'cdata' && method === 'GET') return 'handshake';
   if (path === 'cdata' && method === 'POST') return table ? `upload ${table}` : 'upload';
   if (path === 'getrequest') return 'command poll';
@@ -46,7 +47,7 @@ export function summarize(opts: { method: string; path: string; query: Record<st
     if (/^(FP|FACE|BIODATA|BIOPHOTO|USERPIC)\b/.test(line)) parsed.fingerprintLines++;   // counted only
     else if (line.startsWith('USER ')) parsed.userLines++;
     else if (line.startsWith('OPLOG')) parsed.operLogLines++;
-    else if (opts.path === 'devicecmd' && line.startsWith('ID=')) parsed.commandResults++;
+    else if (opts.path.replace(/\.aspx$/i, '') === 'devicecmd' && line.startsWith('ID=')) parsed.commandResults++;
     else if (table === 'ATTLOG' && /^\S+\t\d{4}-\d{2}-\d{2} /.test(line)) parsed.attlogLines++;
     else parsed.otherLines++;
   }

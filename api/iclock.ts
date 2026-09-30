@@ -187,12 +187,15 @@ async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const started = Date.now();
-  const path = String(req.query.path ?? '').replace(/^\/+/, '') || 'cdata';
+  // The path as the device sent it (forwarded unchanged), and its name without the ".aspx" some
+  // firmwares add — this X2008 calls /iclock/getrequest.aspx — for our own handling
+  const rawPath = String(req.query.path ?? '').replace(/^\/+/, '') || 'cdata';
+  const path = rawPath.replace(/\.aspx$/i, '');
   const sn = String(req.query.SN ?? req.query.sn ?? '');
   const table = String(req.query.table ?? '');
   const body = req.method === 'POST' ? await rawBody(req) : null;
   const text = body ? body.toString('utf8') : '';
-  const summary = summarize({ method: req.method ?? 'GET', path, query: req.query, headers: req.headers, body: text, bodyBytes: body?.length ?? 0 });
+  const summary = summarize({ method: req.method ?? 'GET', path: rawPath, query: req.query, headers: req.headers, body: text, bodyBytes: body?.length ?? 0 });
   const fsDiag = firestore();
 
   // Never forward an upload whose body we failed to read: the old server could acknowledge
@@ -235,7 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     reply = { status: 200, type: 'text/plain', date: null, body: Buffer.from(path === 'cdata' && req.method === 'GET' ? ownHandshake(sn) : 'OK') };
   } else {
     try {
-      reply = await forward(req, path, upstreamBody);
+      reply = await forward(req, rawPath, upstreamBody);
     } catch (e) {
       console.error('[iclock] old server unreachable:', (e as Error).message);
       if (fs && deviceId) await devRef(fs, deviceId).update({ lastError: 'The old attendance server didn’t answer; the device will retry' }).catch(() => {});
