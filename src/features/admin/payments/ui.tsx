@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { balanceText } from '@/lib/admin/packages';
 import { GYM } from '@/lib/gym';
 import { METHOD_LABEL, TYPE_LABEL, amountInWords, paymentFor, paymentTypeOf, rupees, type Payment } from '@/lib/admin/payments';
 import { formatPhone } from '@/lib/admin/phone';
@@ -60,8 +61,8 @@ export const Receipt = ({ p }: { p: Payment }) => (
     {p.notes && <p className="mt-4 text-sm text-ink-600">Note: {p.notes}</p>}
     {p.legacy && (
       <p className="mt-4 text-sm text-ink-600">
-        Imported from the old member sheet ({p.legacy.file}, row {p.legacy.row}{p.legacy.srNo ? `, Sr No ${p.legacy.srNo}` : ''}). No receipt number was issued at the time; the payment method wasn’t recorded.
-        {p.legacy.legacyBalanceNote && <> The sheet’s “bal” column said: “{p.legacy.legacyBalanceNote}”.</>}
+        Imported from the old member sheet ({p.legacy.file}{p.legacy.sheet && p.legacy.sheet !== 'Sheet1' ? `, ${p.legacy.sheet} sheet` : ''}, row {p.legacy.row}{p.legacy.srNo ? `, Sr No ${p.legacy.srNo}` : ''}). No receipt number was issued at the time; {p.method === 'unknown' ? 'the payment method wasn’t recorded.' : `the sheet’s Mode said “${p.legacy.methodRaw ?? p.method}”.`}
+        {balanceText(p.legacy) && <> The sheet’s balance column said: “{balanceText(p.legacy)}” — kept as a note, not money owed.</>}
       </p>
     )}
     {p.status === 'void' && <p className="mt-4 text-sm font-semibold text-red-700">Voided{p.voidReason ? ` — ${p.voidReason}` : ''}. This receipt is not valid.</p>}

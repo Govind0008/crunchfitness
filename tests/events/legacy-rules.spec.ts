@@ -68,6 +68,11 @@ test('PT packages and membership periods: admins write, trainers see only their 
   await denied(deleteDoc(doc(a, 'ptPackages', 'p-new')));
   await setDoc(doc(a, 'memberships', 'ms-new'), { memberId: 'm1', planId: null, planLabel: '1 Month', startDate: '2030-01-01', endDate: '2030-01-31', paymentId: null, source: 'payment', createdBy: 'x', createdAt: serverTimestamp() });
   await denied(deleteDoc(doc(a, 'memberships', 'ms1')));
+  // Imported history keeps the sheet's blanks (a day pass has no dates); a new period always has dates
+  const dayPass = { memberId: 'm1', planId: null, planLabel: '1 Day', startDate: null, endDate: null, paymentId: null, createdBy: 'x', createdAt: serverTimestamp() };
+  await setDoc(doc(a, 'memberships', 'ms-daypass'), { ...dayPass, source: 'legacy_excel' });
+  await denied(setDoc(doc(a, 'memberships', 'ms-undated'), { ...dayPass, source: 'payment' }));
+  await denied(setDoc(doc(a, 'memberships', 'ms-baddate'), { ...dayPass, source: 'legacy_excel', startDate: 20260901 }));
   const t = await as('lx-trainer@crunch.test');
   expect((await getDoc(doc(t, 'ptPackages', 'mine'))).exists()).toBe(true);
   await denied(getDoc(doc(t, 'ptPackages', 'other')));

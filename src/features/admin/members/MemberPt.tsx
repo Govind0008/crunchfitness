@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { todayIST, type Member } from '@/lib/admin/members';
-import { PERIOD_LABEL, logPtSession, periodState, ptPaid, sessionsLeft, type PtPackage } from '@/lib/admin/packages';
+import { PERIOD_LABEL, balanceText, logPtSession, periodState, ptPaid, sessionsLeft, type PtPackage } from '@/lib/admin/packages';
 import PtPackageForm from './PtPackageForm';
 import { useActor } from '@/features/events/admin/actor';
 import { fmtDate, type TrainerRef } from './lookups';
@@ -57,7 +57,7 @@ const MemberPt = ({ m, pt, trainers, onChange, startAdd, onPay }: { m: Member; p
                 </div>
                 <p className="mt-1 text-xs text-ink-400">{p.startDate ? `${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}` : 'Dates not recorded'} · Trainer: {p.trainerId ? trainerName(p.trainerId) : 'Trainer not recorded'}</p>
                 <p className="text-xs text-ink-400">Sessions: {p.sessionsIncluded != null ? `${p.sessionsUsed ?? 0} used · ${left} left of ${p.sessionsIncluded}` : 'not counted'}</p>
-                {p.legacyBalanceNote && <p className="text-xs text-ink-500">Old sheet “bal”: {p.legacyBalanceNote}{p.legacyBalanceAmountPaise ? ' (not confirmed — not shown as due)' : ''}</p>}
+                {balanceText(p) && <p className="text-xs text-ink-500">Old sheet balance column: “{balanceText(p)}”{p.legacyBalanceAmountPaise ? ' (not confirmed — not shown as due)' : ''}</p>}
                 {st === 'current' && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {p.sessionsIncluded != null && <Button size="sm" variant="outline" disabled={left === 0} onClick={() => session(p)}>Log a session</Button>}
