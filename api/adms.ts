@@ -109,9 +109,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
   const check = String(req.query.check ?? 'health');
   if (check === 'health') {
-    res.status(200).json({ alive: true, service: 'adms-relay', time: new Date().toISOString(), region: process.env.VERCEL_REGION ?? 'local', recording: !!firestoreOrNull(), upstreamConfigured: !!upstreamHostPort() });
+    const recording = !!firestoreOrNull();
+    res.status(200).json({ alive: true, service: 'adms-relay', time: new Date().toISOString(), region: process.env.VERCEL_REGION ?? 'local', recording, ...(recording ? {} : { recordingProblem: adminProblem() }), upstreamConfigured: !!upstreamHostPort() });
     return;
   }
+  // Without the key we can't even check who is asking — say so plainly
+  if (!firestoreOrNull()) { res.status(503).json({ error: `Recording isn't set up: ${adminProblem()}` }); return; }
   const who = await requireAdmin(req.headers.authorization);
   if (!who) { res.status(401).json({ error: 'Sign in as an admin' }); return; }
   if (check === 'status' && req.method === 'GET') { res.status(200).json(await status()); return; }

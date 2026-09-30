@@ -11,21 +11,33 @@ let reason = '';
 
 export function admin(): App | null {
   if (app !== undefined) return app;
+  // Reasons are fixed phrases on purpose: parser errors quote the input, and the input here is
+  // a private key — it must never reach a log or a response.
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const emulator = !!process.env.FIRESTORE_EMULATOR_HOST;   // tests only
+  if (!raw && !emulator) { reason = 'not-set'; app = null; return app; }
+  let parsed: Record<string, unknown> | null = null;
+  if (!emulator) {
+    try { parsed = JSON.parse(raw!.trim()); } catch { reason = 'not-json'; console.error('[firebase-admin] FIREBASE_SERVICE_ACCOUNT is not valid JSON'); app = null; return app; }
+    if (!parsed || typeof parsed.private_key !== 'string' || typeof parsed.client_email !== 'string') { reason = 'not-service-account'; console.error('[firebase-admin] FIREBASE_SERVICE_ACCOUNT is JSON but not a service-account key'); app = null; return app; }
+  }
   try {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const emulator = !!process.env.FIRESTORE_EMULATOR_HOST;   // tests only
-    if (!raw && !emulator) { reason = 'FIREBASE_SERVICE_ACCOUNT is not set'; app = null; return app; }
-    app = getApps()[0] ?? initializeApp(emulator ? { projectId: process.env.GCLOUD_PROJECT ?? 'demo-crunch' } : { credential: cert(JSON.parse(raw!)) });
-  } catch (e) {
-    reason = `FIREBASE_SERVICE_ACCOUNT could not be used: ${(e as Error).message}`;
-    console.error('[firebase-admin]', reason);
+    app = getApps()[0] ?? initializeApp(emulator ? { projectId: process.env.GCLOUD_PROJECT ?? 'demo-crunch' } : { credential: cert(parsed as never) });
+  } catch {
+    reason = 'rejected'; console.error('[firebase-admin] the service-account key was rejected');
     app = null;
   }
   return app;
 }
 export const firestoreOrNull = (): Firestore | null => { const a = admin(); return a ? getFirestore(a) : null; };
-/** Why Firestore isn't available (for diagnostics), or '' when it is. */
-export const adminProblem = () => (admin() ? '' : reason);
+const PROBLEM: Record<string, string> = {
+  'not-set': 'FIREBASE_SERVICE_ACCOUNT is not set for this deployment',
+  'not-json': 'FIREBASE_SERVICE_ACCOUNT is set but is not valid JSON (paste the whole key file)',
+  'not-service-account': 'FIREBASE_SERVICE_ACCOUNT is JSON but not a service-account key',
+  rejected: 'FIREBASE_SERVICE_ACCOUNT was rejected by Firebase',
+};
+/** Why Firestore isn't available, in fixed words (never key material), or '' when it is. */
+export const adminProblem = () => (admin() ? '' : PROBLEM[reason] ?? 'not configured');
 
 /** The signed-in admin behind a request (Firebase ID token in "Authorization: Bearer …"), or null. */
 export async function requireAdmin(authorization: string | undefined): Promise<{ uid: string; email: string } | null> {
