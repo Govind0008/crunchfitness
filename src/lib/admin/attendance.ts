@@ -6,9 +6,10 @@
 //  • Every raw punch from the fingerprint device lives in `accessEvents` (see lib/access); a
 //    member's punches for a day are folded into that day's `checkins` visit.
 import {
-  collection, doc, getCountFromServer, getDocs, increment, limit, orderBy, query, runTransaction, serverTimestamp,
-  Timestamp, getDoc, setDoc, updateDoc, where,
+  collection, doc, getCountFromServer, getDocs, increment, limit, orderBy, query, serverTimestamp,
+  Timestamp, getDoc, where,
 } from 'firebase/firestore';
+import { runTransaction, setDoc, updateDoc } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { phoneKey } from './phone';
 import { todayIST } from './members';

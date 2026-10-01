@@ -1,9 +1,10 @@
 // Crunch Events — one source of truth for the event model, lifecycle, ranking and every
 // Firestore read/write. Admin screens and public pages both go through this module.
 import {
-  collection, doc, getDocs, increment, limit, onSnapshot, orderBy, query, runTransaction,
-  serverTimestamp, where, writeBatch, type DocumentData, type Timestamp, type Unsubscribe,
+  collection, doc, getDocs, increment, limit, onSnapshot, orderBy, query, serverTimestamp, where,
+  type DocumentData, type Timestamp, type Unsubscribe,
 } from 'firebase/firestore';
+import { runTransaction, writeBatch } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 
 // ── Model ──────────────────────────────────────────────────────────────────────

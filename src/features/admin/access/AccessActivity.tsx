@@ -33,7 +33,7 @@ const AccessActivity = () => {
 
   const memberIds = [...new Set((p.rows ?? []).map((e) => e.memberId).filter((x): x is string => !!x))];
   const names = useCached(['accessNames', memberIds.join(',')], () => membersByIds(memberIds).then((ms) => new Map(ms.map((m) => [m.id, m.name]))), memberIds.length > 0).data;
-  const team = useCached(['team'], () => listTeam().then((t) => new Map(t.map((x) => [x.id, x.name])))).data;
+  const team = useCached(['teamNames'], () => listTeam().then((t) => new Map(t.map((x) => [x.id, x.name])))).data;
   const devices = useCached(['accessDevices'], () => listDevices().then((d) => new Map(d.map((x) => [x.id, x.name])))).data;
 
   const person = (e: AccessEvent) => {

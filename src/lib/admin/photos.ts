@@ -3,7 +3,8 @@
 // Photos are shrunk in the browser first (max 640px JPEG), which also drops camera metadata
 // such as GPS location.
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { deleteField, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { deleteField, doc, serverTimestamp } from 'firebase/firestore';
+import { writeBatch } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { logTo, type AdminActor } from './activity';

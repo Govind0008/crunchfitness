@@ -10,9 +10,10 @@
 // is simply another payment. Discounts are recorded as a snapshot on the payment only — a plan's
 // stored price never changes because one member got a discount.
 import {
-  collection, count, doc, getAggregateFromServer, getDoc, getDocs, limit, orderBy, query, runTransaction,
-  serverTimestamp, sum, where, type Timestamp,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocs, limit, orderBy, query, serverTimestamp,
+  sum, where, type Timestamp,
 } from 'firebase/firestore';
+import { runTransaction } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { receiptNumber } from '@/lib/gym';
 import { activeUntilOf, todayIST, type Member } from './members';

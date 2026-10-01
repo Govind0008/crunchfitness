@@ -1,6 +1,7 @@
 // Staff logins (admin and marketing). Accounts are ordinary Firebase Auth users; what they can
 // do comes only from userRoles/{uid}.role, which only admins can write (the rules enforce it).
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, where } from 'firebase/firestore';
+import { deleteDoc, setDoc } from '@/lib/admin/writes';
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { USE_EMULATORS, db, firebaseConfig } from '@/lib/firebase';

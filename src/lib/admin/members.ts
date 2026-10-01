@@ -11,8 +11,9 @@
 //   active + expiry E → E · active, no expiry → "9999-12-31" · inactive → "0000-00-00"
 import {
   collection, doc, documentId, getCountFromServer, getDoc, getDocs, limit, orderBy, query, serverTimestamp,
-  startAfter, where, writeBatch, type QueryDocumentSnapshot, type Timestamp,
+  startAfter, where, type QueryDocumentSnapshot, type Timestamp,
 } from 'firebase/firestore';
+import { writeBatch } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { phoneKey } from './phone';
 import { logTo, type AdminActor } from './activity';
