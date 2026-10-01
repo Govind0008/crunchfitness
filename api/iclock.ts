@@ -3,7 +3,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { firestoreOrNull } from './_lib/firebase.js';
 import { ingestScans } from './_lib/ingest.js';
-import { PROBE_SN, logLine, recordContact, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
+import { PROBE_SN, logLine, recordContact, requestKind, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
+import { meterFor, returnUsage, takeUsage, type Meter } from './_lib/usage.js';
 import {
   OUR_ID, commandText, ownHandshake, parseAttlog, parseCommandResults, parseFingerprintPins, parseUsers, type CommandType,
 } from './_lib/adms.js';
@@ -65,27 +66,44 @@ async function forward(req: VercelRequest, path: string, body: Buffer | null) {
 }
 
 // ── CRM side ─────────────────────────────────────────────────────────────────
+// Serial → CRM device id. A device's id never changes, so a match is kept 30 minutes; "no device
+// with this serial" only 5, so a device added in the CRM is picked up quickly.
 const deviceCache = new Map<string, { id: string; at: number }>();
-async function deviceIdFor(fs: Firestore, sn: string) {
+async function deviceIdFor(fs: Firestore, sn: string, meter: Meter) {
   const hit = deviceCache.get(sn);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.id;
+  if (hit && Date.now() - hit.at < (hit.id ? 30 : 5) * 60_000) return hit.id;
   const snap = await fs.collection('gyms').doc(GYM).collection('devices').where('serialNumber', '==', sn.toUpperCase()).limit(1).get();
+  meter.read('deviceLookup', Math.max(1, snap.size));
   const id = snap.docs[0]?.id ?? '';
   deviceCache.set(sn, { id, at: Date.now() });
   return id;
 }
 const devRef = (fs: Firestore, deviceId: string) => fs.collection('gyms').doc(GYM).collection('devices').doc(deviceId);
 
-let lastBeat = 0;
-async function heartbeat(fs: Firestore, deviceId: string, extra: Record<string, unknown> = {}) {
-  if (!Object.keys(extra).length && Date.now() - lastBeat < 60_000) return;
-  lastBeat = Date.now();
-  await devRef(fs, deviceId).update({ lastSeenAt: FieldValue.serverTimestamp(), lastError: null, connection: 'relay', ...extra });
+/**
+ * The device's "last communication" (devices/{id}.lastSeenAt), which the CRM's Online/Offline
+ * status reads (online = heard from within 10 minutes). Written at most every HEARTBEAT_MS per
+ * device per server instance — well inside that window — and at once when it matters: the first
+ * request this instance sees, a device back after a quiet spell (it's been longer than
+ * HEARTBEAT_MS), or recovery after an error was recorded on the device.
+ */
+// Timings are read on each use (not once at load) so tests can switch them
+const HEARTBEAT_MS = () => Number(process.env.ADMS_HEARTBEAT_MS ?? 300_000);
+const lastBeat = new Map<string, number>();
+const errorShown = new Set<string>();
+async function heartbeat(fs: Firestore, deviceId: string, meter: Meter) {
+  if (!errorShown.has(deviceId) && Date.now() - (lastBeat.get(deviceId) ?? 0) < HEARTBEAT_MS()) return;
+  lastBeat.set(deviceId, Date.now());
+  errorShown.delete(deviceId);
+  await devRef(fs, deviceId).update({ lastSeenAt: FieldValue.serverTimestamp(), lastError: null, connection: 'relay' });
+  meter.write('heartbeat');
 }
 
 /** The device's users (IDs and names only) for the CRM's Match users screen. */
-async function recordUsers(fs: Firestore, deviceId: string, users: ReturnType<typeof parseUsers>) {
+async function recordUsers(fs: Firestore, deviceId: string, users: ReturnType<typeof parseUsers>, meter: Meter) {
   if (!users.length) return;
+  meter.write('deviceUsers', users.length + 1);   // one per user line + the device's usersSeenAt
+  meter.read('deviceUsers', users.length);        // their identity records
   const col = devRef(fs, deviceId).collection('deviceUsers');
   for (let i = 0; i < users.length; i += 400) {
     const batch = fs.batch();
@@ -97,23 +115,35 @@ async function recordUsers(fs: Firestore, deviceId: string, users: ReturnType<ty
   const batch = fs.batch();
   let n = 0;
   snaps.forEach((s) => { if (s.exists && ['PENDING', 'ENROLLED', 'SYNC_FAILED'].includes(s.get('status'))) { batch.update(s.ref, { status: 'SYNCED', lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() }); n++; } });
-  if (n) await batch.commit();
+  if (n) { await batch.commit(); meter.write('deviceUsers', n); }
   await devRef(fs, deviceId).update({ usersSeenAt: FieldValue.serverTimestamp() });
 }
 
 /** A fingerprint saved on the device for a linked user: enrolment is complete. */
-async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[]) {
+async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[], meter: Meter) {
   if (!pins.length) return;
   const snaps = await fs.getAll(...pins.map((p) => fs.collection('biometricIdentities').doc(`${deviceId}_${p}`)));
+  meter.read('deviceUsers', pins.length);
   const batch = fs.batch();
   let n = 0;
   snaps.forEach((s) => { if (s.exists && s.get('status') !== 'REMOVED' && s.get('status') !== 'DISABLED') { batch.update(s.ref, { status: 'SYNCED', enrolledAt: FieldValue.serverTimestamp(), lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() }); n++; } });
-  if (n) await batch.commit();
+  if (n) { await batch.commit(); meter.write('deviceUsers', n); }
 }
 
-/** Queued CRM commands → "C:<id>:<command>" lines (at most a few per poll). */
-async function takeCommands(fs: Firestore, deviceId: string) {
+/**
+ * Queued CRM commands → "C:<id>:<command>" lines (at most a few per poll). The device polls every
+ * few seconds; looking for queued commands on every poll costs a database read each time, so each
+ * server instance looks at most every COMMAND_CHECK_MS (a request reaches the device within ~10s).
+ * When it finds some, it looks again on the very next poll, so a batch drains quickly.
+ */
+const COMMAND_CHECK_MS = () => Number(process.env.ADMS_COMMAND_CHECK_MS ?? 10_000);
+const lastCommandCheck = new Map<string, number>();
+async function takeCommands(fs: Firestore, deviceId: string, meter: Meter) {
+  if (Date.now() - (lastCommandCheck.get(deviceId) ?? 0) < COMMAND_CHECK_MS()) return [];
+  lastCommandCheck.set(deviceId, Date.now());
   const snap = await devRef(fs, deviceId).collection('commands').where('status', '==', 'queued').limit(5).get();
+  meter.read('commands', Math.max(1, snap.size));
+  if (snap.size) lastCommandCheck.set(deviceId, 0);
   const lines: string[] = [];
   const batch = fs.batch();
   for (const d of snap.docs.sort((a, b) => (a.get('createdAt')?.toMillis?.() ?? 0) - (b.get('createdAt')?.toMillis?.() ?? 0))) {
@@ -124,26 +154,61 @@ async function takeCommands(fs: Firestore, deviceId: string) {
     lines.push(`C:${id}:${text}`);
     batch.update(d.ref, { status: 'sent', commandId: id, sentAt: FieldValue.serverTimestamp() });
   }
-  if (snap.size) await batch.commit();
+  if (snap.size) { await batch.commit(); meter.write('commands', snap.size); }
   return lines;
 }
 
-async function recordResults(fs: Firestore, deviceId: string, results: ReturnType<typeof parseCommandResults>) {
+async function recordResults(fs: Firestore, deviceId: string, results: ReturnType<typeof parseCommandResults>, meter: Meter) {
   for (const r of results) {
     const snap = await devRef(fs, deviceId).collection('commands').where('commandId', '==', r.id).limit(1).get();
+    meter.read('results', Math.max(1, snap.size));
     const d = snap.docs[0];
     if (!d) continue;
     await d.ref.update({ status: r.ret === '0' ? 'done' : 'failed', returnCode: r.ret, doneAt: FieldValue.serverTimestamp() });
+    meter.write('results');
   }
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
-/** Diagnostics for every request: a log line always, and the per-serial "last contact" record
- *  when Firestore is available. Never delays the device by more than a moment, never throws. */
-async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome) {
+/**
+ * Diagnostics. Every request gets a full log line (Vercel → Logs, search "adms"). The Firestore
+ * contact record (admsDiagnostics/{SN}) is written:
+ *   • at once for anything meaningful — a non-2xx answer (refused upload, old server unreachable),
+ *     a result of OUR commands, a handshake (device (re)start), or the first request after a quiet
+ *     spell (> DIAG_RECORD_MS since the last write);
+ *   • otherwise at most every DIAG_RECORD_MS per device per server instance.
+ * Request counts and the relay's own Firestore usage are totalled in memory meanwhile and added in
+ * that write, so the stored totals stay exact. (Writing every request used ~18,000 writes a day.)
+ */
+const DIAG_RECORD_MS = () => Number(process.env.ADMS_ROUTINE_RECORD_MS ?? 300_000);
+const lastRecord = new Map<string, number>();
+const pendingCounts = new Map<string, Record<string, number>>();
+async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome, urgent = false) {
   logLine(s, o);
   if (!fs) return;
-  await Promise.race([recordContact(fs, s, o), new Promise((r) => setTimeout(r, 2000))]).catch((e) => console.error('[iclock] diagnostics', (e as Error).message));
+  const key = s.sn || '?';
+  const kind = requestKind(s.method, s.path, s.table);
+  const counts = pendingCounts.get(key) ?? {};
+  counts[kind] = (counts[kind] ?? 0) + 1;
+  pendingCounts.set(key, counts);
+  // (Notes alone don't count: an unregistered serial polls every few seconds too — its note is
+  // recorded on the first request and then every DIAG_RECORD_MS, which is enough to spot a typo)
+  const meaningful = urgent || o.status < 200 || o.status >= 300 || kind === 'handshake';
+  if (!meaningful && Date.now() - (lastRecord.get(key) ?? 0) < DIAG_RECORD_MS()) return;
+  lastRecord.set(key, Date.now());
+  pendingCounts.delete(key);
+  const usage = takeUsage(key);
+  const write = recordContact(fs, s, o, { counts, usage });
+  await Promise.race([write, new Promise((r) => setTimeout(r, 2000))]).catch((e) => {
+    console.error('[iclock] diagnostics', (e as Error).message);
+    // Not lost: put the totals back for the next write
+    const back = pendingCounts.get(key) ?? {};
+    for (const [k, n] of Object.entries(counts)) back[k] = (back[k] ?? 0) + n;
+    pendingCounts.set(key, back);
+    returnUsage(key, usage);
+    lastRecord.delete(key);
+  });
+  console.log(JSON.stringify({ adms: true, kind: 'firestore usage', sn: s.sn, since: 'last record', requests: counts, usage }));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -179,15 +244,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const fs = sn ? fsDiag : null;
-  const deviceId = fs ? await deviceIdFor(fs, sn).catch(() => '') : '';
+  const meter = meterFor(sn || '?');
+  const deviceId = fs ? await deviceIdFor(fs, sn, meter).catch(() => '') : '';
 
   // 1) Command results: ours are handled here; everything else goes to the old server
   let upstreamBody = body;
   let oursOnly = false;
+  let oursSeen = false;   // a result of a CRM command: always worth recording
   if (path === 'devicecmd' && body) {
     const results = parseCommandResults(text);
     const ours = results.filter((r) => OUR_ID.test(r.id));
-    if (ours.length && fs && deviceId) await recordResults(fs, deviceId, ours).catch((e) => console.error('[iclock] results', e));
+    if (ours.length && fs && deviceId) await recordResults(fs, deviceId, ours, meter).catch((e) => console.error('[iclock] results', e));
+    oursSeen = ours.length > 0;
     const theirs = results.filter((r) => !OUR_ID.test(r.id));
     oursOnly = ours.length > 0 && theirs.length === 0;
     upstreamBody = Buffer.from(theirs.map((r) => r.line).join('\n') + (theirs.length ? '\n' : ''));
@@ -202,7 +270,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reply = await forward(req, rawPath, upstreamBody);
     } catch (e) {
       console.error('[iclock] old server unreachable:', (e as Error).message);
-      if (fs && deviceId) await devRef(fs, deviceId).update({ lastError: 'The old attendance server didn’t answer; the device will retry' }).catch(() => {});
+      if (fs && deviceId) {
+        await devRef(fs, deviceId).update({ lastError: 'The old attendance server didn’t answer; the device will retry' }).catch(() => {});
+        meter.write('heartbeat');
+        errorShown.add(deviceId);   // the next good request clears it at once
+      }
       await observe(fsDiag, summary, { status: 503, upstreamStatus: null, durationMs: Date.now() - started, crmDeviceId: deviceId || null, forwarded: false, note: `old server unreachable: ${(e as Error).message}` });
       res.status(503).send('Try again');   // nothing acknowledged → the device re-sends later
       return;
@@ -212,14 +284,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 3) Record on the way through — never delays or changes the old system's reply on failure
   if (fs && deviceId) {
     try {
-      await heartbeat(fs, deviceId);
+      await heartbeat(fs, deviceId, meter);
       if (path === 'cdata' && req.method === 'POST' && reply.status < 300) {
-        if (table === 'ATTLOG') await ingestScans(fs, deviceId, parseAttlog(text));
-        if (table === 'OPERLOG' || table === 'USERINFO' || /(^|\n)USER /.test(text)) await recordUsers(fs, deviceId, parseUsers(text));
-        await recordFingerprints(fs, deviceId, parseFingerprintPins(text));
+        if (table === 'ATTLOG') await ingestScans(fs, deviceId, parseAttlog(text), { meter });
+        if (table === 'OPERLOG' || table === 'USERINFO' || /(^|\n)USER /.test(text)) await recordUsers(fs, deviceId, parseUsers(text), meter);
+        await recordFingerprints(fs, deviceId, parseFingerprintPins(text), meter);
       }
       if (path === 'getrequest') {
-        const mine = await takeCommands(fs, deviceId);
+        const mine = await takeCommands(fs, deviceId, meter);
         if (mine.length) {
           const theirs = reply.body.toString('utf8').trim();
           reply.body = Buffer.from([...(theirs && theirs !== 'OK' ? [theirs] : []), ...mine].join('\n') + '\n');
@@ -234,7 +306,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     status: reply.status, upstreamStatus: HAS_UPSTREAM && !oursOnly ? reply.status : null, durationMs: Date.now() - started,
     crmDeviceId: deviceId || null, forwarded: HAS_UPSTREAM && !oursOnly,
     ...(sn && fs && !deviceId ? { note: `no CRM device has serial ${sn.toUpperCase()}` } : !sn ? { note: 'request without a serial (SN)' } : {}),
-  });
+  }, oursSeen);
   res.setHeader('Content-Type', reply.type);
   if (reply.date) res.setHeader('Date', reply.date);
   res.setHeader('Cache-Control', 'no-store');

@@ -135,9 +135,10 @@ test('slow start: never an endless spinner — it says so and offers a reload', 
   await expect(loader).toBeVisible();
   await expect(loader).toContainText('Taking longer than usual', { timeout: 12_000 });
   await expect(loader.getByRole('button', { name: 'Reload' })).toBeVisible();
+  await loader.getByRole('button', { name: 'Reload' }).click();                     // reloads the page…
+  await expect(page.locator(LOADER)).toBeVisible();                                    // …and boots again
   await page.unroute(/127\.0\.0\.1:8085/);
-  await loader.getByRole('button', { name: 'Reload' }).click();
-  await expect(page.locator(LOADER)).toBeHidden({ timeout: 10_000 });
+  await expect(page.locator(LOADER)).toBeHidden({ timeout: 15_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening)/);
 });
 

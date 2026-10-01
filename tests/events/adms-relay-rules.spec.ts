@@ -51,6 +51,9 @@ test.beforeAll(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8085';
   process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
   process.env.GCLOUD_PROJECT = PROJECT;
+  process.env.ADMS_COMMAND_CHECK_MS = '0';      // look for queued commands on every poll
+  process.env.ADMS_ROUTINE_RECORD_MS = '0';     // record every poll's contact
+  process.env.ADMS_HEARTBEAT_MS = '0';          // write the device's last contact every time
   const { default: handler } = await import('../../api/iclock');
   const { default: diagnostics } = await import('../../api/adms');
 
@@ -244,4 +247,61 @@ test('firmware that adds ".aspx" (this X2008: /iclock/getrequest.aspx) works the
   expect(received.length).toBe(before);
   expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/c9'))!.status.stringValue).toBe('done');
   expect(JSON.stringify(await getDoc(`admsDiagnostics/${SN}`))).toContain('command result');
+});
+
+// ── Firestore usage at production timing ─────────────────────────────────────
+// The device polls every 3–4 s. Every request must still reach the old server and get the same
+// answer; only the relay's own database writes are spaced out — without losing any count.
+const mapNum = (f: unknown, k: string) => Number((f as { mapValue?: { fields?: Record<string, { integerValue?: string }> } })?.mapValue?.fields?.[k]?.integerValue ?? 0);
+const production = () => { process.env.ADMS_ROUTINE_RECORD_MS = '600000'; process.env.ADMS_HEARTBEAT_MS = '600000'; process.env.ADMS_COMMAND_CHECK_MS = '600000'; };
+const immediate = () => { process.env.ADMS_ROUTINE_RECORD_MS = '0'; process.env.ADMS_HEARTBEAT_MS = '0'; process.env.ADMS_COMMAND_CHECK_MS = '0'; };
+
+test('routine polls: all forwarded and answered as before, but the contact record is written once per interval — with exact totals', async () => {
+  production();
+  await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`);                         // a handshake is always recorded
+  const d0 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  const dev0 = (await getDoc('gyms/crunch-wakad/devices/dev1'))!;
+  const before = received.length;
+  for (let i = 0; i < 20; i++) expect(await (await send(`getrequest?SN=${SN}`)).text()).toContain('C:77:INFO');   // the old server's commands still reach the device
+  expect(received.length).toBe(before + 20);                                        // every poll still reaches the old server
+  const d1 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  expect(JSON.stringify(d1.counts)).toBe(JSON.stringify(d0.counts));               // no database write for routine polls…
+  expect(JSON.stringify((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastSeenAt)).toBe(JSON.stringify(dev0.lastSeenAt));   // …nor a heartbeat
+  await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`);                          // the next meaningful request writes the totals
+  const d2 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  expect(mapNum(d2.counts, 'command poll') - mapNum(d0.counts, 'command poll')).toBe(20);   // exact, not sampled
+  expect(mapNum(d2.counts, 'handshake') - mapNum(d0.counts, 'handshake')).toBe(1);
+  expect(mapNum(d2.usage, 'writes.diagnostics') - mapNum(d0.usage, 'writes.diagnostics')).toBe(1);   // 22 requests → 1 write
+  expect(mapNum(d2.usage, 'reads.diagnostics')).toBeGreaterThan(0);
+  expect(mapNum(d2.usage, 'writes.punches')).toBeGreaterThan(0);                    // punch costs are measured too
+  immediate();
+});
+
+test('an error is recorded at once, and the next good request clears it at once — even at production timing', async () => {
+  production();
+  upstreamDown = true;
+  expect((await send(`getrequest?SN=${SN}`)).status).toBe(503);
+  upstreamDown = false;
+  expect(((await getDoc(`admsDiagnostics/${SN}`))!.last as { mapValue: { fields: { status: { integerValue: string } } } }).mapValue.fields.status.integerValue).toBe('503');
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('didn’t answer');
+  await send(`getrequest?SN=${SN}`);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError).toEqual({ nullValue: null });   // cleared at once, not in 10 minutes
+  immediate();
+});
+
+test('commands: a queued request waits for the next check; several queued ones drain on consecutive polls', async () => {
+  production();
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/w1', { type: 'query_users', status: 'queued', createdBy: 'x' });
+  expect(await (await send(`getrequest?SN=${SN}`)).text()).not.toContain('USERINFO');   // checked recently: not yet
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/w1'))!.status.stringValue).toBe('queued');
+  process.env.ADMS_COMMAND_CHECK_MS = '0';                                          // the check interval has passed
+  for (let i = 2; i <= 7; i++) await seedDoc(`gyms/crunch-wakad/devices/dev1/commands/w${i}`, { type: 'query_users', status: 'queued', createdBy: 'x' });
+  const first = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(first).toHaveLength(5);                                                     // 5 per poll, as before
+  process.env.ADMS_COMMAND_CHECK_MS = '600000';                                     // back to production timing…
+  const second = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(second).toHaveLength(2);                                                    // …yet the rest go on the very next poll
+  const third = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(third).toHaveLength(0);
+  immediate();
 });

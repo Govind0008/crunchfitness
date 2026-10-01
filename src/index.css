@@ -537,7 +537,7 @@ html { scroll-padding-top: calc(var(--page-top) + 1rem); }
 .boot-waiting .boot-sweep { opacity: 1; animation: boot-sweep 1.4s cubic-bezier(0.45, 0, 0.2, 1) infinite; }
 .boot-waiting .boot-line { opacity: 0.35; }
 .boot-leaving .boot-stage { animation: boot-leave 300ms var(--ease-snap) forwards; }
-.boot-leaving { animation: boot-fade-out 320ms var(--ease-snap) forwards; }
+.boot-leaving { animation: boot-fade-out 320ms var(--ease-snap) forwards; pointer-events: none; }   /* the app underneath is already usable */
 @keyframes boot-fade-out { to { opacity: 0; } }
 html.boot-reveal [data-admin-shell] { animation: shell-settle 380ms var(--ease-settle) 80ms both; }
 /* Reduced motion: a still barbell and "Loading…", then a quick fade */

@@ -69,20 +69,25 @@ const RECENT = 25;
  * browser has no rule to read or write it and sees it through /api/adms (admins only).
  * Serials the CRM doesn't know are recorded too, so a typo in the device's serial shows up.
  */
-export async function recordContact(fs: Firestore, s: RequestSummary, o: Outcome) {
+export async function recordContact(fs: Firestore, s: RequestSummary, o: Outcome, totals: { counts: Record<string, number>; usage: Record<string, number> } = { counts: {}, usage: {} }) {
   const key = (s.sn || 'NO-SERIAL').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 60);
   const ref = fs.collection('admsDiagnostics').doc(key);
   const entry = { at: s.at, kind: requestKind(s.method, s.path, s.table), method: s.method, path: s.path, table: s.table, status: o.status, upstreamStatus: o.upstreamStatus, durationMs: o.durationMs, bodyBytes: s.bodyBytes, parsed: s.parsed, remoteIp: s.remoteIp, ...(o.note ? { note: o.note } : {}) };
   await fs.runTransaction(async (tx) => {
     const cur = await tx.get(ref);
     const recent = [entry, ...((cur.get('recent') as unknown[]) ?? [])].slice(0, RECENT);
+    // Requests by kind, and the relay's own Firestore operations by cause — totalled in memory
+    // between writes (see api/iclock.ts), so throttled writing still gives exact totals
     const counts = (cur.get('counts') as Record<string, number>) ?? {};
-    counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+    const pendingCounts = Object.keys(totals.counts).length ? totals.counts : { [entry.kind]: 1 };
+    for (const [k, n] of Object.entries(pendingCounts)) counts[k] = (counts[k] ?? 0) + n;
+    const usage = (cur.get('usage') as Record<string, number>) ?? {};
+    for (const [k, n] of Object.entries({ ...totals.usage, 'reads.diagnostics': (totals.usage['reads.diagnostics'] ?? 0) + 1, 'writes.diagnostics': (totals.usage['writes.diagnostics'] ?? 0) + 1 })) usage[k] = (usage[k] ?? 0) + n;
     tx.set(ref, {
       sn: s.sn, probe: s.sn === PROBE_SN, crmDeviceId: o.crmDeviceId,
       firstSeenAt: cur.exists ? cur.get('firstSeenAt') : FieldValue.serverTimestamp(), lastSeenAt: FieldValue.serverTimestamp(), lastAt: s.at,
       last: entry, lastUserAgent: s.headers['user-agent'] ?? '', lastRemoteIp: s.remoteIp, pushVersion: s.query.pushver ?? cur.get('pushVersion') ?? '',
-      counts, recent,
+      counts, recent, usage, usageSince: cur.get('usageSince') ?? FieldValue.serverTimestamp(),
     });
   });
 }
