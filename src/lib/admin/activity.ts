@@ -1,6 +1,7 @@
 // Gym-wide admin activity log (append-only; the rules forbid edits and deletes).
 // Event-specific actions keep their own per-event log (events/{id}/activity).
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, where, writeBatch, type DocumentData, type DocumentReference, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, where, type DocumentData, type DocumentReference, type Timestamp } from 'firebase/firestore';
+import { writeBatch } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 
 export interface AdminActor { uid: string; email: string }

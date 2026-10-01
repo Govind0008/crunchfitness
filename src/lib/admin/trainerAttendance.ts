@@ -4,7 +4,8 @@
 // "No attendance recorded" — never "absent", because nothing says the trainer was expected.
 // Records are written by the device relay (api/_lib/ingest.ts); admins may add a manual
 // check-out to a day that has only a check-in, recorded with who and why.
-import { Timestamp, addDoc, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { Timestamp, collection, doc, getDocs, limit, query, serverTimestamp, where } from 'firebase/firestore';
+import { addDoc, updateDoc } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { logAdmin, type AdminActor } from './activity';
 

@@ -3,15 +3,16 @@
 import { collection, getCountFromServer, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { queryClient } from '@/lib/queryClient';
-import { DUES_LOOKBACK_DAYS, addDays, memberCounts, membersDue, todayIST, type Member, type MemberCounts } from '@/lib/admin/members';
+import { DUES_LOOKBACK_DAYS, addDays, todayIST, type Member, type MemberCounts } from '@/lib/admin/members';
 import { countManualSince, countSince, periodStarts } from '@/lib/admin/attendance';
 import { getSettings } from '@/lib/admin/settings';
 import { paymentsBetween, type Payment } from '@/lib/admin/payments';
 import { recentActivity, type ActivityEntry } from '@/lib/admin/activity';
 import { deviceHealth } from '@/lib/access';
 import { accessSummary, todayStartIso, type AccessSummary } from '@/lib/access/store';
-import { listTeam, trainerAttendanceOn } from '@/lib/admin/trainerAttendance';
+import { trainerAttendanceOn } from '@/lib/admin/trainerAttendance';
 import { PUBLIC_STATUSES, normalizeEvent, type CrunchEvent } from '@/lib/events';
+import { duesQuery, memberCountsQuery, teamQuery } from './pageData';
 
 export interface Alert { tone: 'info' | 'warn'; what: string; action: string; to: string }
 
@@ -25,8 +26,10 @@ export async function loadDashboard(today: string): Promise<Dash> {
   const settings = await getSettings();   // cached after the first call
   // Each source loads on its own: one refused or failing query shows as "unavailable",
   // it doesn't blank the whole dashboard
+  // Member counts, dues and the team come from the same cached queries as the Members, Dues and
+  // Trainers pages, so neither those pages nor the background prefetch read them a second time
   const parts = await Promise.allSettled([
-    memberCounts(settings.expiringSoonDays),
+    queryClient.fetchQuery(memberCountsQuery(settings.expiringSoonDays)),
     // Check-ins today: front desk plus any older-style self check-ins
     Promise.all([countManualSince(periodStarts().today), countSince(periodStarts().today).catch(() => 0)]).then(([a, b]) => a + b),
     getDocs(query(collection(db, 'events'), where('status', 'in', PUBLIC_STATUSES.filter((s) => s !== 'archived')))),
@@ -34,11 +37,11 @@ export async function loadDashboard(today: string): Promise<Dash> {
     // Renewals overdue: memberships that ended in the last DUES_LOOKBACK_DAYS (not long-gone history)
     getCountFromServer(query(collection(db, 'members'), where('activeUntil', '>=', addDays(today, -DUES_LOOKBACK_DAYS)), where('activeUntil', '<', today))),
     paymentsBetween(today, today),
-    membersDue(settings.expiringSoonDays),
+    queryClient.fetchQuery(duesQuery()).then((d) => d.rows),
     accessSummary(todayStartIso(today)),
     recentActivity(8),
     Promise.all([countManualSince(periodStarts().week), countSince(periodStarts().week).catch(() => 0)]).then(([a, b]) => a + b),
-    Promise.all([listTeam(), trainerAttendanceOn(today)]).then(([team, days]) => ({
+    Promise.all([queryClient.fetchQuery(teamQuery()), trainerAttendanceOn(today)]).then(([team, days]) => ({
       team: team.length, present: days.filter((d) => d.punchCount > 0).length,
       completed: days.filter((d) => d.status === 'COMPLETED').length, missing: days.filter((d) => d.status === 'MISSING_CHECKOUT').length,
     })),

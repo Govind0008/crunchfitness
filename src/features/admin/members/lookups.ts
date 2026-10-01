@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, getDocs, orderBy, query, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { onAdminDataChanged } from '@/lib/queryClient';
 
 export interface PlanRef { id: string; duration: string; price?: string }
 export interface TrainerRef { id: string; name: string; role?: string }
@@ -27,6 +28,8 @@ function loadLookups(): Promise<Lookups> {
 }
 /** Call after plans or team profiles change, so the next page shows the new names and prices. */
 export const invalidateLookups = () => { cache = null; };
+// Any admin save (a plan or a team profile included) clears it
+onAdminDataChanged(invalidateLookups);
 
 /** Plans and trainers are small collections: load once, look names up by id (never copied onto members). */
 export function useLookups() {

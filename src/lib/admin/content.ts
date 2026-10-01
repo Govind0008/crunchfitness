@@ -2,8 +2,9 @@
 // membership plans and enquiries. The same documents and writes the old dashboard used — moved
 // here so the redesigned screens (and the marketing desk) share one implementation.
 import {
-  addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, type Unsubscribe,
+  collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, where, type Unsubscribe,
 } from 'firebase/firestore';
+import { addDoc, deleteDoc, updateDoc } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 import { logAdmin, type AdminActor } from './activity';
 

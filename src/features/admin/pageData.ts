@@ -12,6 +12,7 @@ import { listMembers, memberCounts, membersDue, todayIST } from '@/lib/admin/mem
 import { checkInsBetween, countManualSince, countSince, countVisitsBetween, periodStarts, type CheckInRecord } from '@/lib/admin/attendance';
 import { monthStart, paymentsBetween } from '@/lib/admin/payments';
 import { getSettings } from '@/lib/admin/settings';
+import { listTeam } from '@/lib/admin/trainerAttendance';
 
 export const duesQuery = () => ({
   queryKey: ['admin', 'dues'],
@@ -39,6 +40,9 @@ export const attendanceQuery = (day: string) => ({
     return { day: d + e.length, earlier: e, week: w + ew, month: m + em, failed: failed as string | null };
   },
 });
+
+/** The team list (id, name, role, photo) — shared by the dashboard and the trainer screens. */
+export const teamQuery = () => ({ queryKey: ['admin', 'team'], queryFn: listTeam });
 
 export const settingsQuery = () => ({ queryKey: ['admin', 'settings'], queryFn: getSettings });
 export const memberCountsQuery = (expDays: number) => ({ queryKey: ['admin', 'memberCounts', expDays], queryFn: () => memberCounts(expDays) });

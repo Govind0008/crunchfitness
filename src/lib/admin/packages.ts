@@ -6,7 +6,8 @@
 //                       membership and never grants door access.
 //
 // Both are written by admins only (payment recording, or the legacy import), never deleted.
-import { collection, doc as fsDoc, getDocs, increment, limit, query, serverTimestamp, where, writeBatch, type Timestamp } from 'firebase/firestore';
+import { collection, doc as fsDoc, getDocs, increment, limit, query, serverTimestamp, where, type Timestamp } from 'firebase/firestore';
+import { writeBatch } from '@/lib/admin/writes';
 import { logTo, type AdminActor } from './activity';
 import { db } from '@/lib/firebase';
 

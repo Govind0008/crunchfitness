@@ -1,6 +1,7 @@
 // Staff-picked Instagram posts — the fallback when the live Instagram feed isn't available.
 // Only real post URLs are stored; the site renders them with Instagram's official embed.
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, getDocs } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, where, getDocs } from 'firebase/firestore';
+import { addDoc, deleteDoc, updateDoc } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 
 export interface SocialHighlight { id: string; url: string; visible: boolean }

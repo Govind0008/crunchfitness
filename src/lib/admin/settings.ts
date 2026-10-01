@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { setDoc } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
 
 export interface AdminSettings { expiringSoonDays: number }

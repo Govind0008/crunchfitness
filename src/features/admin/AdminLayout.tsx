@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronRight, Command, LogOut, Menu, Monitor, Moon, Settings, Sun } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -10,6 +11,7 @@ import OpenDoorButton from '@/components/admin/OpenDoorButton';
 import { signOut } from 'firebase/auth';
 import { collection, getCountFromServer, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { adminDataChanged } from '@/lib/queryClient';
 import { auth } from '@/lib/firebase-auth';
 import AdminSidebar, { AdminBottomNav } from '@/components/admin/AdminSidebar';
 import type { NavKey } from '@/components/admin/tabs';
@@ -64,19 +66,25 @@ const Frame = () => {
   const [palette, setPalette] = useState(false);
   const theme = useStaffTheme();
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; } });
-  const [unread, setUnread] = useState(0);
   const main = useRef<HTMLElement>(null);
   const { nav, area } = sectionOf(pathname);
   const section = LABEL[nav] ?? area;
   const toggleCollapsed = () => setCollapsed((c) => { try { localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1'); } catch { /* convenience only */ } return !c; });
 
   // Sidebar badge: a count (not a live listener, which would queue ahead of the page's own
-  // queries), refreshed on navigation and every minute
+  // queries). Cached for 2 minutes and re-read every 5; opening or answering an enquiry
+  // refreshes it at once (every admin save does — see adminDataChanged).
+  const unread = useQuery({
+    queryKey: ['admin', 'unreadEnquiries'],
+    queryFn: () => getCountFromServer(query(collection(db, 'enquiries'), where('read', '==', false))).then((c) => c.data().count),
+    refetchInterval: 5 * 60_000,
+  }).data ?? 0;
+  // Screens whose writes don't go through the admin data modules (the member imports, and access
+  // control's own device and enrolment writes): leaving one refreshes the rest of the admin
+  const lastPath = useRef(pathname);
   useEffect(() => {
-    const load = () => getCountFromServer(query(collection(db, 'enquiries'), where('read', '==', false))).then((c) => setUnread(c.data().count)).catch(() => {});
-    load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
+    if (lastPath.current !== pathname && /^\/admin\/(members\/import|access|settings\/access)/.test(lastPath.current)) adminDataChanged();
+    lastPath.current = pathname;
   }, [pathname]);
   // New page → start at the top of the content area (the shell itself never scrolls away)
   useEffect(() => { main.current?.scrollTo({ top: 0 }); setMenuOpen(false); }, [pathname]);
