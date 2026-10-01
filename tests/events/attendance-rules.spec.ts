@@ -107,10 +107,10 @@ test('after midnight is the next local day: a second visit', async () => {
   expect((await get('checkins/2026-09-21_m1'))!.at.toDate().toISOString()).toBe('2026-09-20T18:45:00.000Z');
 });
 
-test('an expired member’s punch is still their visit; the event records the membership result', async () => {
+test('an expired old-system member’s punch is still their visit, and is never judged as denied', async () => {
   await ingest(fs, DEV, [scan('2', '2026-09-20 07:00:00')]);
   const [ev] = await eventsOf('2');
-  expect(ev).toMatchObject({ personType: 'member', memberId: 'm2', result: 'denied' });
+  expect(ev).toMatchObject({ personType: 'member', memberId: 'm2', result: 'legacy', decision: 'LEGACY_USER', managedBy: 'legacy' });   // linked without the CRM marker
   expect(await get('checkins/2026-09-20_m2')).toMatchObject({ memberId: 'm2', punchCount: 1 });
 });
 

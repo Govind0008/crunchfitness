@@ -49,7 +49,8 @@ export default function CrunchBootLoader({ ready, onDone }: { ready: boolean; on
   return (
     <div
       className={cn('boot-screen fixed inset-0 z-[100] flex flex-col items-center justify-center bg-ink-950 px-6 text-white', reduced && 'boot-reduced', sequenced && !ready && 'boot-waiting', leaving && 'boot-leaving')}
-      role="status" aria-live="polite" aria-busy={!leaving} aria-label="Loading the Crunch admin"
+      // Only a status while it's loading: once it's leaving, the app's own messages are the status
+      {...(leaving ? { 'aria-hidden': true } : { role: 'status', 'aria-live': 'polite', 'aria-busy': true, 'aria-label': 'Loading the Crunch admin' })}
       data-boot-loader
     >
       <div className="boot-stage flex w-full max-w-xs flex-col items-center">

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import http from 'node:http';
 import { PassThrough } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import { ADMIN, AUTH, FS, PROJECT, resetFirestore, seedAdmin, seedDoc } from './emulator';
+import { ADMIN, AUTH, FS, PROJECT, resetFirestore, seedAdmin, seedDoc, ts } from './emulator';
 
 // The ADMS relay (api/iclock.ts) between the fingerprint device and the old attendance server.
 // A fake "old server" records exactly what it receives; the relay runs against the emulator.
@@ -51,6 +51,9 @@ test.beforeAll(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8085';
   process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
   process.env.GCLOUD_PROJECT = PROJECT;
+  process.env.ADMS_COMMAND_CHECK_MS = '0';      // look for queued commands on every poll
+  process.env.ADMS_ROUTINE_RECORD_MS = '0';     // record every poll's contact
+  process.env.ADMS_HEARTBEAT_MS = '0';          // write the device's last contact every time
   const { default: handler } = await import('../../api/iclock');
   const { default: diagnostics } = await import('../../api/adms');
 
@@ -92,7 +95,9 @@ test.beforeAll(async () => {
   await seedDoc('gyms/crunch-wakad/devices/dev1', { gymId: 'crunch-wakad', name: 'Main entrance', model: 'eSSL X2008', serialNumber: SN, protocol: 'adms', enabled: true, nextUserId: 1, lastSeenAt: null, lastSyncAt: null, firmware: null, lastError: null });
   await seedDoc('members/m1', { name: 'Asha Rao', phone: '9000000001', phoneKey: '9000000001', status: 'active', membershipEnd: '2099-12-31', activeUntil: '2099-12-31' });
   await seedDoc('members/m2', { name: 'Old Member', phone: '9000000002', phoneKey: '9000000002', status: 'active', membershipEnd: '2020-01-01', activeUntil: '2020-01-01' });
-  await seedDoc('biometricIdentities/dev1_501', { gymId: 'crunch-wakad', memberId: 'm1', deviceId: 'dev1', deviceUserId: '501', method: 'fingerprint', status: 'PENDING' });
+  // 501: created by the new CRM (it controls access). 502: an old-system user linked for attendance
+  // only (no managedBy marker) — the new CRM must never judge or change them.
+  await seedDoc('biometricIdentities/dev1_501', { gymId: 'crunch-wakad', memberId: 'm1', deviceId: 'dev1', deviceUserId: '501', method: 'fingerprint', status: 'PENDING', managedBy: 'crm', accessEnabled: true, enrollment: 'requested' });
   await seedDoc('biometricIdentities/dev1_502', { gymId: 'crunch-wakad', memberId: 'm2', deviceId: 'dev1', deviceUserId: '502', method: 'fingerprint', status: 'SYNCED' });
 });
 test.afterAll(() => { upstream?.close(); relay?.close(); });
@@ -108,7 +113,7 @@ test('the handshake and every scan reach the old server unchanged; its replies r
   expect(received.at(-1)!.body).toBe(attlog);                                      // byte for byte, all three lines
 });
 
-test('every punch is kept; linked members are judged by their membership, unlinked users stay unresolved', async () => {
+test('every punch is kept; only CRM-managed users are judged; old-system and unknown users are never denied', async () => {
   const events = await list('accessEvents');
   expect(events.map((e) => e.fields.deviceUserId.stringValue).sort()).toEqual(['501', '502', '999']);
   const unknown = events.find((e) => e.fields.deviceUserId.stringValue === '999')!.fields;
@@ -117,9 +122,19 @@ test('every punch is kept; linked members are judged by their membership, unlink
   expect(unknown.memberId).toEqual({ nullValue: null });
   const asha = events.find((e) => e.fields.deviceUserId.stringValue === '501')!.fields;
   expect(asha.result.stringValue).toBe('granted');
+  expect(asha.decision.stringValue).toBe('ACCESS_ALLOWED');
   expect(asha.at.stringValue).toBe('2026-09-29T12:35:10.000Z');                  // 18:05:10 India time
   expect(asha.verify.stringValue).toBe('fingerprint');
-  expect(events.find((e) => e.fields.deviceUserId.stringValue === '502')!.fields.result.stringValue).toBe('denied');   // expired
+  // 502's membership has expired, but the old system manages them: recorded, never "denied"
+  const legacy = events.find((e) => e.fields.deviceUserId.stringValue === '502')!.fields;
+  expect(legacy.result.stringValue).toBe('legacy');
+  expect(legacy.decision.stringValue).toBe('LEGACY_USER');
+  expect(legacy.decisionReason).toEqual({ nullValue: null });
+  expect(unknown.decision.stringValue).toBe('UNKNOWN_USER');
+  // …and nothing at all was queued for the device because of these scans
+  expect(await list('gyms/crunch-wakad/devices/dev1/commands')).toEqual([]);
+  // A scan verified BY FINGERPRINT is the device's own proof the fingerprint is enrolled
+  expect((await getDoc('biometricIdentities/dev1_501'))!.enrollment.stringValue).toBe('confirmed');
   expect((await getDoc('biometricIdentities/dev1_501'))!.status.stringValue).toBe('SYNCED');   // the device knows this user
   const dev = await getDoc('gyms/crunch-wakad/devices/dev1');
   expect(dev!.connection.stringValue).toBe('relay');
@@ -152,6 +167,61 @@ test('CRM commands go to the device alongside the old server’s; results are ro
   const onlyOurs = received.length;
   expect(await (await send(`devicecmd?SN=${SN}`, 'POST', `ID=${id}&Return=0&CMD=DATA\n`)).text()).toBe('OK');
   expect(received.length).toBe(onlyOurs);                                          // nothing to forward
+});
+
+test('a CRM-managed member whose membership expired is recorded as not allowed — and it’s still their visit', async () => {
+  await seedDoc('members/m3', { name: 'Lapsed Member', phone: '9000000003', phoneKey: '9000000003', status: 'active', membershipEnd: '2026-01-31', activeUntil: '2026-01-31' });
+  await seedDoc('biometricIdentities/dev1_503', { gymId: 'crunch-wakad', memberId: 'm3', deviceId: 'dev1', deviceUserId: '503', method: 'fingerprint', status: 'SYNCED', managedBy: 'crm', accessEnabled: true });
+  await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=12350`, 'POST', '503\t2026-09-29 20:00:00\t0\t1\t0\t0\n');
+  const ev = (await list('accessEvents')).find((e) => e.fields.deviceUserId.stringValue === '503')!.fields;
+  expect(ev.decision.stringValue).toBe('ACCESS_DENIED');
+  expect(ev.decisionReason.stringValue).toBe('MEMBERSHIP_EXPIRED');
+  expect(ev.result.stringValue).toBe('denied');
+  expect(await getDoc('checkins/2026-09-29_m3')).not.toBeNull();                  // the device let them in: it's a visit
+  expect((await list('gyms/crunch-wakad/devices/dev1/commands')).filter((c) => c.fields.deviceUserId?.stringValue === '503')).toEqual([]);   // nothing sent to the device
+});
+
+test('remote enrolment: the device accepts, and only the device’s own fingerprint report confirms it', async () => {
+  await seedDoc('teamMembers/T7', { name: 'Coach Seven', role: 'Coach' });
+  await seedDoc('biometricIdentities/dev1_701', { gymId: 'crunch-wakad', personType: 'trainer', memberId: null, trainerId: 'T7', deviceId: 'dev1', deviceUserId: '701', method: 'fingerprint', status: 'PENDING', managedBy: 'crm', accessEnabled: true, enrollment: 'requested' });
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/e1', { type: 'enroll_fp', deviceUserId: '701', personType: 'trainer', personId: 'T7', status: 'queued', createdBy: 'x' });
+  const poll = await (await send(`getrequest?SN=${SN}`)).text();
+  const line = poll.split('\n').find((l) => l.includes('ENROLL_FP'))!;
+  expect(line).toMatch(/^C:9\d{8}:ENROLL_FP PIN=701\tFID=6\tRETRY=3\tOVERWRITE=0$/);
+  const id = line.split(':')[1];
+  await send(`devicecmd?SN=${SN}`, 'POST', `ID=${id}&Return=0&CMD=ENROLL_FP\n`);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/e1'))!.status.stringValue).toBe('done');
+  // Accepted is NOT enrolled
+  expect((await getDoc('biometricIdentities/dev1_701'))!.enrollment.stringValue).toBe('device_accepted');
+  // The device uploads the saved fingerprint (template ignored, never stored)
+  await send(`cdata?SN=${SN}&table=OPERLOG&Stamp=6`, 'POST', 'FP PIN=701\tFID=6\tSize=1000\tValid=1\tTMP=SECRETTEMPLATE\n');
+  const after = (await getDoc('biometricIdentities/dev1_701'))!;
+  expect(after.enrollment.stringValue).toBe('confirmed');
+  expect(after.enrollmentEvidence.stringValue).toBe('fingerprint_template_reported');
+  const log = await list('activity');
+  expect(log.some((a) => a.fields.meta?.mapValue?.fields?.event?.stringValue === 'DEVICE_COMMAND_SUCCESS')).toBe(true);
+  expect(log.some((a) => a.fields.meta?.mapValue?.fields?.event?.stringValue === 'ENROLLMENT_CONFIRMED')).toBe(true);
+  expect(JSON.stringify(log)).not.toContain('SECRETTEMPLATE');
+  expect(JSON.stringify(await list('biometricIdentities'))).not.toContain('SECRETTEMPLATE');
+});
+
+test('a refused enrolment is reported as failed, with the device’s code — never as enrolled', async () => {
+  await seedDoc('biometricIdentities/dev1_702', { gymId: 'crunch-wakad', personType: 'trainer', memberId: null, trainerId: 'T7', deviceId: 'dev1', deviceUserId: '702', method: 'fingerprint', status: 'PENDING', managedBy: 'crm', accessEnabled: true, enrollment: 'requested' });
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/e2', { type: 'enroll_fp', deviceUserId: '702', status: 'queued', createdBy: 'x' });
+  const line = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').find((l) => l.includes('PIN=702'))!;
+  await send(`devicecmd?SN=${SN}`, 'POST', `ID=${line.split(':')[1]}&Return=-1002&CMD=ENROLL_FP\n`);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/e2'))!.status.stringValue).toBe('failed');
+  const ident = (await getDoc('biometricIdentities/dev1_702'))!;
+  expect(ident.enrollment.stringValue).toBe('failed');
+  expect(ident.enrollmentError.stringValue).toBe('Device answered -1002');
+  expect((await list('activity')).some((a) => a.fields.meta?.mapValue?.fields?.event?.stringValue === 'ENROLLMENT_FAILED')).toBe(true);
+});
+
+test('what the OLD server sends the device is recorded as command verbs only — no user details', async () => {
+  await send(`getrequest?SN=${SN}`);
+  const diag = (await getDoc(`admsDiagnostics/${SN}`))!;
+  const recent = JSON.stringify(diag);
+  expect(recent).toContain('INFO ×');                                               // the fake old server answers "C:77:INFO"
 });
 
 test('if the old server is down, nothing is acknowledged — the device keeps the scans and retries', async () => {
@@ -244,4 +314,103 @@ test('firmware that adds ".aspx" (this X2008: /iclock/getrequest.aspx) works the
   expect(received.length).toBe(before);
   expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/c9'))!.status.stringValue).toBe('done');
   expect(JSON.stringify(await getDoc(`admsDiagnostics/${SN}`))).toContain('command result');
+});
+
+// ── Firestore usage at production timing ─────────────────────────────────────
+// The device polls every 3–4 s. Every request must still reach the old server and get the same
+// answer; only the relay's own database writes are spaced out — without losing any count.
+const mapNum = (f: unknown, k: string) => Number((f as { mapValue?: { fields?: Record<string, { integerValue?: string }> } })?.mapValue?.fields?.[k]?.integerValue ?? 0);
+const production = () => { process.env.ADMS_ROUTINE_RECORD_MS = '600000'; process.env.ADMS_HEARTBEAT_MS = '600000'; process.env.ADMS_COMMAND_CHECK_MS = '600000'; };
+const immediate = () => { process.env.ADMS_ROUTINE_RECORD_MS = '0'; process.env.ADMS_HEARTBEAT_MS = '0'; process.env.ADMS_COMMAND_CHECK_MS = '0'; };
+
+test('routine polls: all forwarded and answered as before, but the contact record is written once per interval — with exact totals', async () => {
+  production();
+  await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`);                         // a handshake is always recorded
+  const d0 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  const dev0 = (await getDoc('gyms/crunch-wakad/devices/dev1'))!;
+  const before = received.length;
+  for (let i = 0; i < 20; i++) expect(await (await send(`getrequest?SN=${SN}`)).text()).toContain('C:77:INFO');   // the old server's commands still reach the device
+  expect(received.length).toBe(before + 20);                                        // every poll still reaches the old server
+  const d1 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  expect(JSON.stringify(d1.counts)).toBe(JSON.stringify(d0.counts));               // no database write for routine polls…
+  expect(JSON.stringify((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastSeenAt)).toBe(JSON.stringify(dev0.lastSeenAt));   // …nor a heartbeat
+  await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`);                          // the next meaningful request writes the totals
+  const d2 = (await getDoc(`admsDiagnostics/${SN}`))!;
+  expect(mapNum(d2.counts, 'command poll') - mapNum(d0.counts, 'command poll')).toBe(20);   // exact, not sampled
+  expect(mapNum(d2.counts, 'handshake') - mapNum(d0.counts, 'handshake')).toBe(1);
+  expect(mapNum(d2.usage, 'writes.diagnostics') - mapNum(d0.usage, 'writes.diagnostics')).toBe(1);   // 22 requests → 1 write
+  expect(mapNum(d2.usage, 'reads.diagnostics')).toBeGreaterThan(0);
+  expect(mapNum(d2.usage, 'writes.punches')).toBeGreaterThan(0);                    // punch costs are measured too
+  immediate();
+});
+
+test('an error is recorded at once, and the next good request clears it at once — even at production timing', async () => {
+  production();
+  upstreamDown = true;
+  expect((await send(`getrequest?SN=${SN}`)).status).toBe(503);
+  upstreamDown = false;
+  expect(((await getDoc(`admsDiagnostics/${SN}`))!.last as { mapValue: { fields: { status: { integerValue: string } } } }).mapValue.fields.status.integerValue).toBe('503');
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('didn’t answer');
+  await send(`getrequest?SN=${SN}`);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError).toEqual({ nullValue: null });   // cleared at once, not in 10 minutes
+  immediate();
+});
+
+test('commands: a queued request waits for the next check; several queued ones drain on consecutive polls', async () => {
+  production();
+  process.env.ADMS_COMMAND_LISTEN = '0';                                            // the periodic check alone (no fast lane)
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/w1', { type: 'query_users', status: 'queued', createdBy: 'x' });
+  expect(await (await send(`getrequest?SN=${SN}`)).text()).not.toContain('USERINFO');   // checked recently: not yet
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/w1'))!.status.stringValue).toBe('queued');
+  process.env.ADMS_COMMAND_CHECK_MS = '0';                                          // the check interval has passed
+  for (let i = 2; i <= 7; i++) await seedDoc(`gyms/crunch-wakad/devices/dev1/commands/w${i}`, { type: 'query_users', status: 'queued', createdBy: 'x' });
+  const first = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(first).toHaveLength(5);                                                     // 5 per poll, as before
+  process.env.ADMS_COMMAND_CHECK_MS = '600000';                                     // back to production timing…
+  const second = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(second).toHaveLength(2);                                                    // …yet the rest go on the very next poll
+  const third = (await (await send(`getrequest?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'));
+  expect(third).toHaveLength(0);
+  delete process.env.ADMS_COMMAND_LISTEN;
+  immediate();
+});
+
+// "Open door" in the admin header: one AC_UNLOCK to the device; "released" only on the device's Return=0
+const ours = (text: string, cmd: string) => text.split('\n').find((l) => l.startsWith('C:9') && l.endsWith(`:${cmd}`));
+test('open door: sent to the device as AC_UNLOCK; done and logged only when the device answers Return=0', async () => {
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/u1', { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: ts(new Date().toISOString()) });
+  const line = ours(await (await send(`getrequest?SN=${SN}`)).text(), 'AC_UNLOCK')!;
+  expect(line).toMatch(/^C:9\d{8}:AC_UNLOCK$/);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/u1'))!.status.stringValue).toBe('sent');   // sent is not opened
+  await send(`devicecmd?SN=${SN}`, 'POST', `ID=${line.split(':')[1]}&Return=0&CMD=AC_UNLOCK\n`);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/u1'))!.status.stringValue).toBe('done');
+  expect((await list('activity')).some((a) => a.fields.meta?.mapValue?.fields?.event?.stringValue === 'DOOR_UNLOCKED')).toBe(true);
+  // A refusal is a failure with the device's code
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/u2', { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: ts(new Date().toISOString()) });
+  const line2 = ours(await (await send(`getrequest?SN=${SN}`)).text(), 'AC_UNLOCK')!;
+  await send(`devicecmd?SN=${SN}`, 'POST', `ID=${line2.split(':')[1]}&Return=-1&CMD=AC_UNLOCK\n`);
+  const u2 = (await getDoc('gyms/crunch-wakad/devices/dev1/commands/u2'))!;
+  expect(u2.status.stringValue).toBe('failed');
+  expect(u2.returnCode.stringValue).toBe('-1');
+  expect((await list('activity')).some((a) => a.fields.meta?.mapValue?.fields?.event?.stringValue === 'DOOR_UNLOCK_FAILED')).toBe(true);
+});
+
+test('open door: a request the device didn’t collect within 30 s expires and is never sent later', async () => {
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/u3', { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: ts(new Date(Date.now() - 120_000).toISOString()) });
+  expect(await (await send(`getrequest?SN=${SN}`)).text()).not.toContain('AC_UNLOCK');
+  const u3 = (await getDoc('gyms/crunch-wakad/devices/dev1/commands/u3'))!;
+  expect(u3.status.stringValue).toBe('failed');
+  expect(u3.error.stringValue).toContain('Expired');
+  expect(await (await send(`getrequest?SN=${SN}`)).text()).not.toContain('AC_UNLOCK');
+});
+
+test('open door at production timing: the queue listener delivers it on the next poll, not after the periodic check', async () => {
+  await send(`getrequest?SN=${SN}`);                                                // listener is up for this device
+  production();                                                                     // periodic check: 10 minutes
+  await send(`getrequest?SN=${SN}`);
+  await send(`getrequest?SN=${SN}`);                                                // checked just now
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/u4', { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: ts(new Date().toISOString()) });
+  await expect.poll(async () => ours(await (await send(`getrequest?SN=${SN}`)).text(), 'AC_UNLOCK') ?? '', { timeout: 8000 }).toMatch(/AC_UNLOCK$/);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/u4'))!.status.stringValue).toBe('sent');
+  immediate();
 });

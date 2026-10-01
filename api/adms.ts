@@ -64,6 +64,8 @@ async function status() {
     return {
       sn, probe, crmDeviceId, lastSeenAt, firstSeenAt: iso(d.get('firstSeenAt')), last: d.get('last') ?? null, counts: d.get('counts') ?? {},
       userAgent: d.get('lastUserAgent') ?? '', remoteIp: d.get('lastRemoteIp') ?? '', pushVersion: d.get('pushVersion') ?? '', recent: (d.get('recent') as unknown[] ?? []).slice(0, 10),
+      // The latest record of commands the OLD server sent this device (verbs and counts only)
+      oldServerCommands: ((d.get('recent') as { upstreamCommands?: string[]; at?: string }[] ?? []).find((r) => r.upstreamCommands?.length) ?? null),
       // Only a real device request, from a serial registered in the CRM, recently, counts as connected
       state: probe ? 'self-test' : !crmDeviceId ? 'unregistered serial' : recentMs <= CONNECTED_WINDOW_MS ? 'connected' : 'seen earlier',
     };

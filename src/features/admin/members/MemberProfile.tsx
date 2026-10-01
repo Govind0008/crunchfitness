@@ -6,7 +6,7 @@ import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DUES_LOOKBACK_DAYS, addDays, deleteMember, getMember, linkTrainerClient, memberCode, memberState, todayIST, type Member } from '@/lib/admin/members';
-import { ACCESS_CONNECTED, BIOMETRIC_LABEL, RESULT_LABEL, accessEligibility, type AccessEvent, type BiometricIdentity } from '@/lib/access';
+import { ACCESS_CONNECTED, ENROLLMENT_LABEL, MANAGED_LABEL, RESULT_LABEL, enrollmentOf, managedByOf, accessEligibility, type AccessEvent, type BiometricIdentity } from '@/lib/access';
 import { accessEventsOfMember, identitiesOfMember } from '@/lib/access/store';
 import { activityFor, type ActivityEntry } from '@/lib/admin/activity';
 import { checkInsForPhone, manualCheckInsOf, periodStarts } from '@/lib/admin/attendance';
@@ -21,7 +21,7 @@ import { StatePill } from './shared';
 import { fmtDate, fmtTime, useLookups } from './lookups';
 import PhotoControl from './PhotoControl';
 import PtPackageForm from './PtPackageForm';
-import EnrollWizard from './EnrollWizard';
+import EnrollWizard, { memberPerson } from '@/features/admin/access/EnrollWizard';
 import PaymentForm from '@/features/admin/payments/PaymentForm';
 import StaffCheckIn from '@/features/admin/StaffCheckIn';
 import { EmptyNote, ErrorNote, SideDrawer, SkeletonRows, StatusDot } from '@/features/admin/kit';
@@ -299,7 +299,7 @@ const MemberProfile = () => {
             </Story>
             <Story title="Access" action={{ label: 'Manage access', onClick: () => go('access') }}>
               <StatusDot tone={access.eligible ? 'ok' : access.eligible === false ? 'bad' : 'muted'}>{access.eligible ? 'Enabled' : access.eligible === false ? 'Not allowed' : 'No membership'}</StatusDot>
-              <p className="mt-2 text-sm text-ink-300">Fingerprint: {identities === null ? '…' : bio ? (bio.status === 'SYNCED' || bio.status === 'ENROLLED' ? '✓ Enrolled' : BIOMETRIC_LABEL[bio.status]) : 'Not enrolled'}</p>
+              <p className="mt-2 text-sm text-ink-300">Fingerprint: {identities === null ? '…' : bio ? `${enrollmentOf(bio) === 'confirmed' ? '✓ Enrolled' : ENROLLMENT_LABEL[enrollmentOf(bio)]} · ${MANAGED_LABEL[managedByOf(bio)]}` : 'Not enrolled'}</p>
               <p className="mt-2 text-xs text-ink-500">{access.reason}{lastScan ? ` · last scan ${new Date(lastScan.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</p>
             </Story>
           </section>
@@ -515,7 +515,7 @@ const MemberProfile = () => {
       </SideDrawer>
 
       <SideDrawer open={drawer === 'access'} onOpenChange={(o) => !o && closeDrawer()} title="Enroll access" description="Fingerprint on the gym’s biometric device">
-        <EnrollWizard m={m} existing={identities ?? []} onDone={() => identitiesOfMember(id).then(setIdentities)} />
+        <EnrollWizard person={memberPerson(m)} existing={identities ?? []} onDone={() => identitiesOfMember(id).then(setIdentities)} />
       </SideDrawer>
 
       <SideDrawer open={drawer === 'checkin'} onOpenChange={(o) => !o && closeDrawer()} title="Check in" description={m.name}>

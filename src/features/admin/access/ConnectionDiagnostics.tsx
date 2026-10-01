@@ -13,6 +13,7 @@ interface Contact {
   sn: string; probe: boolean; crmDeviceId: string | null; lastSeenAt: string | null; firstSeenAt: string | null;
   last: { kind: string; path: string; method: string; table: string; status: number; upstreamStatus: number | null; durationMs: number; note?: string } | null;
   counts: Record<string, number>; userAgent: string; remoteIp: string; pushVersion: string;
+  oldServerCommands?: { upstreamCommands?: string[]; at?: string } | null;
   state: 'connected' | 'seen earlier' | 'unregistered serial' | 'self-test';
 }
 interface Status {
@@ -78,6 +79,7 @@ const ConnectionDiagnostics = () => {
                 <span className="text-ink-400">last contact {when(c.lastSeenAt)}</span>
               </div>
               {c.last && <p className="text-ink-300">Last request: <span className="text-white">{c.last.kind}</span> ({c.last.method} /iclock/{c.last.path}{c.last.table ? `?table=${c.last.table}` : ''}) → answered {c.last.status}{c.last.upstreamStatus != null ? `, old server ${c.last.upstreamStatus}` : ''} in {c.last.durationMs} ms{c.last.note ? ` · ${c.last.note}` : ''}</p>}
+              {c.oldServerCommands?.upstreamCommands && <p className="text-xs text-ink-400">Old server is sending: <span className="text-ink-200">{c.oldServerCommands.upstreamCommands.join(' · ')}</span>{c.oldServerCommands.at ? ` (recorded ${when(c.oldServerCommands.at)})` : ''}</p>}
               <p className="text-xs text-ink-500">{Object.entries(c.counts).map(([k, n]) => `${k}: ${n}`).join(' · ')}{c.pushVersion ? ` · push ${c.pushVersion}` : ''}{c.userAgent ? ` · ${c.userAgent}` : ''}</p>
               {c.state === 'unregistered serial' && <p className="text-xs text-amber-200">No device in the CRM has serial {c.sn}. {status.devices.length ? `Registered: ${[...serials].join(', ')}.` : ''} Check the serial on the device (Menu → System Info → Device Info) against the CRM device.</p>}
             </li>

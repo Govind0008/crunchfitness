@@ -261,17 +261,30 @@ service cloud.firestore {
         match /commands/{commandId} {
           allow read: if isGymAdmin(gymId);
           allow create: if isGymAdmin(gymId)
-            && request.resource.data.keys().hasOnly(['type', 'deviceUserId', 'name', 'status', 'createdBy', 'createdAt'])
-            && request.resource.data.type in ['query_users', 'add_user', 'enroll_fp']
+            && request.resource.data.keys().hasOnly(['type', 'deviceUserId', 'name', 'personType', 'personId', 'status', 'createdBy', 'createdAt'])
+            && request.resource.data.type in ['query_users', 'add_user', 'enroll_fp', 'unlock_door']
             && request.resource.data.status == 'queued'
             && request.resource.data.createdBy == request.auth.token.email
             && request.resource.data.createdAt == request.time
+            // Reading the user list changes nothing on the device, and releasing the door names no
+            // one. Anything that changes a device user is only for a user the NEW CRM manages —
+            // never one the old system owns.
             && (request.resource.data.type == 'query_users'
-              || (request.resource.data.deviceUserId is string && request.resource.data.deviceUserId.matches('[0-9]{1,9}')))
-            && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 40));
+              || (request.resource.data.type == 'unlock_door' && !('deviceUserId' in request.resource.data) && !('name' in request.resource.data))
+              || (request.resource.data.type in ['add_user', 'enroll_fp'] && request.resource.data.deviceUserId is string && request.resource.data.deviceUserId.matches('[0-9]{1,9}')
+                && crmManaged(deviceId, request.resource.data.deviceUserId)))
+            && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 40))
+            && (!('personType' in request.resource.data) || request.resource.data.personType in ['member', 'trainer']);
           allow update, delete: if false;
         }
       }
+    }
+
+    // A device user the NEW CRM controls (created by it, or explicitly taken over). Users without
+    // this marker belong to the old system: the new CRM never changes them on the device.
+    function crmManaged(deviceId, deviceUserId) {
+      let i = /databases/$(database)/documents/biometricIdentities/$(deviceId + '_' + deviceUserId);
+      return exists(i) && get(i).data.get('managedBy', 'legacy') == 'crm' && get(i).data.status != 'REMOVED';
     }
 
     // One document per device user: id = {deviceId}_{deviceUserId}, so an ID can't be given twice
@@ -289,10 +302,25 @@ service cloud.firestore {
             && request.resource.data.trainerId is string
             && exists(/databases/$(database)/documents/teamMembers/$(request.resource.data.trainerId))))
         && request.resource.data.status == 'PENDING'
-        && request.resource.data.lastSyncedAt == null && request.resource.data.lastSyncError == null;
+        && request.resource.data.lastSyncedAt == null && request.resource.data.lastSyncError == null
+        // Who controls access. The CRM may only claim a user it is creating — never one already
+        // on the device (that person is the old system's until staff explicitly take them over)
+        && request.resource.data.get('managedBy', 'legacy') in ['crm', 'legacy']
+        && (request.resource.data.get('managedBy', 'legacy') == 'legacy'
+          || !exists(/databases/$(database)/documents/gyms/$(request.resource.data.gymId)/devices/$(request.resource.data.deviceId)/deviceUsers/$(request.resource.data.deviceUserId)))
+        && request.resource.data.get('accessEnabled', true) == true
+        // Enrolment is confirmed only by the server, from the device's own evidence
+        && request.resource.data.get('enrollment', 'unverified') in ['not_enrolled', 'unverified'];
       allow update: if isGymAdmin(resource.data.gymId)
-        && changed().hasOnly(['status', 'enrolledAt', 'updatedAt'])
-        && request.resource.data.status in ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED'];
+        && changed().hasOnly(['status', 'enrolledAt', 'updatedAt', 'managedBy', 'accessEnabled', 'enrollment', 'enrollmentRequestedAt'])
+        && request.resource.data.status in ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED']
+        && request.resource.data.get('managedBy', 'legacy') in ['crm', 'legacy']
+        && request.resource.data.get('accessEnabled', true) is bool
+        // Staff can only ask for an enrolment (CRM-managed users); never mark one confirmed
+        && (!changed().hasAny(['enrollment'])
+          || (request.resource.data.enrollment == 'requested' && request.resource.data.get('managedBy', 'legacy') == 'crm'))
+        // The access switch applies to CRM-managed users only
+        && (!changed().hasAny(['accessEnabled']) || request.resource.data.get('managedBy', 'legacy') == 'crm');
       allow delete: if false;
     }
 

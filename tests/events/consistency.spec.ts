@@ -164,8 +164,10 @@ test('Enroll access from the dashboard: pick a member, then straight into the en
   await expect(wiz).toContainText('Enrol Person');
   await wiz.getByRole('button', { name: 'Continue' }).click();
   await drawer.getByRole('radio', { name: /Main entrance/ }).click();
-  await drawer.getByRole('region', { name: 'Choose device' }).getByRole('button', { name: 'Continue' }).click();
-  await expect(drawer.getByRole('region', { name: 'Enrol on device' })).toContainText('Waiting for device');   // honest: nothing claims synced
+  await drawer.getByRole('region', { name: 'Choose device' }).getByRole('button', { name: 'Start enrolment' }).click();
+  const enrol = drawer.getByRole('region', { name: 'Enrol on device' });
+  await expect(enrol).toContainText('Device offline');                             // honest: the test device never connected
+  await expect(enrol).not.toContainText('Enrolled');
   await page.close();
 });
 

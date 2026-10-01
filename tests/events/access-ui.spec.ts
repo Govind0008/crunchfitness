@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, resetFirestore, seedAdmin, seedDoc } from './emulator';
+import { ADMIN, FS, PROJECT, resetFirestore, seedAdmin, seedDoc } from './emulator';
+
+const FS_DOCS = `${FS}/v1/projects/${PROJECT}/databases/(default)/documents`;
 
 // The command-center flows: devices, biometric enrolment (honest statuses only), staff blocks,
 // PT as its own lifecycle, "other" payments, member photos, filters and navigation.
@@ -50,7 +52,7 @@ test('devices: add the F22 — it waits for first contact, nothing claims to be 
   await expect(page.getByRole('status').filter({ hasText: 'hasn’t reported in yet' })).toBeVisible();
 });
 
-test('enrolment: reserve an ID, staff confirm the fingerprint — never “synced” without the device', async ({ page, isMobile }) => {
+test('enrolment shows only what the device reports; “Enrolled” needs the device’s confirmation', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop');
   await login(page);
   await page.goto('/admin/members/ac1');
@@ -60,34 +62,52 @@ test('enrolment: reserve an ID, staff confirm the fingerprint — never “synce
   await expect(wiz.getByRole('region', { name: 'Confirm member' })).toContainText('Riya Kulkarni');
   await wiz.getByRole('button', { name: 'Continue' }).click();
   await expect(wiz.getByRole('radio', { name: /Main entrance/ })).toHaveAttribute('aria-checked', 'true');   // the only device
+  await expect(wiz.getByRole('radio', { name: /Main entrance/ })).toContainText('Device offline');          // it never connected
   await expect(wiz).not.toContainText('ADMS');                                                               // no protocol talk for staff
-  await wiz.getByRole('button', { name: 'Continue' }).click();
+  await wiz.getByRole('button', { name: 'Start enrolment' }).click();
   const enrol = wiz.getByRole('region', { name: 'Enrol on device' });
-  await expect(enrol).toContainText('Waiting for device');
-  await expect(enrol).toContainText('enrol user ID 1');                                  // not connected: enrolled by hand on the device
+  await expect(enrol).toContainText('Device offline');
   await expect(enrol.getByLabel('Device user ID 1')).toBeVisible();
-  await enrol.getByRole('button', { name: 'Fingerprint saved on device' }).click();
-  await expect(enrol).toContainText('Fingerprint saved');
-  await expect(enrol).not.toContainText('Synced with device —' + ' waiting');
+  await expect(enrol).not.toContainText('Enrolled');
+  await expect(enrol.getByRole('button', { name: /Fingerprint saved/ })).toHaveCount(0);                     // no "trust me" button
+  // The device confirms (as the relay would record it): only now is it enrolled
+  const ids = await (await fetch(`${FS_DOCS}/biometricIdentities`, { headers: { Authorization: 'Bearer owner' } })).json() as { documents: { name: string }[] };
+  const path = ids.documents.map((d) => d.name.split('/documents/')[1]).find((n) => n.endsWith('_1'))!;
+  // exactly what the relay writes on a fingerprint-verified scan (api/_lib/ingest.ts)
+  await fetch(`${FS_DOCS}/${path}?updateMask.fieldPaths=enrollment&updateMask.fieldPaths=enrollmentEvidence&updateMask.fieldPaths=status`, {
+    method: 'PATCH', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { enrollment: { stringValue: 'confirmed' }, enrollmentEvidence: { stringValue: 'fingerprint_scan' }, status: { stringValue: 'SYNCED' } } }),
+  });
+  await expect(enrol).toContainText('Enrolled');
+  await expect(enrol).toContainText('a scan verified by fingerprint');
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: 'Access', exact: true }).click();
-  const users = page.getByRole('region', { name: 'Biometric' }).getByRole('list', { name: 'Device users' });
-  await expect(users).toContainText('Enrolled on device (confirmed by staff)');
-  await expect(users).toContainText('Not yet — confirmed when the device reports it');
-  await expect(users).not.toContainText('Synced with device');
-  // The old CRM's ID for another member: typed in, and it can't be given twice
+  const panel = page.getByRole('region', { name: 'Biometric access' });
+  await expect(panel).toContainText('Enrolled (confirmed by the device)');
+  await expect(panel).toContainText('New CRM');
+  await expect(panel.getByRole('button', { name: 'Re-enroll' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Disable access' })).toBeVisible();
+  // An old-system member: their existing ID is linked for attendance only, and it can't be given twice
   await page.goto('/admin/members/ac2');
   await page.getByRole('button', { name: 'Access', exact: true }).click();
   const wiz2 = page.getByRole('dialog', { name: 'Enroll access' });
   await wiz2.getByRole('button', { name: 'Continue' }).click();
   await wiz2.getByLabel(/Already on the device/).check();
   await wiz2.getByLabel('User ID on the device').fill('1');
-  await wiz2.getByRole('button', { name: 'Continue' }).click();
+  await wiz2.getByRole('button', { name: 'Link user ID' }).click();
   await expect(wiz2.getByRole('alert')).toContainText('Device user 1 is already linked to someone on Main entrance');
   await wiz2.getByLabel('User ID on the device').fill('207');
-  await wiz2.getByRole('button', { name: 'Continue' }).click();
+  await wiz2.getByRole('button', { name: 'Link user ID' }).click();
   await expect(wiz2.getByLabel('Device user ID 207')).toBeVisible();
+  await expect(wiz2.getByRole('region', { name: 'Enrol on device' })).toContainText('old system still controls their access');
   await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Access', exact: true }).click();
+  const legacy = page.getByRole('region', { name: 'Biometric access' });
+  await expect(legacy).toContainText('Old system');
+  await expect(legacy).toContainText('Controlled by the old system');
+  await expect(legacy.getByRole('button', { name: 'Disable access' })).toHaveCount(0);                       // never switched off by the new CRM
+  await expect(legacy.getByRole('button', { name: 'Re-enroll' })).toHaveCount(0);
+  await expect(legacy.getByRole('button', { name: 'Manage access in the new CRM' })).toBeVisible();         // only by an explicit step
   // Search finds a member by device user ID
   await page.getByRole('combobox', { name: /Search members/ }).fill('207');
   await expect(page.getByRole('option', { name: /Om Pawar/ })).toContainText('Device user 207');
@@ -98,9 +118,9 @@ test('a staff block stops access despite an active membership, and can be lifted
   await login(page);
   await page.goto('/admin/members/ac1?tab=access');
   const ac = page.getByRole('region', { name: 'Access control' });
-  await expect(ac).toContainText('ENABLED');
+  await expect(ac).toContainText('ALLOWED');
   await ac.getByLabel('Stop access').fill('Card shared with a friend');
-  await ac.getByRole('button', { name: 'Disable access' }).click();
+  await ac.getByRole('button', { name: 'Block member' }).click();
   await expect(ac).toContainText('NOT ALLOWED');
   await expect(ac).toContainText('Blocked by staff — Card shared with a friend');
   await page.goto('/admin/members?filter=access_disabled');
@@ -108,7 +128,7 @@ test('a staff block stops access despite an active membership, and can be lifted
   await page.goto('/admin/members/ac1?tab=access');
   await page.getByRole('button', { name: 'Enable access' }).click();
   await page.getByRole('button', { name: 'Yes, continue' }).click();
-  await expect(page.getByRole('region', { name: 'Access control' })).toContainText('ENABLED');
+  await expect(page.getByRole('region', { name: 'Access control' })).toContainText('ALLOWED');
 });
 
 test('PT is its own lifecycle: package → sessions → PT payment; the membership is untouched', async ({ page, isMobile }) => {
@@ -241,5 +261,6 @@ test('match device users: the device’s user list, each link chosen by staff �
   await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toHaveCount(0);   // done: it leaves "Not linked"
   await page.getByRole('group', { name: 'Filter device users' }).getByRole('button', { name: /Members/ }).click();
   await expect(list.getByRole('listitem')).toHaveCount(1);
-  await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toContainText('Waiting for the device');   // the reader confirms it
+  await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toContainText('Old system');                      // an existing device user stays the old system's
+  await expect(list.getByRole('listitem').filter({ hasText: '#501' })).toContainText('Not confirmed by the device yet');
 });

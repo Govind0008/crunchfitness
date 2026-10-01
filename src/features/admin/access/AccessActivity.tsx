@@ -13,7 +13,7 @@ import { DataRegion, EmptyNote, ErrorNote, HeadRow, Pagination, Pill, SkeletonRo
 const WHO: { id: ActivityWho; label: string }[] = [
   { id: 'all', label: 'Everyone' }, { id: 'member', label: 'Members' }, { id: 'trainer', label: 'Trainers' }, { id: 'unknown', label: 'Unresolved' },
 ];
-const RESULT_TONE: Record<AccessEvent['result'], Tone> = { granted: 'ok', denied: 'bad', unknown_user: 'warn', access_disabled: 'bad', device_error: 'bad' };
+const RESULT_TONE: Record<AccessEvent['result'], Tone> = { granted: 'ok', denied: 'bad', legacy: 'muted', unknown_user: 'warn', access_disabled: 'bad', device_error: 'bad' };
 const time = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 /**

@@ -11,7 +11,6 @@
 
 export const IST_OFFSET = '+05:30';
 const VERIFY: Record<string, string> = { '0': 'password', '1': 'fingerprint', '2': 'card', '3': 'password', '4': 'card', '15': 'face' };
-const OVERRIDE_LABEL: Record<string, string> = { blocked: 'Blocked by staff', suspended: 'Membership suspended' };
 const PIN = /^[A-Za-z0-9_-]{1,24}$/;
 
 export interface Scan { pin: string; time: string; status: string; verify: string }
@@ -51,25 +50,15 @@ export function toIso(localTime: string) {
 }
 
 export interface MemberLike { status?: string; membershipEnd?: string | null; accessOverride?: string | null; accessOverrideReason?: string | null }
-/** Gym entry by the membership on the day of the scan. PT never grants entry. */
-export function eligibility(m: MemberLike, day: string): { ok: boolean | null; reason: string } {
-  if (m.accessOverride) return { ok: false, reason: `${OVERRIDE_LABEL[m.accessOverride] ?? 'Access stopped by staff'}${m.accessOverrideReason ? ` — ${m.accessOverrideReason}` : ''}` };
-  if (m.status === 'inactive') return { ok: false, reason: 'Membership marked inactive' };
-  if (!m.membershipEnd) return { ok: null, reason: 'No gym membership on record' };
-  if (m.membershipEnd < day) return { ok: false, reason: `Membership expired on ${m.membershipEnd}` };
-  return { ok: true, reason: 'Active membership' };
-}
-export function scanResult(identityStatus: string, member: MemberLike, day: string) {
-  if (identityStatus === 'DISABLED' || identityStatus === 'REMOVED') return { result: 'access_disabled', reason: 'Access disabled for this device user' };
-  const e = eligibility(member, day);
-  return { result: e.ok ? 'granted' : 'denied', reason: e.reason };
-}
+// Access decisions live in ./access.ts (explicit CRM ownership; legacy users are never denied).
 
 // ── Commands we send to the device (built here, never taken from the browser) ─
-export type CommandType = 'query_users' | 'add_user' | 'enroll_fp';
+export type CommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door';
 const clean = (s: string) => s.replace(/[\t\r\n=]/g, ' ').trim().slice(0, 24);
 export function commandText(c: { type: CommandType; pin?: string; name?: string }): string | null {
   if (c.type === 'query_users') return 'DATA QUERY USERINFO';
+  // Remote door release: the device drives its own lock output (ADMS "AC_UNLOCK")
+  if (c.type === 'unlock_door') return 'AC_UNLOCK';
   if (!c.pin || !PIN.test(c.pin)) return null;
   if (c.type === 'add_user') return `DATA UPDATE USERINFO PIN=${c.pin}\tName=${clean(c.name ?? '')}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000\tVerify=0`;
   if (c.type === 'enroll_fp') return `ENROLL_FP PIN=${c.pin}\tFID=6\tRETRY=3\tOVERWRITE=0`;

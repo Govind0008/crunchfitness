@@ -12,7 +12,7 @@ import { SideDrawer } from '../kit';
 import { useLookups } from './lookups';
 import Avatar from './Avatar';
 import PtPackageForm from './PtPackageForm';
-import EnrollWizard from './EnrollWizard';
+import EnrollWizard, { memberPerson } from '@/features/admin/access/EnrollWizard';
 
 const blank = (): MemberInput => ({ name: '', phone: '', email: '', planId: null, membershipStart: todayIST(), membershipEnd: null, status: 'active', trainerId: null, notes: '', emergencyName: '', emergencyPhone: '' });
 
@@ -189,7 +189,7 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
       )}
       {step === 'access' && saved && (
         <div className="space-y-4">
-          <EnrollWizard m={saved} existing={[]} onDone={() => {}} />
+          <EnrollWizard person={memberPerson(saved)} existing={[]} onDone={() => {}} />
           <Button variant="ghost" onClick={() => setStep('done')}>Back</Button>
         </div>
       )}

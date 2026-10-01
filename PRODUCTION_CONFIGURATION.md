@@ -87,7 +87,7 @@ Firebase console → Firestore → Rules → Publish.
   - `source == "legacy_excel"`, id `lx_…_p`, no receipt number, method may be `"unknown"`.
   - Normal payments are unchanged, except that they may now carry a `paymentType`.
 
-**Access control and member photos** (details in `ACCESS_CONTROL_F22.md`):
+**Access control and member photos** (details in `ACCESS_CONTROL.md`):
 
 - **New Firestore areas:**
   - `gyms/{gymId}/devices`: admins of that gym only.

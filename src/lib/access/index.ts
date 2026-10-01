@@ -46,9 +46,31 @@ export function accessEligibility(m: EligibilityInput, today: string): AccessEli
  */
 export type BiometricStatus = 'NOT_ENROLLED' | 'PENDING' | 'ENROLLED' | 'SYNCING' | 'SYNCED' | 'SYNC_FAILED' | 'DISABLED' | 'REMOVED' | 'UNKNOWN';
 export const BIOMETRIC_LABEL: Record<BiometricStatus, string> = {
-  NOT_ENROLLED: 'Not enrolled', PENDING: 'Waiting for the device', ENROLLED: 'Enrolled on device (confirmed by staff)',
-  SYNCING: 'Syncing', SYNCED: 'Synced with device', SYNC_FAILED: 'Sync failed', DISABLED: 'Access disabled on device',
-  REMOVED: 'Removed from device', UNKNOWN: 'Unknown',
+  NOT_ENROLLED: 'Not enrolled', PENDING: 'Waiting for the device', ENROLLED: 'Marked saved by staff (older record)',
+  SYNCING: 'Syncing', SYNCED: 'User is on the device', SYNC_FAILED: 'Device refused the user', DISABLED: 'Access turned off in the CRM',
+  REMOVED: 'Link removed', UNKNOWN: 'Unknown',
+};
+
+/**
+ * Who controls this device user's access during the migration. Only 'crm' hands control to the
+ * new CRM: the CRM created the user on the device itself, or staff explicitly took the person
+ * over. Anything else (including records from before this field existed) is the OLD system's —
+ * the new CRM records their scans and attendance but never judges or changes their access.
+ */
+export type ManagedBy = 'crm' | 'legacy';
+export const managedByOf = (i: Pick<BiometricIdentity, 'managedBy'>): ManagedBy => (i.managedBy === 'crm' ? 'crm' : 'legacy');
+export const MANAGED_LABEL: Record<ManagedBy, string> = { crm: 'New CRM', legacy: 'Old system' };
+
+/**
+ * Fingerprint enrolment, separate from the link and from access. 'confirmed' is written only by
+ * the server, from the device's own evidence (it reported the fingerprint, or a scan verified by
+ * fingerprint) — never because a command was sent or someone clicked a button.
+ */
+export type Enrollment = 'not_enrolled' | 'unverified' | 'requested' | 'device_accepted' | 'confirmed' | 'failed';
+export const enrollmentOf = (i: Pick<BiometricIdentity, 'enrollment'>): Enrollment => i.enrollment ?? 'unverified';
+export const ENROLLMENT_LABEL: Record<Enrollment, string> = {
+  not_enrolled: 'Not enrolled', unverified: 'Not confirmed by the device yet', requested: 'Enrolment sent to the device',
+  device_accepted: 'Device is enrolling — waiting for the fingerprint', confirmed: 'Enrolled (confirmed by the device)', failed: 'Enrolment failed',
 };
 export const STAFF_SETTABLE: BiometricStatus[] = ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED'];
 
@@ -64,6 +86,14 @@ export interface BiometricIdentity {
   deviceUserId: string;       // the ID typed/shown on the device (e.g. "1042")
   method: 'fingerprint' | 'face' | 'card' | 'unknown';
   status: BiometricStatus;
+  /** See ManagedBy — absent on older records, which means 'legacy' */
+  managedBy?: ManagedBy;
+  /** The CRM's access switch for this device user (CRM-managed only); absent = on */
+  accessEnabled?: boolean;
+  enrollment?: Enrollment;
+  enrollmentConfirmedAt?: { toDate: () => Date } | null;
+  enrollmentEvidence?: 'fingerprint_scan' | 'fingerprint_template_reported' | null;
+  enrollmentError?: string | null;
   enrolledAt?: { toDate: () => Date } | null;
   lastSyncedAt?: { toDate: () => Date } | null;
   lastSyncAttemptAt?: { toDate: () => Date } | null;
@@ -105,10 +135,16 @@ export function deviceHealth(d: Pick<AccessDevice, 'enabled' | 'lastSeenAt'>, no
 export const HEALTH_LABEL: Record<DeviceHealth, string> = { online: 'Online', offline: 'Offline', never_connected: 'Waiting for first contact', disabled: 'Disabled' };
 
 // ── Access events (scans) ─────────────────────────────────────────────────────
-export type AccessResult = 'granted' | 'denied' | 'unknown_user' | 'access_disabled' | 'device_error';
+export type AccessResult = 'granted' | 'denied' | 'legacy' | 'unknown_user' | 'access_disabled' | 'device_error';
+/**
+ * The CRM's verdict on a scan. The X2008 opens the door itself before the CRM hears of the scan,
+ * so "Not allowed" means "this person shouldn't have been able to enter" — not that the door
+ * stayed shut. Old-system and unknown users are never judged.
+ */
 export const RESULT_LABEL: Record<AccessResult, string> = {
-  granted: 'Verified', denied: 'Denied', unknown_user: 'Unknown user', access_disabled: 'Access disabled', device_error: 'Device error',
+  granted: 'Allowed', denied: 'Not allowed', legacy: 'Old system', unknown_user: 'Unknown user', access_disabled: 'Access off', device_error: 'Device error',
 };
+export type Decision = 'ACCESS_ALLOWED' | 'ACCESS_DENIED' | 'LEGACY_USER' | 'UNKNOWN_USER';
 export type VerifyMethod = 'fingerprint' | 'face' | 'card' | 'password' | 'unknown';
 
 /** A scan as the device reported it, before we match it to anyone. */
@@ -143,6 +179,10 @@ export interface AccessEvent {
   at: string;
   verify: VerifyMethod;
   result: AccessResult;
+  /** Newer events: the explicit decision and reason code (see api/_lib/access.ts) */
+  decision?: Decision;
+  decisionReason?: string | null;
+  managedBy?: ManagedBy;
   reason: string;
   statusCode: string;
   receivedAt?: { toDate: () => Date };
