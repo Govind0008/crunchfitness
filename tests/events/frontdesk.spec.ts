@@ -78,9 +78,10 @@ test('receptionist: find → check membership → check in → payment with disc
   await expect(receipt).toContainText('UPI-777');
   await expect(receipt).toContainText('Paid');
   await expect(receipt).toContainText('not a tax invoice');
-  const share = page.getByRole('link', { name: 'Share on WhatsApp' });
+  // The text-only WhatsApp message is labelled as such; the PDF itself is shared or downloaded
+  const share = page.getByRole('link', { name: 'Message only (no PDF) on WhatsApp' });
   await expect(share).toHaveAttribute('href', /wa\.me\/919000000031\?text=.*CR-R-0001/);
-  await expect(page.getByText('For the PDF, choose “Print / save PDF”')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(Share receipt PDF|Download receipt PDF)$/ })).toBeVisible();
 
   // Dues: estimates are labelled as estimates; today's collection and the renewal split are real
   await page.goto('/admin/payments/dues');

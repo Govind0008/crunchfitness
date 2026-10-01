@@ -138,7 +138,8 @@ test('imported payments are records, not receipts; revenue splits membership / P
   await expect(record).toContainText('Personal training');
   await expect(record).toContainText('Not recorded');                                // method never invented
   await expect(record).toContainText('Imported from the old member sheet');
-  await expect(page.getByRole('link', { name: 'Share on WhatsApp' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveCount(0);                      // no receipt number: nothing to send
+  await expect(page.getByRole('button', { name: /Share receipt PDF|Download receipt PDF/ })).toHaveCount(0);
 
   // A new PT payment today: its own receipt, PT on the receipt, and in the PT column
   await page.goto('/admin/payments/new?member=lx_9545550048&type=pt');
