@@ -169,7 +169,7 @@ test('money workflow stays in the shell: record → receipt → print → back �
   await expect(page.getByRole('article', { name: /Receipt CR-R-0001/ })).toContainText('Three thousand rupees only');
   await check('saving a payment');
 
-  await page.getByRole('button', { name: /Print \/ save PDF/ }).click();
+  await page.getByRole('button', { name: 'Print', exact: true }).click();
   expect(await page.evaluate(() => (window as unknown as { __printed: number }).__printed)).toBe(1);
   await check('printing a receipt');
 

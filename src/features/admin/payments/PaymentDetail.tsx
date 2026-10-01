@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, MessageCircle, Printer } from 'lucide-react';
+import { CheckCircle2, Download, MessageCircle, Printer, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -12,6 +12,8 @@ import { AdminShell, Empty, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { fmtDate, fmtTime } from '@/features/admin/members/lookups';
 import { PaymentStatus, Receipt } from './ui';
+import { generatePaymentReceipt } from './receiptPdf';
+import { canShareFiles, downloadFile, shareReceipt, type ShareOutcome } from './shareReceipt';
 
 /** Payment details + receipt preview. Print uses the browser's print dialog (receipt only, no shell). */
 const PaymentDetail = () => {
@@ -23,6 +25,10 @@ const PaymentDetail = () => {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Receipt PDF: what this browser can do, and what happened on the last tap
+  const [fileShare] = useState(() => canShareFiles());
+  const [sending, setSending] = useState<'preparing' | 'opening' | null>(null);
+  const [sent, setSent] = useState<ShareOutcome | 'download' | 'failed' | null>(null);
   const load = () => getPayment(id).then(setP).catch(() => setP(null));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -33,6 +39,28 @@ const PaymentDetail = () => {
     `Payment received — ${SITE.name}\nReceipt ${p.receiptNo} · ${fmtDate(p.paidOn)}\n${p.memberName}: ${rupees(p.amountPaise)} (${METHOD_LABEL[p.method]}${p.reference ? ` · Ref ${p.reference}` : ''})\n${paymentFor(p)}${p.coversTo ? ` until ${fmtDate(p.coversTo)}` : ''}\nThank you!`,
     `91${phoneKey(p.memberPhone)}`,
   );
+
+  const sharePdf = async () => {
+    setSent(null); setSending('preparing');
+    try {
+      const run = shareReceipt(p);            // the PDF is built here, inside the tap
+      setSending('opening');
+      setSent(await run);
+    } catch { setSent('failed'); }
+    finally { setSending(null); }
+  };
+  const downloadPdf = () => {
+    setSent(null);
+    try { downloadFile(generatePaymentReceipt(p)); setSent('download'); } catch { setSent('failed'); }
+  };
+  const SENT_TEXT: Record<NonNullable<typeof sent>, string> = {
+    shared: 'Receipt PDF shared.',
+    cancelled: 'Sharing cancelled — nothing was sent.',
+    downloaded: 'This browser can’t attach files to WhatsApp directly, so the PDF was downloaded — attach it in WhatsApp.',
+    download: 'PDF downloaded — attach it in WhatsApp.',
+    failed: 'The receipt PDF couldn’t be prepared. Try again, or use Print.',
+  };
+  const canSend = p.status === 'paid' && !!p.receiptNo;
 
   const doVoid = async () => {
     if (reason.trim().length < 3) { setError('Say briefly why this payment is being voided.'); return; }
@@ -46,8 +74,11 @@ const PaymentDetail = () => {
     <AdminShell title={p.receiptNo ?? 'Imported payment'} nav="payments" area="Money" back={{ to: '/admin/payments', label: 'Back to payments' }}
       actions={
         <div className="flex flex-wrap gap-2 print:hidden">
-          <Button onClick={() => window.print()}><Printer /> Print / save PDF</Button>
-          {p.status === 'paid' && p.receiptNo && <Button asChild variant="outline"><a href={share} target="_blank" rel="noopener noreferrer"><MessageCircle /> Share on WhatsApp</a></Button>}
+          {canSend && (fileShare
+            ? <Button onClick={sharePdf} disabled={!!sending} aria-busy={!!sending || undefined}><Share2 /> {sending === 'preparing' ? 'Preparing receipt…' : sending === 'opening' ? 'Opening share…' : 'Share receipt PDF'}</Button>
+            : <Button onClick={downloadPdf}><Download /> Download receipt PDF</Button>)}
+          {canSend && fileShare && <Button variant="outline" onClick={downloadPdf}><Download /> Download PDF</Button>}
+          <Button variant={canSend ? 'outline' : 'default'} onClick={() => window.print()}><Printer /> Print</Button>
         </div>
       }>
       {params.get('new') && p.status === 'paid' && (
@@ -55,6 +86,10 @@ const PaymentDetail = () => {
           <CheckCircle2 className="h-5 w-5 text-brand-fg" aria-hidden /> Payment saved — receipt {p.receiptNo} is ready.
         </p>
       )}
+      <p role="status" aria-label="Receipt sharing" className={sent ? `mb-6 rounded-xl border p-4 text-sm print:hidden ${sent === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-100' : 'border-white/[0.1] bg-ink-900 text-white'}` : 'sr-only'}>
+        {sent ? SENT_TEXT[sent] : ''}
+        {(sent === 'downloaded' || sent === 'download') && <> <a href={share} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-fg underline-offset-2 hover:underline">Open WhatsApp chat with {p.memberName}</a> <span className="text-ink-400">(opens the chat with a text message; attach the PDF there)</span></>}
+      </p>
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
         <div className="receipt-area"><Receipt p={p} /></div>
         <aside className="space-y-4 print:hidden" aria-label="Payment details">
@@ -69,7 +104,10 @@ const PaymentDetail = () => {
           {p.status === 'paid' && p.receiptNo && (
             <div className="rounded-2xl border border-white/[0.08] p-5 text-sm text-ink-400">
               <p className="font-semibold text-white">Sending the receipt</p>
-              <p className="mt-1">“Share on WhatsApp” sends the receipt details as a message to the member’s number. For the PDF, choose “Print / save PDF” → Save as PDF, then attach the file in WhatsApp or email.</p>
+              {fileShare
+                ? <p className="mt-1">“Share receipt PDF” opens this device’s share sheet with the PDF attached — choose WhatsApp, then the member’s chat.</p>
+                : <p className="mt-1">This browser can’t hand files to WhatsApp. Download the PDF, then attach it in the member’s WhatsApp chat (or WhatsApp Web).</p>}
+              <a href={share} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-white hover:text-brand-fg"><MessageCircle size={16} aria-hidden /> Message only (no PDF) on WhatsApp</a>
             </div>
           )}
           {p.status === 'paid' && (
