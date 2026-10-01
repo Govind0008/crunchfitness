@@ -3,8 +3,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { firestoreOrNull } from './_lib/firebase.js';
 import { ingestScans } from './_lib/ingest.js';
-import { PROBE_SN, logLine, recordContact, requestKind, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
 import { meterFor, returnUsage, takeUsage, type Meter } from './_lib/usage.js';
+import { PROBE_SN, commandVerbs, logLine, recordContact, requestKind, summarize, type Outcome, type RequestSummary } from './_lib/diagnostics.js';
 import {
   OUR_ID, commandText, ownHandshake, parseAttlog, parseCommandResults, parseFingerprintPins, parseUsers, type CommandType,
 } from './_lib/adms.js';
@@ -87,7 +87,6 @@ const devRef = (fs: Firestore, deviceId: string) => fs.collection('gyms').doc(GY
  * request this instance sees, a device back after a quiet spell (it's been longer than
  * HEARTBEAT_MS), or recovery after an error was recorded on the device.
  */
-// Timings are read on each use (not once at load) so tests can switch them
 const HEARTBEAT_MS = () => Number(process.env.ADMS_HEARTBEAT_MS ?? 300_000);
 const lastBeat = new Map<string, number>();
 const errorShown = new Set<string>();
@@ -119,14 +118,34 @@ async function recordUsers(fs: Firestore, deviceId: string, users: ReturnType<ty
   await devRef(fs, deviceId).update({ usersSeenAt: FieldValue.serverTimestamp() });
 }
 
-/** A fingerprint saved on the device for a linked user: enrolment is complete. */
+/** Device-side events in the CRM's activity log (who = the device, never a person). */
+function audit(batch: FirebaseFirestore.WriteBatch, fs: Firestore, action: string, event: string, ident: FirebaseFirestore.DocumentSnapshot | null, meta: Record<string, string | number | null> = {}) {
+  const trainer = ident?.get('personType') === 'trainer';
+  batch.set(fs.collection('activity').doc(), {
+    action, actorUid: 'device', actorEmail: 'Fingerprint device', refType: ident ? (trainer ? 'trainer' : 'member') : 'device',
+    refId: ident ? (trainer ? ident.get('trainerId') : ident.get('memberId')) ?? null : null, meta: { event, ...meta }, at: FieldValue.serverTimestamp(),
+  });
+}
+
+/**
+ * The device reported a fingerprint template for a user ("FP PIN=…" in an upload): the device
+ * itself confirms the fingerprint is enrolled. The template is never read or stored.
+ */
 async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[], meter: Meter) {
   if (!pins.length) return;
   const snaps = await fs.getAll(...pins.map((p) => fs.collection('biometricIdentities').doc(`${deviceId}_${p}`)));
   meter.read('deviceUsers', pins.length);
   const batch = fs.batch();
   let n = 0;
-  snaps.forEach((s) => { if (s.exists && s.get('status') !== 'REMOVED' && s.get('status') !== 'DISABLED') { batch.update(s.ref, { status: 'SYNCED', enrolledAt: FieldValue.serverTimestamp(), lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() }); n++; } });
+  snaps.forEach((s) => {
+    if (!s.exists || s.get('status') === 'REMOVED') return;
+    batch.update(s.ref, {
+      status: s.get('status') === 'DISABLED' ? 'DISABLED' : 'SYNCED', enrolledAt: FieldValue.serverTimestamp(), lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp(),
+      enrollment: 'confirmed', enrollmentConfirmedAt: FieldValue.serverTimestamp(), enrollmentEvidence: 'fingerprint_template_reported', enrollmentError: null,
+    });
+    if (s.get('enrollment') !== 'confirmed') { audit(batch, fs, 'Fingerprint enrolment confirmed by the device', 'ENROLLMENT_CONFIRMED', s, { deviceUserId: s.get('deviceUserId') }); n++; }
+    n++;
+  });
   if (n) { await batch.commit(); meter.write('deviceUsers', n); }
 }
 
@@ -134,19 +153,61 @@ async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[
  * Queued CRM commands → "C:<id>:<command>" lines (at most a few per poll). The device polls every
  * few seconds; looking for queued commands on every poll costs a database read each time, so each
  * server instance looks at most every COMMAND_CHECK_MS (a request reaches the device within ~10s).
- * When it finds some, it looks again on the very next poll, so a batch drains quickly.
  */
+// Read on each use (not once at load) so tests can switch between immediate and production timing
 const COMMAND_CHECK_MS = () => Number(process.env.ADMS_COMMAND_CHECK_MS ?? 10_000);
 const lastCommandCheck = new Map<string, number>();
+/**
+ * Fast lane: a Firestore listener on this device's queued commands tells this server instance the
+ * moment staff queue something (e.g. "Open door"), so it goes out on the very next poll (~3–4 s)
+ * instead of waiting for the periodic check. A listener only costs reads when a command is added
+ * or changes. While it's healthy the periodic check becomes a 20-second safety net — shorter than
+ * an unlock's 30-second expiry, so a silently stalled listener can't make "Open door" expire
+ * unsent; if it fails, the 10-second check takes over again. ADMS_COMMAND_LISTEN=0 turns it off.
+ */
+const COMMAND_SAFETY_MS = 20_000;
+const queueWatch = new Map<string, { pending: boolean; healthy: boolean }>();
+function watchQueue(fs: Firestore, deviceId: string, meter: Meter) {
+  if (process.env.ADMS_COMMAND_LISTEN === '0') return null;
+  const existing = queueWatch.get(deviceId);
+  if (existing) return existing;
+  const w = { pending: true, healthy: false };   // look once straight away
+  queueWatch.set(deviceId, w);
+  try {
+    devRef(fs, deviceId).collection('commands').where('status', '==', 'queued').limit(1).onSnapshot((snap) => {
+      meter.read('commands', Math.max(1, snap.docChanges().length));
+      w.healthy = true;
+      if (!snap.empty) w.pending = true;
+    }, (e) => { console.error('[iclock] command listener', e.message); queueWatch.delete(deviceId); });
+  } catch (e) {
+    console.error('[iclock] command listener', (e as Error).message);
+    queueWatch.delete(deviceId);
+  }
+  return w;
+}
+/** An "Open door" that couldn't reach the device quickly must never fire later (e.g. when an
+ *  offline device reconnects hours afterwards): unlock requests expire after this long unsent. */
+const UNLOCK_MAX_AGE_MS = 30_000;
 async function takeCommands(fs: Firestore, deviceId: string, meter: Meter) {
-  if (Date.now() - (lastCommandCheck.get(deviceId) ?? 0) < COMMAND_CHECK_MS()) return [];
+  const w = watchQueue(fs, deviceId, meter);
+  const due = Date.now() - (lastCommandCheck.get(deviceId) ?? 0) >= (w?.healthy ? Math.max(COMMAND_SAFETY_MS, COMMAND_CHECK_MS()) : COMMAND_CHECK_MS());
+  if (!w?.pending && !due) return [];
+  if (w) w.pending = false;
   lastCommandCheck.set(deviceId, Date.now());
   const snap = await devRef(fs, deviceId).collection('commands').where('status', '==', 'queued').limit(5).get();
   meter.read('commands', Math.max(1, snap.size));
-  if (snap.size) lastCommandCheck.set(deviceId, 0);
+  // More may be waiting (5 per poll): look again on the very next poll instead of in 10 seconds
+  if (snap.size) { lastCommandCheck.set(deviceId, 0); if (w) w.pending = true; }
   const lines: string[] = [];
   const batch = fs.batch();
   for (const d of snap.docs.sort((a, b) => (a.get('createdAt')?.toMillis?.() ?? 0) - (b.get('createdAt')?.toMillis?.() ?? 0))) {
+    if (d.get('type') === 'unlock_door') {
+      const created = d.get('createdAt')?.toMillis?.() as number | undefined;
+      if (!created || Date.now() - created > UNLOCK_MAX_AGE_MS) {
+        batch.update(d.ref, { status: 'failed', error: 'Expired — the device didn’t collect it within 30 seconds, so it was not sent', doneAt: FieldValue.serverTimestamp() });
+        continue;
+      }
+    }
     const text = commandText({ type: d.get('type') as CommandType, pin: d.get('deviceUserId'), name: d.get('name') });
     if (!text) { batch.update(d.ref, { status: 'failed', error: 'Not a valid command', doneAt: FieldValue.serverTimestamp() }); continue; }
     // 9 digits starting with 9: our range, so results can be told apart from the old server's
@@ -158,14 +219,37 @@ async function takeCommands(fs: Firestore, deviceId: string, meter: Meter) {
   return lines;
 }
 
+/**
+ * The device's answers to OUR commands. "Return=0" means the device carried the command out;
+ * anything else is a failure, reported with the device's own code. For fingerprint enrolment a
+ * successful answer means the device accepted the request — the enrolment itself is confirmed
+ * only by the device reporting the fingerprint (or a fingerprint-verified scan).
+ */
 async function recordResults(fs: Firestore, deviceId: string, results: ReturnType<typeof parseCommandResults>, meter: Meter) {
   for (const r of results) {
     const snap = await devRef(fs, deviceId).collection('commands').where('commandId', '==', r.id).limit(1).get();
     meter.read('results', Math.max(1, snap.size));
     const d = snap.docs[0];
     if (!d) continue;
-    await d.ref.update({ status: r.ret === '0' ? 'done' : 'failed', returnCode: r.ret, doneAt: FieldValue.serverTimestamp() });
-    meter.write('results');
+    const ok = r.ret === '0';
+    const batch = fs.batch();
+    batch.update(d.ref, { status: ok ? 'done' : 'failed', returnCode: r.ret, doneAt: FieldValue.serverTimestamp() });
+    const type = String(d.get('type'));
+    const uid = d.get('deviceUserId') as string | undefined;
+    const ident = uid ? await fs.collection('biometricIdentities').doc(`${deviceId}_${uid}`).get() : null;
+    if (ident) meter.read('results');
+    if (ident?.exists) {
+      if (type === 'enroll_fp') {
+        // Never downgrade a confirmed enrolment because of a later answer
+        if (ident.get('enrollment') !== 'confirmed') batch.update(ident.ref, ok ? { enrollment: 'device_accepted', enrollmentError: null } : { enrollment: 'failed', enrollmentError: `Device answered ${r.ret}` });
+        if (!ok) audit(batch, fs, 'Fingerprint enrolment failed on the device', 'ENROLLMENT_FAILED', ident, { deviceUserId: uid ?? null, returnCode: r.ret });
+      }
+      if (type === 'add_user' && !ok) batch.update(ident.ref, { status: 'SYNC_FAILED', lastSyncAttemptAt: FieldValue.serverTimestamp(), lastSyncError: `Device answered ${r.ret}` });
+    }
+    if (type === 'unlock_door') audit(batch, fs, ok ? 'Door released by the device' : 'Door release refused by the device', ok ? 'DOOR_UNLOCKED' : 'DOOR_UNLOCK_FAILED', null, { returnCode: r.ret });
+    else audit(batch, fs, ok ? 'Device command carried out' : 'Device command failed', ok ? 'DEVICE_COMMAND_SUCCESS' : 'DEVICE_COMMAND_FAILED', ident?.exists ? ident : null, { command: type, deviceUserId: uid ?? null, returnCode: r.ret });
+    await batch.commit();
+    meter.write('results', 2 + (ident?.exists && (type === 'enroll_fp' || (type === 'add_user' && !ok)) ? 1 : 0) + (ident?.exists && type === 'enroll_fp' && !ok ? 1 : 0));
   }
 }
 
@@ -177,12 +261,14 @@ async function recordResults(fs: Firestore, deviceId: string, results: ReturnTyp
  *     a result of OUR commands, a handshake (device (re)start), or the first request after a quiet
  *     spell (> DIAG_RECORD_MS since the last write);
  *   • otherwise at most every DIAG_RECORD_MS per device per server instance.
- * Request counts and the relay's own Firestore usage are totalled in memory meanwhile and added in
- * that write, so the stored totals stay exact. (Writing every request used ~18,000 writes a day.)
+ * Request counts, the old server's command verbs and the relay's own Firestore usage are totalled
+ * in memory meanwhile and added in that write, so the stored totals stay exact.
+ * The device polls every 3–4 s; writing each request used ~18,000 writes a day on its own.
  */
 const DIAG_RECORD_MS = () => Number(process.env.ADMS_ROUTINE_RECORD_MS ?? 300_000);
 const lastRecord = new Map<string, number>();
 const pendingCounts = new Map<string, Record<string, number>>();
+const verbTotals = new Map<string, Map<string, number>>();
 async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome, urgent = false) {
   logLine(s, o);
   if (!fs) return;
@@ -191,11 +277,18 @@ async function observe(fs: Firestore | null, s: RequestSummary, o: Outcome, urge
   const counts = pendingCounts.get(key) ?? {};
   counts[kind] = (counts[kind] ?? 0) + 1;
   pendingCounts.set(key, counts);
+  if (o.upstreamCommands?.length) {
+    const t = verbTotals.get(key) ?? new Map<string, number>();
+    for (const v of o.upstreamCommands) { const [verb, n] = v.split(' ×'); t.set(verb, (t.get(verb) ?? 0) + Number(n)); }
+    verbTotals.set(key, t);
+  }
   // (Notes alone don't count: an unregistered serial polls every few seconds too — its note is
   // recorded on the first request and then every DIAG_RECORD_MS, which is enough to spot a typo)
   const meaningful = urgent || o.status < 200 || o.status >= 300 || kind === 'handshake';
   if (!meaningful && Date.now() - (lastRecord.get(key) ?? 0) < DIAG_RECORD_MS()) return;
   lastRecord.set(key, Date.now());
+  const t = verbTotals.get(key);
+  if (t?.size) { o = { ...o, upstreamCommands: [...t].map(([v, n]) => `${v} ×${n}`) }; verbTotals.delete(key); }
   pendingCounts.delete(key);
   const usage = takeUsage(key);
   const write = recordContact(fs, s, o, { counts, usage });
@@ -281,6 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  const upstreamText = reply.body.toString('utf8');
   // 3) Record on the way through — never delays or changes the old system's reply on failure
   if (fs && deviceId) {
     try {
@@ -302,7 +396,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Which commands the OLD server is sending (verbs only) — evidence of whether it rewrites users
+  const upstreamCommands = path === 'getrequest' && HAS_UPSTREAM && !oursOnly ? commandVerbs(upstreamText) : [];
   await observe(fsDiag, summary, {
+    ...(upstreamCommands.length ? { upstreamCommands } : {}),
     status: reply.status, upstreamStatus: HAS_UPSTREAM && !oursOnly ? reply.status : null, durationMs: Date.now() - started,
     crmDeviceId: deviceId || null, forwarded: HAS_UPSTREAM && !oursOnly,
     ...(sn && fs && !deviceId ? { note: `no CRM device has serial ${sn.toUpperCase()}` } : !sn ? { note: 'request without a serial (SN)' } : {}),

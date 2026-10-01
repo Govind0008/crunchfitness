@@ -9,6 +9,7 @@ import { ACCESS_CONNECTED, BIOMETRIC_LABEL, HEALTH_LABEL, RESULT_LABEL, deviceHe
 import { accessEventsSince, accessSummary, identitiesByStatus, todayStartIso, type AccessSummary } from '@/lib/access/store';
 import { AdminShell, Empty } from '@/features/events/admin/shared';
 import AccessActivity from './AccessActivity';
+import DeviceControl from './DeviceControl';
 import AttendanceCheck from './AttendanceCheck';
 
 const TABS = [['overview', 'Overview'], ['activity', 'Activity'], ['integrity', 'Attendance check']] as const;
@@ -68,18 +69,12 @@ const AccessPage = () => {
         <Stat label="Issues" value={sum ? issues + sum.pending : '…'} sub={sum ? `${sum.pending} waiting for device · ${sum.failed} sync failed · ${sum.blocked} blocked` : ''} tone={sum && (issues || sum.pending) ? 'warn' : undefined} />
       </section>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <section aria-labelledby="dev-h" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
-          <div className="flex items-center justify-between"><h2 id="dev-h" className="text-sm font-bold uppercase tracking-wider text-white">Devices</h2><Link to="/admin/settings/access" className="text-xs text-ink-400 hover:text-white">Manage →</Link></div>
-          {!sum ? <div className="mt-4 h-16 animate-pulse rounded-xl bg-ink-800" /> : sum.devices.length === 0 ? (
-            <p className="mt-4 text-sm text-ink-400">No devices yet. <Link to="/admin/settings/access" className="font-semibold text-brand-fg hover:underline">Add the F22</Link>.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-white/[0.06] text-sm">
-              {sum.devices.map((d) => <li key={d.id} className="flex items-center justify-between gap-3 py-3"><span className="min-w-0"><span className="block truncate font-semibold text-white">{d.name}</span><span className="text-xs text-ink-500">{d.model}{d.serialNumber ? ` · ${d.serialNumber}` : ''}</span></span><span className="text-xs font-semibold text-ink-300">{HEALTH_LABEL[deviceHealth(d)]}</span></li>)}
-            </ul>
-          )}
-        </section>
+      {/* Each device: its real state, users, and the operations it genuinely supports */}
+      {!sum ? <div className="mt-6 h-40 animate-pulse rounded-2xl bg-ink-900" /> : sum.devices.length === 0 ? (
+        <p className="mt-6 rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-sm text-ink-400">No devices yet. <Link to="/admin/settings/access" className="font-semibold text-brand-fg hover:underline">Add the device</Link>.</p>
+      ) : <div className="mt-6 space-y-4">{sum.devices.map((d) => <DeviceControl key={d.id} device={d} onChanged={() => sumQ.refetch()} />)}</div>}
 
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section aria-labelledby="wait-h" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
           <h2 id="wait-h" className="text-sm font-bold uppercase tracking-wider text-white">Needs attention</h2>
           {!waiting ? <div className="mt-4 h-16 animate-pulse rounded-xl bg-ink-800" /> : waiting.length === 0 ? <p className="mt-4 text-sm text-ink-400">No enrolments waiting and no failed syncs.</p> : (

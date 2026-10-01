@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyNote, ErrorNote, SideDrawer, SkeletonRows } from '@/features/admin/kit';
 import AddMemberDrawer from '@/features/admin/members/AddMemberDrawer';
 import MemberPicker from '@/features/admin/members/MemberPicker';
-import EnrollWizard from '@/features/admin/members/EnrollWizard';
+import EnrollWizard, { memberPerson } from '@/features/admin/access/EnrollWizard';
 import PaymentForm from '@/features/admin/payments/PaymentForm';
 import StaffCheckIn from '@/features/admin/StaffCheckIn';
 import { fmtTime, useLookups } from '@/features/admin/members/lookups';
@@ -210,7 +210,7 @@ const Overview = () => {
       <SideDrawer open={task === 'enroll'} onOpenChange={(o) => !o && setTask(null)} title="Enroll access" description={enrollFor ? enrollFor.m.name : 'Fingerprint on the gym’s biometric device'}>
         {task === 'enroll' && (enrollFor ? (
           <div className="space-y-4">
-            <EnrollWizard m={enrollFor.m} existing={enrollFor.ids} onDone={() => identitiesOfMember(enrollFor.m.id).then((ids) => setEnrollFor((x) => (x ? { ...x, ids } : x))).catch(() => {})} />
+            <EnrollWizard person={memberPerson(enrollFor.m)} existing={enrollFor.ids} onDone={() => identitiesOfMember(enrollFor.m.id).then((ids) => setEnrollFor((x) => (x ? { ...x, ids } : x))).catch(() => {})} />
             <Button variant="ghost" onClick={() => setEnrollFor(null)}>Choose a different member</Button>
           </div>
         ) : <MemberPicker label="Who is enrolling?" onPick={(m) => identitiesOfMember(m.id).catch(() => []).then((ids) => setEnrollFor({ m, ids }))} />)}

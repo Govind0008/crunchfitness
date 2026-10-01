@@ -206,7 +206,7 @@ const MembersPage = () => {
                         </span>
                         <span className="hidden min-w-0 md:block">
                           <span className="sr-only">Access</span>
-                          <StatusDot tone={acc === 'Enabled' ? 'ok' : acc === 'No membership' ? 'muted' : 'bad'} className="text-sm font-normal">{acc}{bio ? ` · ${bio.status === 'SYNCED' ? 'synced' : bio.status === 'PENDING' ? 'pending' : bio.status === 'ENROLLED' ? 'enrolled' : bio.status.toLowerCase().replace('_', ' ')}` : ''}</StatusDot>
+                          <StatusDot tone={acc === 'Enabled' ? 'ok' : acc === 'No membership' ? 'muted' : 'bad'} className="text-sm font-normal">{acc}{bio ? ` · ${bio.enrollment === 'confirmed' ? 'fingerprint enrolled' : bio.status === 'PENDING' ? 'enrolment pending' : 'fingerprint not confirmed'}` : ''}</StatusDot>
                         </span>
                         <span className="hidden min-w-0 md:block">
                           <span className="sr-only">Last visit</span>

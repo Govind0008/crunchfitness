@@ -6,6 +6,7 @@ import { useStaffTheme, type ThemePref } from '@/lib/theme';
 import { markBootReady } from '@/components/loading/bootState';
 import PageSkeleton from '@/components/loading/PageSkeleton';
 import CommandPalette from './CommandPalette';
+import OpenDoorButton from '@/components/admin/OpenDoorButton';
 import { signOut } from 'firebase/auth';
 import { collection, getCountFromServer, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -93,6 +94,7 @@ const Frame = () => {
           </nav>
           <div className="ml-auto flex w-full items-center justify-end gap-2 sm:w-auto sm:flex-1">
             <AdminSearch />
+            <OpenDoorButton />
             <button type="button" onClick={() => setPalette(true)} className="hidden h-10 flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-white/[0.1] px-3 text-sm text-ink-300 hover:border-white/25 hover:text-white xl:flex" aria-label="Quick actions (Ctrl K)">
               <Command size={14} aria-hidden /> Quick actions <kbd className="rounded bg-white/[0.08] px-1.5 text-[10px] text-ink-400">Ctrl K</kbd>
             </button>

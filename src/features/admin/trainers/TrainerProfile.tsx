@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { addDays, memberCode, todayIST, type Member } from '@/lib/admin/members';
 import { activityFor } from '@/lib/admin/activity';
-import { BIOMETRIC_LABEL } from '@/lib/access';
+import { ENROLLMENT_LABEL, MANAGED_LABEL, enrollmentOf, managedByOf } from '@/lib/access';
+import BiometricPanel from '../access/BiometricPanel';
 import { identitiesOfTrainer } from '@/lib/access/store';
 import {
   LEAVE_STATUS, LEAVE_TYPE, dayStatus, exceptionsOf, fmtClock, fmtDuration, leaveOf, listTeam, trainerAttendanceOf, type Leave, type TrainerDay,
@@ -19,7 +20,7 @@ import { usePaged } from '../usePaged';
 import { DataRegion, EmptyNote, ErrorNote, HeadRow, ListBox, Pagination, Pill, SkeletonRows } from '../kit';
 import { Exceptions, LeaveDrawer, ManualCheckout, StatusPill } from './bits';
 
-const TABS = [['overview', 'Overview'], ['attendance', 'Attendance'], ['leave', 'Leave'], ['members', 'Assigned members'], ['activity', 'Activity']] as const;
+const TABS = [['overview', 'Overview'], ['attendance', 'Attendance'], ['access', 'Biometric'], ['leave', 'Leave'], ['members', 'Assigned members'], ['activity', 'Activity']] as const;
 type Tab = (typeof TABS)[number][0];
 const monthOf = (ymd: string) => ymd.slice(0, 7);
 const monthEnd = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
@@ -89,11 +90,11 @@ const TrainerProfile = () => {
             </dl>
           </section>
           <section aria-labelledby="ov-dev" className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5">
-            <h2 id="ov-dev" className="font-sans text-sm font-bold uppercase tracking-wider text-white">Device</h2>
+            <div className="flex items-center justify-between"><h2 id="ov-dev" className="font-sans text-sm font-bold uppercase tracking-wider text-white">Fingerprint</h2><button type="button" onClick={() => go('access')} className="text-xs text-ink-400 hover:text-white">Manage →</button></div>
             {!ids.data ? <div className="mt-4 h-12 animate-pulse rounded-xl bg-ink-800" /> : ids.data.filter((i) => i.status !== 'REMOVED').length === 0 ? (
-              <p className="mt-3 text-sm text-ink-400">Not linked to a device user yet, so punches can’t be recorded as trainer attendance. <Link to="/admin/settings/access" className="font-semibold text-brand-fg hover:underline">Link in Access devices → Match users</Link>.</p>
+              <p className="mt-3 text-sm text-ink-400">Not enrolled, so punches can’t be recorded as trainer attendance. <button type="button" onClick={() => go('access')} className="font-semibold text-brand-fg hover:underline">Enroll fingerprint</button>.</p>
             ) : (
-              <ul className="mt-3 space-y-2 text-sm">{ids.data.filter((i) => i.status !== 'REMOVED').map((i) => <li key={i.id} className="flex items-center gap-2"><span className="font-mono text-white">#{i.deviceUserId}</span><Pill tone="muted">{BIOMETRIC_LABEL[i.status]}</Pill></li>)}</ul>
+              <ul className="mt-3 space-y-2 text-sm">{ids.data.filter((i) => i.status !== 'REMOVED').map((i) => <li key={i.id} className="flex flex-wrap items-center gap-2"><span className="font-mono text-white">#{i.deviceUserId}</span><Pill tone={enrollmentOf(i) === 'confirmed' ? 'ok' : 'muted'}>{ENROLLMENT_LABEL[enrollmentOf(i)]}</Pill><Pill tone="muted">{MANAGED_LABEL[managedByOf(i)]}</Pill></li>)}</ul>
             )}
           </section>
         </div>
@@ -137,6 +138,12 @@ const TrainerProfile = () => {
           )}
           <p className="mt-3 text-xs text-ink-500">First punch of the day = check-in, last = check-out. A single punch is shown as missing check-out; no check-out is ever assumed. A day with no punch is “No attendance recorded”.</p>
         </section>
+      )}
+
+      {tab === 'access' && trainer && (
+        <div className="max-w-2xl">
+          <BiometricPanel person={{ id: trainer.id, name: trainer.name, personType: 'trainer', code: trainer.role }} identities={ids.data} onChange={ids.refetch} />
+        </div>
       )}
 
       {tab === 'leave' && trainer && (

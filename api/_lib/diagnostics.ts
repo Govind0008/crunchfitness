@@ -56,7 +56,22 @@ export function summarize(opts: { method: string; path: string; query: Record<st
   };
 }
 
-export interface Outcome { status: number; upstreamStatus: number | null; durationMs: number; crmDeviceId: string | null; forwarded: boolean; note?: string }
+export interface Outcome {
+  status: number; upstreamStatus: number | null; durationMs: number; crmDeviceId: string | null; forwarded: boolean; note?: string;
+  /** What kinds of commands the OLD server sent the device in this reply — verbs and counts only
+   *  ("DATA UPDATE USERINFO ×5"), never user IDs, names or contents */
+  upstreamCommands?: string[];
+}
+
+/** "C:123:DATA UPDATE USERINFO PIN=7\tName=…" lines → ["DATA UPDATE USERINFO ×1", …] (no arguments kept). */
+export function commandVerbs(reply: string): string[] {
+  const counts = new Map<string, number>();
+  for (const line of reply.split(/\r?\n/)) {
+    const m = line.match(/^C:[^:]*:([A-Z_]+(?: [A-Z_]+){0,2})/);
+    if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
+  }
+  return [...counts].map(([v, n]) => `${v} ×${n}`);
+}
 
 /** One JSON line per request in the function logs (Vercel → Logs, search "adms"). */
 export function logLine(s: RequestSummary, o: Outcome) {
@@ -72,7 +87,7 @@ const RECENT = 25;
 export async function recordContact(fs: Firestore, s: RequestSummary, o: Outcome, totals: { counts: Record<string, number>; usage: Record<string, number> } = { counts: {}, usage: {} }) {
   const key = (s.sn || 'NO-SERIAL').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 60);
   const ref = fs.collection('admsDiagnostics').doc(key);
-  const entry = { at: s.at, kind: requestKind(s.method, s.path, s.table), method: s.method, path: s.path, table: s.table, status: o.status, upstreamStatus: o.upstreamStatus, durationMs: o.durationMs, bodyBytes: s.bodyBytes, parsed: s.parsed, remoteIp: s.remoteIp, ...(o.note ? { note: o.note } : {}) };
+  const entry = { at: s.at, kind: requestKind(s.method, s.path, s.table), method: s.method, path: s.path, table: s.table, status: o.status, upstreamStatus: o.upstreamStatus, durationMs: o.durationMs, bodyBytes: s.bodyBytes, parsed: s.parsed, remoteIp: s.remoteIp, ...(o.note ? { note: o.note } : {}), ...(o.upstreamCommands?.length ? { upstreamCommands: o.upstreamCommands } : {}) };
   await fs.runTransaction(async (tx) => {
     const cur = await tx.get(ref);
     const recent = [entry, ...((cur.get('recent') as unknown[]) ?? [])].slice(0, RECENT);

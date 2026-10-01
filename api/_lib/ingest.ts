@@ -1,5 +1,6 @@
 import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
-import { eventKey, scanResult, toIso, type MemberLike, type Scan } from './adms.js';
+import { eventKey, toIso, type MemberLike, type Scan } from './adms.js';
+import { DENY_TEXT, memberDecision, resultOf, trainerDecision, type MemberAccessLike } from './access.js';
 import { localDay, memberAttendanceId, onLeave, personOf, trainerAttendanceId, trainerDay } from './attendance.js';
 import { noMeter, type Meter } from './usage.js';
 
@@ -10,8 +11,8 @@ import { noMeter, type Meter } from './usage.js';
 
 const GYM = 'crunch-wakad';
 
-interface Identity { id: string; personType?: string; memberId?: string | null; trainerId?: string | null; status: string }
-type MemberDoc = MemberLike & { name?: string; phoneKey?: string; lastVisitAt?: Timestamp };
+interface Identity { id: string; personType?: string; memberId?: string | null; trainerId?: string | null; status: string; managedBy?: string | null; accessEnabled?: boolean | null; enrollment?: string | null }
+type MemberDoc = MemberLike & MemberAccessLike & { name?: string; phoneKey?: string; lastVisitAt?: Timestamp };
 
 export interface IngestResult { events: number; members: number; trainers: number; unknown: number; attendanceCreated: number; attendanceUpdated: number }
 
@@ -45,6 +46,14 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
   const members = new Map(memberSnaps.filter((s) => s.exists).map((s) => [s.id, s.data() as MemberDoc]));
   const trainers = new Map(trainerSnaps.filter((s) => s.exists).map((s) => [s.id, String(s.get('name') ?? 'Trainer')]));
   const leaves = new Map(trainerIds.map((id, i) => [id, leaveSnaps[i].docs.map((d) => d.data() as { from: string; to: string; status: string })]));
+  // PT-only check, only for CRM-managed members with no membership (rare): explains the denial
+  const ptOnly = new Set<string>();
+  const noMembership = [...identities.values()].filter((i) => i.managedBy === 'crm' && i.memberId && members.has(i.memberId) && !members.get(i.memberId)!.membershipEnd).map((i) => i.memberId!);
+  await Promise.all([...new Set(noMembership)].map(async (id) => {
+    const pt = await fs.collection('ptPackages').where('memberId', '==', id).limit(5).get();
+    meter.read('punches', Math.max(1, pt.size));
+    if (!pt.empty) ptOnly.add(id);
+  }));
 
   // 1) Every punch is an access event — resolved or not — so nothing a device reports is lost
   const memberDays = new Map<string, { memberId: string; scans: { key: string; ms: number; pin: string }[] }>();
@@ -58,18 +67,23 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
     const at = toIso(s.time);
     const day = localDay(s.time);
     const base = { gymId: GYM, deviceId, deviceUserId: s.pin, at, localDate: day, verify: s.verify, statusCode: s.status, receivedAt: FieldValue.serverTimestamp(), source: 'adms-relay' };
+    // The CRM's verdict for this scan. Legacy and unknown users are never "denied" — the old
+    // system owns them. (The device has already opened the door either way: this is the record.)
     if (person.type === 'member' && members.has(person.id!)) {
       const m = members.get(person.id!)!;
-      const { result, reason } = scanResult(ident!.status, m, day);
+      const { decision, reason: code } = memberDecision(ident, m, day, ptOnly.has(person.id!));
+      const reason = code ? DENY_TEXT[code] : decision === 'LEGACY_USER' ? 'Managed by the old system' : 'Allowed by the new CRM';
       if (writeEvents) batched++;
-      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'member', memberId: person.id, trainerId: null, result, reason, attendanceRef: `checkins/${memberAttendanceId(day, person.id!)}` });
+      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'member', memberId: person.id, trainerId: null, decision, decisionReason: code, managedBy: ident?.managedBy === 'crm' ? 'crm' : 'legacy', result: resultOf(decision), reason, attendanceRef: `checkins/${memberAttendanceId(day, person.id!)}` });
       const k = memberAttendanceId(day, person.id!);
       if (!memberDays.has(k)) memberDays.set(k, { memberId: person.id!, scans: [] });
       memberDays.get(k)!.scans.push({ key, ms: Date.parse(at), pin: s.pin });
       out.members++;
     } else if (person.type === 'trainer' && trainers.has(person.id!)) {
+      const { decision, reason: code } = trainerDecision(ident, true);
+      const reason = code ? DENY_TEXT[code] : decision === 'LEGACY_USER' ? 'Staff · managed by the old system' : 'Staff';
       if (writeEvents) batched++;
-      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'trainer', memberId: null, trainerId: person.id, result: 'granted', reason: 'Staff', attendanceRef: `trainerAttendance/${trainerAttendanceId(day, person.id!)}` });
+      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'trainer', memberId: null, trainerId: person.id, decision, decisionReason: code, managedBy: ident?.managedBy === 'crm' ? 'crm' : 'legacy', result: resultOf(decision), reason, attendanceRef: `trainerAttendance/${trainerAttendanceId(day, person.id!)}` });
       const k = trainerAttendanceId(day, person.id!);
       if (!trainerDays.has(k)) trainerDays.set(k, { trainerId: person.id!, scans: [] });
       trainerDays.get(k)!.scans.push({ key, ms: Date.parse(at), pin: s.pin });
@@ -78,18 +92,25 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
       // Linked to someone who no longer exists, or not linked at all: kept, and shown as unresolved
       if (writeEvents) batched++;
       if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), {
-        ...base, personType: 'unknown', memberId: null, trainerId: null, result: 'unknown_user', attendanceRef: null,
+        ...base, personType: 'unknown', memberId: null, trainerId: null, decision: 'UNKNOWN_USER', decisionReason: null, managedBy: 'legacy', result: 'unknown_user', attendanceRef: null,
         reason: ident ? 'Linked person not found' : `Device user ${s.pin} isn’t linked to a member or trainer`,
         deviceUserName: deviceNames.get(s.pin) ?? '',
       });
       out.unknown++;
     }
     out.events++;
-    // A punch proves this user ID exists on the device
+    // A punch proves this user ID exists on the device…
     if (writeEvents && ident && ['PENDING', 'ENROLLED', 'SYNC_FAILED'].includes(ident.status)) {
       batched++;
       batch.update(fs.collection('biometricIdentities').doc(ident.id), { status: 'SYNCED', lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() });
       ident.status = 'SYNCED';
+    }
+    // …and a scan the device verified BY FINGERPRINT proves the fingerprint is enrolled on it —
+    // the device's own confirmation (nothing is marked enrolled because a command was sent)
+    if (writeEvents && ident && s.verify === 'fingerprint' && ident.enrollment !== 'confirmed' && ident.status !== 'REMOVED') {
+      batched++;
+      batch.update(fs.collection('biometricIdentities').doc(ident.id), { enrollment: 'confirmed', enrollmentConfirmedAt: FieldValue.serverTimestamp(), enrollmentEvidence: 'fingerprint_scan', enrollmentError: null });
+      ident.enrollment = 'confirmed';
     }
   }
   await batch.commit();

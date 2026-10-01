@@ -2,7 +2,7 @@
 // HTTP when pointed at a server (POST /iclock/cdata?SN=<serial>&table=ATTLOG).
 //
 // Pure parsing only. The listener that receives these requests is part of the integration
-// service (see ACCESS_CONTROL_F22.md) and is NOT deployed: which fields and commands the gym's
+// service (see ACCESS_CONTROL.md) and is NOT deployed: which fields and commands the gym's
 // F22 firmware actually sends must be checked against the real device first.
 //
 // ATTLOG body: one scan per line, tab-separated:

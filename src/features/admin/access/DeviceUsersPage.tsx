@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { memberCode, membersByIds, type Member } from '@/lib/admin/members';
 import { listTeam } from '@/lib/admin/trainerAttendance';
 import { assignDeviceUser, deviceUsersOf, identitiesOfDevice, listDevices, queueDeviceCommand, DeviceUserTakenError, type DeviceUserRow } from '@/lib/access/store';
-import { BIOMETRIC_LABEL, type AccessDevice, type BiometricIdentity } from '@/lib/access';
+import { ENROLLMENT_LABEL, MANAGED_LABEL, enrollmentOf, managedByOf, type AccessDevice, type BiometricIdentity } from '@/lib/access';
 import { AdminShell } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import MemberPicker from '@/features/admin/members/MemberPicker';
@@ -117,7 +117,7 @@ const DeviceUsersPage = () => {
               <span className="min-w-0"><span className="block truncate font-semibold text-white">{r.user.name || 'No name on device'}</span>{r.user.admin && <span className="text-xs text-amber-200">Device admin</span>}</span>
               <span className="col-span-2 min-w-0 text-sm md:col-span-1">
                 {r.identity ? (
-                  <span className="flex flex-wrap items-center gap-2"><Pill tone={r.identity.status === 'SYNCED' ? 'ok' : r.identity.status === 'SYNC_FAILED' ? 'bad' : 'info'}>{BIOMETRIC_LABEL[r.identity.status]}</Pill>
+                  <span className="flex flex-wrap items-center gap-2"><Pill tone={r.identity.managedBy === 'crm' ? 'ok' : 'muted'}>{MANAGED_LABEL[managedByOf(r.identity)]}</Pill><Pill tone={enrollmentOf(r.identity) === 'confirmed' ? 'ok' : enrollmentOf(r.identity) === 'failed' ? 'bad' : 'info'}>{ENROLLMENT_LABEL[enrollmentOf(r.identity)]}</Pill>
                     {r.identity.personType === 'trainer'
                       ? <><span className="truncate text-white">{r.trainer?.name ?? 'Trainer (profile removed)'}</span><span className="text-xs text-ink-500">Trainer</span></>
                       : <><span className="truncate text-white">{r.member?.name ?? 'Member (not found)'}</span>{r.member && <span className="font-mono text-xs text-ink-500">{memberCode(r.member.id)}</span>}</>}

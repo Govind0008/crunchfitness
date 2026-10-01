@@ -123,9 +123,13 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'> & { p
     }
     const ref = doc(idCol(), identityId(device.id, userId));
     if ((await tx.get(ref)).exists()) throw new DeviceUserTakenError(`Device user ${userId} is already linked to someone on ${device.name}.`);
+    // A new ID handed out by the CRM is the CRM's to control; an ID already on the device
+    // belongs to the old system until staff explicitly take that person over
+    const managedBy = opts.existingId ? 'legacy' : 'crm';
     tx.set(ref, {
       gymId, personType: trainer ? 'trainer' : 'member', memberId: trainer ? null : member.id, trainerId: trainer ? member.id : null,
       deviceId: device.id, deviceUserId: userId, method: opts.method, status: 'PENDING',
+      managedBy, accessEnabled: true, enrollment: managedBy === 'crm' ? 'not_enrolled' : 'unverified',
       enrolledAt: null, lastSyncedAt: null, lastSyncAttemptAt: null, lastSyncError: null,
       createdBy: actor.email, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
@@ -135,6 +139,45 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'> & { p
   });
 }
 
+const personRef = (i: BiometricIdentity) => (i.personType === 'trainer' ? { refType: 'trainer', refId: i.trainerId ?? null } : { refType: 'member', refId: i.memberId });
+
+/**
+ * Ask the device to start fingerprint enrolment for a CRM-managed user (the device shows its
+ * "place finger" screen). Only marks the request: "enrolled" comes from the device itself.
+ * The rules refuse this for users the old system manages.
+ */
+export async function requestEnrollment(i: BiometricIdentity, actor: AdminActor, name: string, opts: { createUser?: boolean } = {}) {
+  if (i.managedBy !== 'crm') throw new Error('This device user is managed by the old system — enrol them there.');
+  const { refType, refId } = personRef(i);
+  const ids: { add?: string; enroll: string } = { enroll: '' };
+  if (opts.createUser) ids.add = await queueDeviceCommand(i.deviceId, { type: 'add_user', deviceUserId: i.deviceUserId, name, personType: refType as 'member' | 'trainer', personId: refId ?? undefined }, actor);
+  ids.enroll = await queueDeviceCommand(i.deviceId, { type: 'enroll_fp', deviceUserId: i.deviceUserId, personType: refType as 'member' | 'trainer', personId: refId ?? undefined }, actor);
+  const b = writeBatch(db);
+  b.update(doc(idCol(), i.id), { enrollment: 'requested', enrollmentRequestedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  logTo(b, actor, 'Fingerprint enrolment requested', refType, refId, { name, deviceUserId: i.deviceUserId, event: 'ENROLLMENT_REQUESTED' });
+  await b.commit();
+  return ids;
+}
+
+/** The CRM's access switch for a CRM-managed device user (recorded and checked on every scan). */
+export async function setIdentityAccess(i: BiometricIdentity, enabled: boolean, actor: AdminActor, name: string) {
+  if (i.managedBy !== 'crm') throw new Error('This device user is managed by the old system.');
+  const { refType, refId } = personRef(i);
+  const b = writeBatch(db);
+  b.update(doc(idCol(), i.id), { accessEnabled: enabled, updatedAt: serverTimestamp() });
+  logTo(b, actor, enabled ? 'Access turned on' : 'Access turned off', refType, refId, { name, deviceUserId: i.deviceUserId, event: enabled ? 'ACCESS_ENABLED' : 'ACCESS_DISABLED' });
+  await b.commit();
+}
+
+/** Explicit migration: the new CRM takes over (or hands back) this person's access. */
+export async function setManagedBy(i: BiometricIdentity, managedBy: 'crm' | 'legacy', actor: AdminActor, name: string) {
+  const { refType, refId } = personRef(i);
+  const b = writeBatch(db);
+  b.update(doc(idCol(), i.id), { managedBy, updatedAt: serverTimestamp() });
+  logTo(b, actor, managedBy === 'crm' ? 'Access taken over by the new CRM' : 'Access handed back to the old system', refType, refId, { name, deviceUserId: i.deviceUserId, event: managedBy === 'crm' ? 'MANAGED_BY_CRM' : 'MANAGED_BY_LEGACY' });
+  await b.commit();
+}
+
 /** Staff confirm what they saw on the device (fingerprint saved), or disable/remove the link. */
 export async function setIdentityStatus(identity: BiometricIdentity, status: Extract<BiometricStatus, 'PENDING' | 'ENROLLED' | 'DISABLED' | 'REMOVED'>, actor: AdminActor, memberName: string) {
   const b = writeBatch(db);
@@ -142,6 +185,7 @@ export async function setIdentityStatus(identity: BiometricIdentity, status: Ext
   const action = { PENDING: 'Biometric enrolment restarted', ENROLLED: 'Fingerprint enrolled on device', DISABLED: 'Device access disabled', REMOVED: 'Removed from device' }[status];
   const trainer = identity.personType === 'trainer';
   logTo(b, actor, action, trainer ? 'trainer' : 'member', trainer ? identity.trainerId ?? null : identity.memberId, { name: memberName, deviceUserId: identity.deviceUserId });
+
   await b.commit();
 }
 
@@ -195,6 +239,8 @@ export interface AccessSummary {
   blocked: number;
   /** Punches today not linked to a member or trainer (null if that count couldn't be read) */
   unresolvedToday: number | null;
+  /** Scans today by CRM-managed people whose access isn't allowed (the device still opened) */
+  deniedToday: number | null;
 }
 /** Everything on the dashboard's access card — counts only, nothing downloaded in bulk. */
 export async function accessSummary(todayStartIso: string): Promise<AccessSummary> {
@@ -211,7 +257,8 @@ export async function accessSummary(todayStartIso: string): Promise<AccessSummar
   ]);
   // Its own index (gymId + personType + at): if that isn't published yet, the rest still shows
   const unresolvedToday = await c(query(evCol(), where('gymId', '==', gymId), where('personType', '==', 'unknown'), where('at', '>=', todayStartIso), orderBy('at', 'desc'))).catch(() => null);
-  return { devices, scansToday, grantedToday, pending, failed, enrolled, blocked, unresolvedToday };
+  const deniedToday = await c(query(evCol(), where('gymId', '==', gymId), where('result', '==', 'denied'), where('at', '>=', todayStartIso), orderBy('at', 'desc'))).catch(() => null);
+  return { devices, scansToday, grantedToday, pending, failed, enrolled, blocked, unresolvedToday, deniedToday };
 }
 
 /** Midnight in the gym's timezone today, as an ISO instant (India has no DST: +05:30). */
@@ -225,13 +272,52 @@ export async function deviceCounts(deviceId: string) {
 }
 
 // ── Requests to the device (sent through the relay on its next poll, every few seconds) ──
-export type DeviceCommandType = 'query_users' | 'add_user' | 'enroll_fp';
-export interface DeviceCommand { id: string; type: DeviceCommandType; deviceUserId?: string; name?: string; status: 'queued' | 'sent' | 'done' | 'failed'; returnCode?: string }
+export type DeviceCommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door';
+export interface DeviceCommand {
+  id: string; type: DeviceCommandType; deviceUserId?: string; name?: string; personType?: 'member' | 'trainer'; personId?: string;
+  status: 'queued' | 'sent' | 'done' | 'failed'; returnCode?: string; error?: string;
+  createdAt?: { toMillis: () => number }; sentAt?: { toMillis: () => number }; doneAt?: { toMillis: () => number };
+}
 const commandsCol = (deviceId: string) => collection(db, 'gyms', gymId, 'devices', deviceId, 'commands');
-export async function queueDeviceCommand(deviceId: string, c: { type: DeviceCommandType; deviceUserId?: string; name?: string }, actor: AdminActor) {
+export async function queueDeviceCommand(deviceId: string, c: { type: DeviceCommandType; deviceUserId?: string; name?: string; personType?: 'member' | 'trainer'; personId?: string }, actor: AdminActor) {
   const ref = doc(commandsCol(deviceId));
-  await setDoc(ref, { type: c.type, ...(c.deviceUserId ? { deviceUserId: c.deviceUserId } : {}), ...(c.name ? { name: c.name.slice(0, 40) } : {}), status: 'queued', createdBy: actor.email, createdAt: serverTimestamp() });
+  await setDoc(ref, {
+    type: c.type, ...(c.deviceUserId ? { deviceUserId: c.deviceUserId } : {}), ...(c.name ? { name: c.name.slice(0, 40) } : {}),
+    ...(c.personType && c.personId ? { personType: c.personType, personId: c.personId } : {}),
+    status: 'queued', createdBy: actor.email, createdAt: serverTimestamp(),
+  });
   return ref.id;
+}
+/**
+ * Release the door now (ADMS AC_UNLOCK). Queued with its audit entry in one write. The relay sends
+ * it on the device's next poll, and only the device's own answer says it worked; a request the
+ * device doesn't collect within 30 seconds expires unsent (it never fires later).
+ */
+export async function openDoor(deviceId: string, actor: AdminActor) {
+  const ref = doc(commandsCol(deviceId));
+  const b = writeBatch(db);
+  b.set(ref, { type: 'unlock_door', status: 'queued', createdBy: actor.email, createdAt: serverTimestamp() });
+  logTo(b, actor, 'Door release requested', 'device', deviceId, { event: 'DOOR_UNLOCK_REQUESTED' });
+  await b.commit();
+  return ref.id;
+}
+/** Ask the device for its full user list (read-only on the device). */
+export const syncDeviceUsers = (deviceId: string, actor: AdminActor) => queueDeviceCommand(deviceId, { type: 'query_users' }, actor);
+/** The latest requests to a device, with what the device answered. */
+export async function recentCommands(deviceId: string, n = 8): Promise<DeviceCommand[]> {
+  const snap = await getDocs(query(commandsCol(deviceId), orderBy('createdAt', 'desc'), limit(n)));
+  return snap.docs.map((d) => withId<DeviceCommand>(d));
+}
+/** Users on the device vs. linked in the CRM, by who controls them — counts only. */
+export async function deviceUserCounts(deviceId: string) {
+  const c = (q: ReturnType<typeof query>) => getCountFromServer(q).then((s) => s.data().count);
+  const linked = (m: 'crm') => query(idCol(), where('gymId', '==', gymId), where('deviceId', '==', deviceId), where('managedBy', '==', m), where('status', 'in', ['PENDING', 'ENROLLED', 'SYNCED', 'SYNC_FAILED', 'DISABLED']));
+  const [onDevice, allLinked, crm] = await Promise.all([
+    c(query(collection(db, 'gyms', gymId, 'devices', deviceId, 'deviceUsers'))),
+    c(query(idCol(), where('gymId', '==', gymId), where('deviceId', '==', deviceId), where('status', 'in', ['PENDING', 'ENROLLED', 'SYNCED', 'SYNC_FAILED', 'DISABLED']))),
+    c(linked('crm')),
+  ]);
+  return { onDevice, crm, legacyLinked: allLinked - crm, notLinked: Math.max(0, onDevice - allLinked) };
 }
 /** Live status of one request (queued → sent → done / failed). */
 export function watchDeviceCommand(deviceId: string, commandId: string, cb: (c: DeviceCommand | null) => void) {

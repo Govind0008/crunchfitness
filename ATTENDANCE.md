@@ -3,7 +3,7 @@
 How fingerprint punches from the entrance device become member visits and trainer attendance,
 how the records are checked and repaired, and the paging and theme work that shipped alongside.
 For the device connection itself (the ADMS relay, enrolment, diagnostics), see
-`ACCESS_CONTROL_F22.md`.
+`ACCESS_CONTROL.md`.
 
 ## Access vs attendance
 

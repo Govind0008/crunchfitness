@@ -135,6 +135,8 @@ test('member photos in Storage: admins only', async () => {
 test('device commands: admins may only queue the three safe requests; the relay alone records results', async () => {
   const { db } = await as(ADMIN.email);
   const cmd = (extra: Record<string, unknown> = {}) => ({ type: 'add_user', deviceUserId: '10061', name: 'Riya', status: 'queued', createdBy: ADMIN.email, createdAt: serverTimestamp(), ...extra });
+  await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c0'), cmd()));   // nobody the CRM manages has that ID yet
+  await seedDoc('biometricIdentities/dev1_10061', { gymId: GYM, memberId: 'm1', deviceId: 'dev1', deviceUserId: '10061', method: 'fingerprint', status: 'PENDING', managedBy: 'crm', accessEnabled: true, enrollment: 'not_enrolled' });
   await setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c1'), cmd());
   await setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c2'), { type: 'query_users', status: 'queued', createdBy: ADMIN.email, createdAt: serverTimestamp() });
   await denied(setDoc(doc(db, 'gyms', GYM, 'devices', 'dev1', 'commands', 'c3'), cmd({ type: 'delete_user' })));        // nothing destructive
