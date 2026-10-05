@@ -14,6 +14,12 @@ export async function admsCall<T>(check: string, opts: { method?: 'GET' | 'POST'
   return r.json() as Promise<T>;
 }
 
+/** After queueing a device command: ask the relay to deliver it on the device's next poll.
+ *  Best effort — the relay's periodic check delivers it anyway (well within Open door's expiry). */
+export function notifyCommandQueued(deviceId: string) {
+  return admsCall<{ ok: boolean }>('notify', { method: 'POST', params: { device: deviceId } }).catch(() => undefined);
+}
+
 export type IssueKind = 'missing_member_attendance' | 'missing_trainer_attendance' | 'unknown_uid' | 'attendance_missing_member' | 'attendance_wrong_gym' | 'duplicate_event' | 'duplicate_attendance';
 export const ISSUE_LABEL: Record<IssueKind, string> = {
   missing_member_attendance: 'Member punch without attendance',

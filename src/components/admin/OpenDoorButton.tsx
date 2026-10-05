@@ -5,6 +5,7 @@ import { deviceHealth, type AccessDevice } from '@/lib/access';
 import { listDevices, openDoor, watchDeviceCommand, type DeviceCommand } from '@/lib/access/store';
 import ButtonLoader from '@/components/loading/ButtonLoader';
 import { useActor } from '@/features/events/admin/actor';
+import { notifyCommandQueued } from '@/lib/access/admsApi';
 
 type State =
   | { s: 'idle' } | { s: 'sending' } | { s: 'done' }
@@ -45,6 +46,7 @@ const OpenDoorButton = () => {
       if (!d) { settle({ s: 'nodevice' }); return; }
       if (deviceHealth(d) !== 'online') { settle({ s: 'offline' }); return; }
       const id = await openDoor(d.id, actor);
+      void notifyCommandQueued(d.id);   // deliver on the next poll (the relay's periodic check is the fallback)
       const timer = setTimeout(() => settle({ s: 'noanswer' }), NO_ANSWER_MS);
       const off = watchDeviceCommand(d.id, id, (c: DeviceCommand | null) => {
         if (!c) return;

@@ -1,0 +1,8 @@
+# Cloudflare static-asset headers — the same caching as vercel.json (copied into dist/ only for
+# the Cloudflare build; Vercel keeps using vercel.json).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/images/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/lovable-uploads/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

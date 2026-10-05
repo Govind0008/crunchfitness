@@ -103,7 +103,7 @@ const EnhancedChatbot: React.FC = () => {
     contact: {
       phone: '+91-8483048363',
       email: 'Crunchfitness680@gmail.com',
-      website: 'https://www.crunchfitness.fitness/',
+      website: 'https://www.crunnchhfitness.com/',
       whatsapp: '+91-8483048363'
     },
     trainers: [

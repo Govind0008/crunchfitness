@@ -1,5 +1,5 @@
 // Pure sitemap builder (unit-tested). Files under api/_lib are not deployed as routes.
-export const SITE_URL = 'https://www.crunchfitness.fitness';
+export const SITE_URL = 'https://www.crunnchhfitness.com';
 
 export const STATIC_PAGES: [path: string, priority: number][] = [
   ['/', 1.0], ['/plans', 0.9], ['/contact', 0.9], ['/events', 0.8], ['/gallery', 0.7],

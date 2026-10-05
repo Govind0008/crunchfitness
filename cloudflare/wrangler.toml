@@ -1,0 +1,44 @@
+# Crunch on Cloudflare Workers: the website and admin (static assets), the X2008 ADMS relay
+# (/iclock/*) and the server APIs (/api/*, /sitemap.xml) in one Worker.
+# No route or custom domain is configured here: `wrangler deploy` only creates
+# crunch-site.<account-subdomain>.workers.dev. Attaching www.crunnchhfitness.com is a separate,
+# explicitly approved cut-over step (see REAL_DEVICE_CUTOVER_RUNBOOK.md).
+name = "crunch-site"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+workers_dev = true
+
+# The production relay imports firebase-admin; on Workers it gets the REST stand-ins instead
+# The website: the Vite build, served as static assets (free and unlimited on the Free plan —
+# they never count as Worker requests). Unknown paths fall back to index.html (SPA routing).
+# Only these paths run the Worker code (and count toward the 100,000/day Worker requests):
+[assets]
+directory = "../dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/iclock/*", "/api/*", "/sitemap.xml", "/poc/*"]
+
+# Workers Logs (free: 200,000 events/day, 3 days): the relay writes ~26K request lines/day
+[observability]
+enabled = true
+
+[alias]
+"firebase-admin/firestore" = "./src/firestore-rest.ts"
+"firebase-admin/app" = "./src/admin-app.ts"
+"firebase-admin/auth" = "./src/admin-auth.ts"
+
+[vars]
+ADMS_UPSTREAM = "http://122.160.158.120:5072"
+# Workers can't hold a Firestore listener: the periodic command check is the fallback to the
+# Open-door notify lane (see PHASE_3_PRODUCTION_READINESS.md)
+ADMS_COMMAND_LISTEN = "0"
+ADMS_COMMAND_CHECK_MS = "15000"
+# A big user list is mirrored 100 users per request (the rest on the next polls): keeps each
+# request inside the free plan's 10 ms CPU. The device's answer never depends on it.
+ADMS_USER_CHUNK = "100"
+# /poc/old-server-probe target (front page only)
+PROBE_TARGET = "http://122.160.158.120:5072"
+# Secrets (never in this file): FIREBASE_SERVICE_ACCOUNT (required), POC_PROBE_KEY (optional)
+#   →  npx wrangler secret put <NAME>
+# Never set FIRESTORE_EMULATOR_HOST / FIRESTORE_EMULATOR_URL / FIREBASE_AUTH_EMULATOR_HOST on a
+# deployed Worker: with production credentials present the Worker refuses to serve (503).

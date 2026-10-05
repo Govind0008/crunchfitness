@@ -399,7 +399,7 @@ test.describe('seo', () => {
       await page.goto(route);
       await expect(page.locator('h1').first()).toBeVisible();
       await expect(page.locator('link[rel="canonical"]')).toHaveCount(1);
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://www.crunchfitness.fitness${route === '/' ? '/' : route}`);
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://www.crunnchhfitness.com${route === '/' ? '/' : route}`);
       await expect(page.locator('meta[name="description"]')).toHaveCount(1);
       await expect(page.locator('h1')).toHaveCount(1);
     }
@@ -419,14 +419,14 @@ test.describe('seo', () => {
     await page.goto('/definitely-not-a-page');
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
     const robots = await (await request.get('/robots.txt')).text();
-    expect(robots).toContain('Sitemap: https://www.crunchfitness.fitness/sitemap.xml');
+    expect(robots).toContain('Sitemap: https://www.crunnchhfitness.com/sitemap.xml');
     expect(robots).toContain('Disallow: /admin/');
     // /sitemap.xml is a Vercel function in production; check its builder directly
     const { buildSitemap } = await import('../../api/_lib/sitemap');
     const sitemap = buildSitemap([{ slug: 'crunch-challenge-2030', updatedAt: '2030-06-14T08:00:00Z' }, { slug: 'bad slug<script>' }]);
-    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/plans</loc>');
-    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/events</loc>');
-    expect(sitemap).toContain('<loc>https://www.crunchfitness.fitness/events/crunch-challenge-2030</loc><lastmod>2030-06-14</lastmod>');
+    expect(sitemap).toContain('<loc>https://www.crunnchhfitness.com/plans</loc>');
+    expect(sitemap).toContain('<loc>https://www.crunnchhfitness.com/events</loc>');
+    expect(sitemap).toContain('<loc>https://www.crunnchhfitness.com/events/crunch-challenge-2030</loc><lastmod>2030-06-14</lastmod>');
     expect(sitemap).not.toContain('<script>');
   });
 });

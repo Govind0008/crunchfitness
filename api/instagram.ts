@@ -10,6 +10,9 @@ interface IgMedia { id: string; caption?: string; media_type: string; media_url:
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // `reason` lets the site (and staff) see why the live feed isn't showing
   if (!IG_USER_ID || !IG_ACCESS_TOKEN) {
+    // Cached at the CDN like a success: every visitor would otherwise run this function just to
+    // hear "not configured". Setting the token means a redeploy, which starts a fresh cache.
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
     res.status(503).json({ error: 'Instagram integration is not configured yet.', reason: 'not_configured' });
     return;
   }
@@ -24,6 +27,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Long-lived Instagram tokens expire after 60 days (OAuthException code 190)
       let reason = 'api_error';
       try { if (JSON.parse(body)?.error?.code === 190) reason = 'token_expired'; } catch { /* non-JSON body */ }
+      // A short CDN cache: an expired token or an Instagram outage isn't re-asked on every visit
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
       res.status(502).json({ error: 'Failed to fetch Instagram posts.', reason });
       return;
     }

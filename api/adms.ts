@@ -5,6 +5,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { adminProblem, firestoreOrNull, requireAdmin } from './_lib/firebase.js';
 import { PROBE_SN } from './_lib/diagnostics.js';
 import { backfill, reconcile } from './_lib/reconcile.js';
+import { signalCommandQueued } from './iclock.js';
 
 // Diagnostics for the device connection (the ADMS relay at /iclock/*). Read-only: nothing here
 // sends anything to a device or to the old attendance server's /iclock endpoints.
@@ -126,6 +127,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const who = await requireAdmin(req.headers.authorization);
   if (!who) { res.status(401).json({ error: 'Sign in as an admin' }); return; }
   if (check === 'status' && req.method === 'GET') { res.status(200).json(await status()); return; }
+  // Staff just queued a device command (e.g. Open door): hint the relay to deliver it on the next
+  // poll. Admins only; carries no command text — the command itself is in Firestore.
+  if (check === 'notify' && req.method === 'POST') {
+    const device = String(req.query.device ?? '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(device)) { res.status(400).json({ error: 'Unknown device' }); return; }
+    await signalCommandQueued(device);
+    res.status(200).json({ ok: true });
+    return;
+  }
   if (check === 'reconcile' || check === 'backfill') {
     const from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
     const ymd = /^\d{4}-\d{2}-\d{2}$/;

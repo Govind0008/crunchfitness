@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
 import { ADMIN, resetFirestore, seedAdmin, seedDoc } from './emulator';
 
 // The branded boot screen ("The Rep") covers the first entry into the admin only, hands over
@@ -129,7 +129,10 @@ test('the boot screen uses the saved theme from the first frame — light and da
 test('slow start: never an endless spinner — it says so and offers a reload', async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
-  await page.route(/127\.0\.0\.1:8085/, () => { /* hold every database request */ });
+  // Hold every database request — and on recovery let the held ones through (unroute alone only
+  // affects new requests, leaving the held ones hanging until the SDK's retry backoff fires)
+  const held: Route[] = [];
+  await page.route(/127\.0\.0\.1:8085/, (route) => { held.push(route); });
   await page.reload();
   const loader = page.locator(LOADER);
   await expect(loader).toBeVisible();
@@ -138,6 +141,7 @@ test('slow start: never an endless spinner — it says so and offers a reload', 
   await loader.getByRole('button', { name: 'Reload' }).click();                     // reloads the page…
   await expect(page.locator(LOADER)).toBeVisible();                                    // …and boots again
   await page.unroute(/127\.0\.0\.1:8085/);
+  for (const r of held.splice(0)) await r.continue().catch(() => { /* from the page before the reload */ });
   await expect(page.locator(LOADER)).toBeHidden({ timeout: 15_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening)/);
 });

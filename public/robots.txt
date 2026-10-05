@@ -6,4 +6,4 @@ Disallow: /trainer/
 Disallow: /client/
 Disallow: /checkin
 
-Sitemap: https://www.crunchfitness.fitness/sitemap.xml
+Sitemap: https://www.crunnchhfitness.com/sitemap.xml

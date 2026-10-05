@@ -1,0 +1,16 @@
+{
+  "name": "crunch-site-worker",
+  "version": "1.0.0",
+  "description": "Crunch on Cloudflare Workers: website, ADMS relay and APIs (deployed only after approval)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "build:site": "cd .. && npm run build && cp cloudflare/site/_headers dist/_headers",
+    "verify:sa": "../node_modules/.bin/esbuild measure/prod-read.ts --bundle --platform=node --format=esm --target=node22 --outfile=measure/prod-read.mjs --log-level=warning && node measure/prod-read.mjs"
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "wrangler": "^4.147.0"
+  },
+  "private": true
+}

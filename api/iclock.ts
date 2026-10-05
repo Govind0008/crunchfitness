@@ -98,24 +98,72 @@ async function heartbeat(fs: Firestore, deviceId: string, meter: Meter) {
   meter.write('heartbeat');
 }
 
-/** The device's users (IDs and names only) for the CRM's Match users screen. */
-async function recordUsers(fs: Firestore, deviceId: string, users: ReturnType<typeof parseUsers>, meter: Meter) {
-  if (!users.length) return;
-  meter.write('deviceUsers', users.length + 1);   // one per user line + the device's usersSeenAt
-  meter.read('deviceUsers', users.length);        // their identity records
+/**
+ * This device's CRM identity records, loaded once per upload with one query (the few people linked
+ * in the CRM) instead of looking up every user ID on the device (528 IDs → 528 reads, twice).
+ */
+async function identitiesOf(fs: Firestore, deviceId: string, meter: Meter) {
+  const snap = await fs.collection('biometricIdentities').where('deviceId', '==', deviceId).get();
+  meter.read('deviceUsers', Math.max(1, snap.size));
+  return new Map(snap.docs.map((d) => [String(d.get('deviceUserId')), d]));
+}
+
+/**
+ * Mirroring a big user list in one request costs more CPU than some platforms allow per request
+ * (Workers free plan: 10 ms). With ADMS_USER_CHUNK set, ADMS_USER_CHUNK users are written per
+ * request and the rest are kept in a backlog document, written on the device's next polls. The
+ * device's answer never waits for or depends on it. 0 (the default) writes the whole list at once.
+ */
+const USER_CHUNK = () => Number(process.env.ADMS_USER_CHUNK ?? 0);
+type DeviceUser = ReturnType<typeof parseUsers>[number];
+const backlogRef = (fs: Firestore, deviceId: string) => devRef(fs, deviceId).collection('userBacklog').doc('pending');
+const backlogKnown = new Map<string, boolean>();   // per server instance: is there a backlog to write?
+async function mirrorUsers(fs: Firestore, deviceId: string, users: DeviceUser[], meter: Meter) {
   const col = devRef(fs, deviceId).collection('deviceUsers');
   for (let i = 0; i < users.length; i += 400) {
     const batch = fs.batch();
     users.slice(i, i + 400).forEach((u) => batch.set(col.doc(u.pin), { deviceUserId: u.pin, name: u.name, admin: u.admin, hasCard: u.hasCard, updatedAt: FieldValue.serverTimestamp() }, { merge: true }));
     await batch.commit();
   }
+  meter.write('deviceUsers', users.length);
+}
+/** On a poll: write the next chunk of a pending user list, if any. */
+async function drainUserBacklog(fs: Firestore, deviceId: string, meter: Meter) {
+  const chunk = USER_CHUNK();
+  if (!chunk || backlogKnown.get(deviceId) === false) return;
+  const snap = await backlogRef(fs, deviceId).get();   // once per server instance, then only while pending
+  meter.read('deviceUsers');
+  const pending = (snap.exists ? (snap.get('users') as DeviceUser[]) : null) ?? [];
+  if (!pending.length) { backlogKnown.set(deviceId, false); return; }
+  await mirrorUsers(fs, deviceId, pending.slice(0, chunk), meter);
+  const rest = pending.slice(chunk);
+  if (rest.length) { await backlogRef(fs, deviceId).set({ users: rest, updatedAt: FieldValue.serverTimestamp() }); backlogKnown.set(deviceId, true); }
+  else { await backlogRef(fs, deviceId).delete(); backlogKnown.set(deviceId, false); await devRef(fs, deviceId).update({ usersSeenAt: FieldValue.serverTimestamp() }); }
+  meter.write('deviceUsers', rest.length ? 1 : 2);
+}
+
+/** The device's users (IDs and names only) for the CRM's Match users screen. */
+async function recordUsers(fs: Firestore, deviceId: string, users: DeviceUser[], ids: Map<string, FirebaseFirestore.QueryDocumentSnapshot>, meter: Meter) {
+  if (!users.length) return;
   // A user now on the device confirms any link waiting for it
-  const snaps = await fs.getAll(...users.map((u) => fs.collection('biometricIdentities').doc(`${deviceId}_${u.pin}`)));
   const batch = fs.batch();
   let n = 0;
-  snaps.forEach((s) => { if (s.exists && ['PENDING', 'ENROLLED', 'SYNC_FAILED'].includes(s.get('status'))) { batch.update(s.ref, { status: 'SYNCED', lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() }); n++; } });
+  for (const u of users) {
+    const s = ids.get(u.pin);
+    if (s && ['PENDING', 'ENROLLED', 'SYNC_FAILED'].includes(s.get('status'))) { batch.update(s.ref, { status: 'SYNCED', lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp() }); n++; }
+  }
   if (n) { await batch.commit(); meter.write('deviceUsers', n); }
+  const chunk = USER_CHUNK();
+  if (chunk && users.length > chunk) {
+    await mirrorUsers(fs, deviceId, users.slice(0, chunk), meter);
+    await backlogRef(fs, deviceId).set({ users: users.slice(chunk), updatedAt: FieldValue.serverTimestamp() });
+    meter.write('deviceUsers');
+    backlogKnown.set(deviceId, true);
+    return;   // usersSeenAt is stamped when the backlog is written out
+  }
+  await mirrorUsers(fs, deviceId, users, meter);
   await devRef(fs, deviceId).update({ usersSeenAt: FieldValue.serverTimestamp() });
+  meter.write('deviceUsers');
 }
 
 /** Device-side events in the CRM's activity log (who = the device, never a person). */
@@ -131,21 +179,23 @@ function audit(batch: FirebaseFirestore.WriteBatch, fs: Firestore, action: strin
  * The device reported a fingerprint template for a user ("FP PIN=…" in an upload): the device
  * itself confirms the fingerprint is enrolled. The template is never read or stored.
  */
-async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[], meter: Meter) {
+async function recordFingerprints(fs: Firestore, deviceId: string, pins: string[], ids: Map<string, FirebaseFirestore.QueryDocumentSnapshot>, meter: Meter) {
   if (!pins.length) return;
-  const snaps = await fs.getAll(...pins.map((p) => fs.collection('biometricIdentities').doc(`${deviceId}_${p}`)));
-  meter.read('deviceUsers', pins.length);
   const batch = fs.batch();
   let n = 0;
-  snaps.forEach((s) => {
-    if (!s.exists || s.get('status') === 'REMOVED') return;
+  for (const p of new Set(pins)) {
+    const s = ids.get(p);
+    if (!s || s.get('status') === 'REMOVED') continue;
+    const status = s.get('status') === 'DISABLED' ? 'DISABLED' : 'SYNCED';
+    // Already confirmed and in sync: a repeated upload changes nothing (enrolledAt keeps the real time)
+    if (s.get('enrollment') === 'confirmed' && s.get('status') === status) continue;
     batch.update(s.ref, {
-      status: s.get('status') === 'DISABLED' ? 'DISABLED' : 'SYNCED', enrolledAt: FieldValue.serverTimestamp(), lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp(),
+      status, enrolledAt: FieldValue.serverTimestamp(), lastSyncedAt: FieldValue.serverTimestamp(), lastSyncError: null, updatedAt: FieldValue.serverTimestamp(),
       enrollment: 'confirmed', enrollmentConfirmedAt: FieldValue.serverTimestamp(), enrollmentEvidence: 'fingerprint_template_reported', enrollmentError: null,
     });
     if (s.get('enrollment') !== 'confirmed') { audit(batch, fs, 'Fingerprint enrolment confirmed by the device', 'ENROLLMENT_CONFIRMED', s, { deviceUserId: s.get('deviceUserId') }); n++; }
     n++;
-  });
+  }
   if (n) { await batch.commit(); meter.write('deviceUsers', n); }
 }
 
@@ -166,6 +216,18 @@ const lastCommandCheck = new Map<string, number>();
  * unsent; if it fails, the 10-second check takes over again. ADMS_COMMAND_LISTEN=0 turns it off.
  */
 const COMMAND_SAFETY_MS = 20_000;
+/**
+ * Platforms that can't hold a Firestore listener (Cloudflare Workers) can register a cheap
+ * "a command was just queued" signal instead: staff's notify call (/api/adms?check=notify) sets
+ * it, and the device's next poll looks in the queue at once instead of waiting for the periodic
+ * check. Only a hint: the queue in Firestore stays the single source of truth, and the periodic
+ * check still runs, so a lost signal can only slow a command down, never drop or repeat it.
+ */
+export interface CommandSignal { raise(deviceId: string): Promise<void>; take(deviceId: string): Promise<boolean> }
+let commandSignal: CommandSignal | null = null;
+export function registerCommandSignal(s: CommandSignal) { commandSignal = s; }
+/** A command was just queued for this device (no-op where the listener already does this). */
+export async function signalCommandQueued(deviceId: string) { await commandSignal?.raise(deviceId); }
 const queueWatch = new Map<string, { pending: boolean; healthy: boolean }>();
 function watchQueue(fs: Firestore, deviceId: string, meter: Meter) {
   if (process.env.ADMS_COMMAND_LISTEN === '0') return null;
@@ -191,7 +253,8 @@ const UNLOCK_MAX_AGE_MS = 30_000;
 async function takeCommands(fs: Firestore, deviceId: string, meter: Meter) {
   const w = watchQueue(fs, deviceId, meter);
   const due = Date.now() - (lastCommandCheck.get(deviceId) ?? 0) >= (w?.healthy ? Math.max(COMMAND_SAFETY_MS, COMMAND_CHECK_MS()) : COMMAND_CHECK_MS());
-  if (!w?.pending && !due) return [];
+  const signalled = !w?.pending && !due && commandSignal ? await commandSignal.take(deviceId).catch(() => false) : false;
+  if (!w?.pending && !due && !signalled) return [];
   if (w) w.pending = false;
   lastCommandCheck.set(deviceId, Date.now());
   const snap = await devRef(fs, deviceId).collection('commands').where('status', '==', 'queued').limit(5).get();
@@ -231,6 +294,8 @@ async function recordResults(fs: Firestore, deviceId: string, results: ReturnTyp
     meter.read('results', Math.max(1, snap.size));
     const d = snap.docs[0];
     if (!d) continue;
+    // A result the device sends again (e.g. our reply didn't reach it) changes nothing a second time
+    if (d.get('status') === 'done' || d.get('status') === 'failed') continue;
     const ok = r.ret === '0';
     const batch = fs.batch();
     batch.update(d.ref, { status: ok ? 'done' : 'failed', returnCode: r.ret, doneAt: FieldValue.serverTimestamp() });
@@ -375,37 +440,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const upstreamText = reply.body.toString('utf8');
-  // 3) Record on the way through — never delays or changes the old system's reply on failure
-  if (fs && deviceId) {
+  // 3) Our queued commands go into THIS reply (the device only sees what's in its answer)
+  if (fs && deviceId && path === 'getrequest') {
     try {
-      await heartbeat(fs, deviceId, meter);
-      if (path === 'cdata' && req.method === 'POST' && reply.status < 300) {
-        if (table === 'ATTLOG') await ingestScans(fs, deviceId, parseAttlog(text), { meter });
-        if (table === 'OPERLOG' || table === 'USERINFO' || /(^|\n)USER /.test(text)) await recordUsers(fs, deviceId, parseUsers(text), meter);
-        await recordFingerprints(fs, deviceId, parseFingerprintPins(text), meter);
-      }
-      if (path === 'getrequest') {
-        const mine = await takeCommands(fs, deviceId, meter);
-        if (mine.length) {
-          const theirs = reply.body.toString('utf8').trim();
-          reply.body = Buffer.from([...(theirs && theirs !== 'OK' ? [theirs] : []), ...mine].join('\n') + '\n');
-        }
+      const mine = await takeCommands(fs, deviceId, meter);
+      if (mine.length) {
+        const theirs = reply.body.toString('utf8').trim();
+        reply.body = Buffer.from([...(theirs && theirs !== 'OK' ? [theirs] : []), ...mine].join('\n') + '\n');
       }
     } catch (e) {
-      console.error('[iclock] recording failed:', (e as Error).message);
+      console.error('[iclock] commands failed:', (e as Error).message);
     }
   }
 
-  // Which commands the OLD server is sending (verbs only) — evidence of whether it rewrites users
-  const upstreamCommands = path === 'getrequest' && HAS_UPSTREAM && !oursOnly ? commandVerbs(upstreamText) : [];
-  await observe(fsDiag, summary, {
-    ...(upstreamCommands.length ? { upstreamCommands } : {}),
-    status: reply.status, upstreamStatus: HAS_UPSTREAM && !oursOnly ? reply.status : null, durationMs: Date.now() - started,
-    crmDeviceId: deviceId || null, forwarded: HAS_UPSTREAM && !oursOnly,
-    ...(sn && fs && !deviceId ? { note: `no CRM device has serial ${sn.toUpperCase()}` } : !sn ? { note: 'request without a serial (SN)' } : {}),
-  }, oursSeen);
+  // 4) Record on the way through — never changes the old system's reply. Where the platform can
+  // keep working after answering (Workers: req.waitUntil), the device is answered FIRST: a slow
+  // or CPU-limited recording can then never make the device resend an upload the old server has
+  // already acknowledged. Elsewhere (Vercel) it is recorded before answering, as before.
+  const record = async () => {
+    if (fs && deviceId) {
+      try {
+        await heartbeat(fs, deviceId, meter);
+        if (path === 'cdata' && req.method === 'POST' && reply.status < 300) {
+          if (table === 'ATTLOG') await ingestScans(fs, deviceId, parseAttlog(text), { meter });
+          const users = table === 'OPERLOG' || table === 'USERINFO' || /(^|\n)USER /.test(text) ? parseUsers(text) : [];
+          const pins = parseFingerprintPins(text);
+          if (users.length || pins.length) {
+            const ids = await identitiesOf(fs, deviceId, meter);
+            await recordUsers(fs, deviceId, users, ids, meter);
+            await recordFingerprints(fs, deviceId, pins, ids, meter);
+          }
+        }
+        if (path === 'getrequest') await drainUserBacklog(fs, deviceId, meter);
+      } catch (e) {
+        console.error('[iclock] recording failed:', (e as Error).message);
+      }
+    }
+    // Which commands the OLD server is sending (verbs only) — evidence of whether it rewrites users
+    const upstreamCommands = path === 'getrequest' && HAS_UPSTREAM && !oursOnly ? commandVerbs(upstreamText) : [];
+    await observe(fsDiag, summary, {
+      ...(upstreamCommands.length ? { upstreamCommands } : {}),
+      status: reply.status, upstreamStatus: HAS_UPSTREAM && !oursOnly ? reply.status : null, durationMs: Date.now() - started,
+      crmDeviceId: deviceId || null, forwarded: HAS_UPSTREAM && !oursOnly,
+      ...(sn && fs && !deviceId ? { note: `no CRM device has serial ${sn.toUpperCase()}` } : !sn ? { note: 'request without a serial (SN)' } : {}),
+    }, oursSeen);
+  };
+  const waitUntil = (req as { waitUntil?: (p: Promise<unknown>) => void }).waitUntil;
+  if (!waitUntil) await record();
   res.setHeader('Content-Type', reply.type);
   if (reply.date) res.setHeader('Date', reply.date);
   res.setHeader('Cache-Control', 'no-store');
   res.status(reply.status).send(reply.body);
+  if (waitUntil) waitUntil(record());
 }
