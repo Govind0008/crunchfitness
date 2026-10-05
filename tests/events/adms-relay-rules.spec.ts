@@ -375,6 +375,48 @@ test('commands: a queued request waits for the next check; several queued ones d
   immediate();
 });
 
+// Safety switch for a controlled device test: ADMS_DELIVER_CRM_COMMANDS=0 → no CRM command reaches the device
+test('ADMS_DELIVER_CRM_COMMANDS=0: no CRM command is delivered, the queue is left untouched, the old server’s commands still flow', async () => {
+  const fresh = ts(new Date().toISOString());
+  const queued = {
+    s1: { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: fresh },
+    s2: { type: 'add_user', deviceUserId: '10071', name: 'Switch Test', status: 'queued', createdBy: 'x', createdAt: fresh },
+    s3: { type: 'enroll_fp', deviceUserId: '10071', status: 'queued', createdBy: 'x', createdAt: fresh },
+    s4: { type: 'query_users', status: 'queued', createdBy: 'x', createdAt: fresh },
+    s5: { type: 'unlock_door', status: 'queued', createdBy: 'x', createdAt: ts(new Date(Date.now() - 120_000).toISOString()) },   // stale
+  };
+  for (const [id, c] of Object.entries(queued)) await seedDoc(`gyms/crunch-wakad/devices/dev1/commands/${id}`, c);
+  process.env.ADMS_DELIVER_CRM_COMMANDS = '0';
+  for (let i = 0; i < 3; i++) {
+    const before = received.length;
+    expect(await (await send(`getrequest.aspx?SN=${SN}`)).text()).toBe('C:77:INFO');   // exactly the old server's reply, nothing added
+    expect(received.at(before)!.url).toBe(`/iclock/getrequest.aspx?SN=${SN}`);         // still forwarded
+  }
+  // The old server's command results still go to it, unchanged
+  await send(`devicecmd.aspx?SN=${SN}`, 'POST', 'ID=77&Return=0&CMD=INFO\n');
+  expect(received.at(-1)!.body).toBe('ID=77&Return=0&CMD=INFO\n');
+  // Every CRM command is exactly as queued: not sent, no command id, not even the stale unlock expired
+  for (const id of Object.keys(queued)) {
+    const d = (await getDoc(`gyms/crunch-wakad/devices/dev1/commands/${id}`))!;
+    expect(d.status.stringValue).toBe('queued');
+    expect(d.commandId).toBeUndefined();
+    expect(d.sentAt).toBeUndefined();
+    expect(d.error).toBeUndefined();
+  }
+  // Any other value (and absent, below) is the normal behaviour: delivered on the next poll
+  process.env.ADMS_DELIVER_CRM_COMMANDS = '1';
+  const lines = (await (await send(`getrequest.aspx?SN=${SN}`)).text()).split('\n');
+  expect(lines).toContain('C:77:INFO');
+  expect(lines.filter((l) => l.startsWith('C:9'))).toHaveLength(4);                   // all but the stale unlock
+  expect(lines.some((l) => l.endsWith(':AC_UNLOCK'))).toBe(true);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/s5'))!.status.stringValue).toBe('failed');   // expired, never sent
+  for (const id of ['s1', 's2', 's3', 's4']) expect((await getDoc(`gyms/crunch-wakad/devices/dev1/commands/${id}`))!.status.stringValue).toBe('sent');
+  delete process.env.ADMS_DELIVER_CRM_COMMANDS;
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/s6', { type: 'query_users', status: 'queued', createdBy: 'x', createdAt: ts(new Date().toISOString()) });
+  expect((await (await send(`getrequest.aspx?SN=${SN}`)).text()).split('\n').filter((l) => l.startsWith('C:9'))).toHaveLength(1);
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/s6'))!.status.stringValue).toBe('sent');
+});
+
 // "Open door" in the admin header: one AC_UNLOCK to the device; "released" only on the device's Return=0
 const ours = (text: string, cmd: string) => text.split('\n').find((l) => l.startsWith('C:9') && l.endsWith(`:${cmd}`));
 test('open door: sent to the device as AC_UNLOCK; done and logged only when the device answers Return=0', async () => {

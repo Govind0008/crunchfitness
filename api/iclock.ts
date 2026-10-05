@@ -250,6 +250,13 @@ function watchQueue(fs: Firestore, deviceId: string, meter: Meter) {
 /** An "Open door" that couldn't reach the device quickly must never fire later (e.g. when an
  *  offline device reconnects hours afterwards): unlock requests expire after this long unsent. */
 const UNLOCK_MAX_AGE_MS = 30_000;
+/**
+ * Safety switch for controlled device tests: ADMS_DELIVER_CRM_COMMANDS=0 sends NO CRM command to
+ * the device (Open door, add user, enrolment, user-list requests…) and leaves the queue exactly as
+ * it is — not read, not marked sent, not expired. The old server's commands pass through as always.
+ * Absent or any other value: delivered as normal.
+ */
+const DELIVER_CRM_COMMANDS = () => process.env.ADMS_DELIVER_CRM_COMMANDS !== '0';
 async function takeCommands(fs: Firestore, deviceId: string, meter: Meter) {
   const w = watchQueue(fs, deviceId, meter);
   const due = Date.now() - (lastCommandCheck.get(deviceId) ?? 0) >= (w?.healthy ? Math.max(COMMAND_SAFETY_MS, COMMAND_CHECK_MS()) : COMMAND_CHECK_MS());
@@ -441,7 +448,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const upstreamText = reply.body.toString('utf8');
   // 3) Our queued commands go into THIS reply (the device only sees what's in its answer)
-  if (fs && deviceId && path === 'getrequest') {
+  if (fs && deviceId && path === 'getrequest' && DELIVER_CRM_COMMANDS()) {
     try {
       const mine = await takeCommands(fs, deviceId, meter);
       if (mine.length) {
