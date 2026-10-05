@@ -4,6 +4,8 @@
 # crunch-site.<account-subdomain>.workers.dev. Attaching www.crunnchhfitness.com is a separate,
 # explicitly approved cut-over step (see REAL_DEVICE_CUTOVER_RUNBOOK.md).
 name = "crunch-site"
+# The Crunch Cloudflare account (not a secret): a deploy can never go to another account
+account_id = "da6f102c1f0f6055bf42c52cfe5744aa"
 main = "src/worker.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
