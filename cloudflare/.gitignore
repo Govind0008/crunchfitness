@@ -5,3 +5,4 @@ measure/*.mjs
 .dev.vars
 wrangler.edge.toml
 wrangler.preview.toml
+x2008/*.mjs

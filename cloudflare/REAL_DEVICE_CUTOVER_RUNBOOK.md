@@ -1,5 +1,9 @@
 # Real-device cut-over runbook (FUTURE: do not run yet)
 
+> **Superseded for the cut-over sequence by `FINAL_CUTOVER_RUNBOOK.md`** (nameservers and website as
+> two separate phases; the X2008 `workers.dev` test first: `X2008_FINAL_TEST_RUNBOOK.md`). The
+> physical Open Door test in §D below still applies.
+
 The controlled test that moves the X2008's traffic from Vercel to Cloudflare. **The X2008's own
 configuration doesn't change.** It keeps calling `https://www.crunnchhfitness.com/iclock/…`; only
 DNS decides which platform answers.

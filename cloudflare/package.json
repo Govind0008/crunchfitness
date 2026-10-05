@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "build": "wrangler deploy --dry-run --outdir dist",
     "build:site": "cd .. && npm run build && cp cloudflare/site/_headers dist/_headers",
-    "verify:sa": "../node_modules/.bin/esbuild measure/prod-read.ts --bundle --platform=node --format=esm --target=node22 --outfile=measure/prod-read.mjs --log-level=warning && node measure/prod-read.mjs"
+    "verify:sa": "../node_modules/.bin/esbuild measure/prod-read.ts --bundle --platform=node --format=esm --target=node22 --outfile=measure/prod-read.mjs --log-level=warning && node measure/prod-read.mjs",
+    "x2008": "../node_modules/.bin/esbuild x2008/harness.ts --bundle --platform=node --format=esm --target=node22 --outfile=x2008/harness.mjs --log-level=warning && node x2008/harness.mjs"
   },
   "type": "commonjs",
   "devDependencies": {
