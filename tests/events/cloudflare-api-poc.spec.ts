@@ -41,6 +41,8 @@ test.beforeAll(async () => {
     FIRESTORE_EMULATOR_HOST: '127.0.0.1:8085', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099', GCLOUD_PROJECT: PROJECT,
     ADMS_UPSTREAM: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`, ADMS_UPSTREAM_TCP: '0',
     ADMS_COMMAND_LISTEN: '0', ADMS_COMMAND_CHECK_MS: '600000', ADMS_ROUTINE_RECORD_MS: '0', ADMS_HEARTBEAT_MS: '0',
+    // Normal delivery, whatever wrangler.toml says: the safety switch (ADMS_DELIVER_CRM_COMMANDS=0) has its own spec
+    ADMS_DELIVER_CRM_COMMANDS: '1',
   };
   worker = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--show-interactive-dev-session=false', ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])], { cwd: join(process.cwd(), 'cloudflare'), env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
   for (let i = 0; i < 120; i++) {

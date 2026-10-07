@@ -1,13 +1,23 @@
-// X2008 test harness: READ-ONLY preparation and monitoring for the physical-device test, in which
-// the X2008 is pointed at the workers.dev relay for a few minutes and then back at Vercel.
+// X2008 test harness: READ-ONLY preparation and monitoring for the physical-device test.
+//
+// Architecture it checks for (production since 5 Oct 2026): www.crunnchhfitness.com is a Worker
+// Custom Domain of `crunch-site` on the active Cloudflare zone, so the X2008 — which calls
+// https://www.crunnchhfitness.com/iclock/… — reaches this Worker through DNS, and the Worker relays
+// it to the old ADMS server. During testing the Worker runs with ADMS_DELIVER_CRM_COMMANDS=0: no
+// CRM-generated command (Open door, add user, enrolment, user-list requests) reaches the device.
+// (crunch-site.gsalunke169.workers.dev still serves the same Worker; the device doesn't use it.)
 // See cloudflare/X2008_FINAL_TEST_RUNBOOK.md.
 //
-//   npm run x2008 -- preflight    Worker version, safety switch, secret, no domains/routes, queue = 0;
-//                                 saves the baseline (queued/sent commands, diagnostics, old-server verbs)
+//   npm run x2008 -- preflight    the live version at 100%, the safety switch, the one secret, exactly
+//                                 one custom domain (www), zone active, no zone routes; the device's
+//                                 CRM record, queue = 0, no unanswered commands, recent polling and
+//                                 answers; saves the baseline (commands, diagnostics, old-server verbs)
 //   npm run x2008 -- monitor      live Worker log for the device's /iclock traffic + a Firestore read
-//                                 every 60 s; Enter = "address changed", r = "restored", q = finish
-//   npm run x2008 -- postcheck    after restoring the address: the Worker goes quiet, Firestore keeps
-//                                 being updated (by Vercel), command counts unchanged
+//                                 every 60 s; Enter = mark a test step, r = mark the end (finishes
+//                                 60 s later), q = finish now
+//   npm run x2008 -- postcheck    only after the device has been moved OFF this Worker (a rollback to
+//                                 Vercel): the Worker goes quiet, Firestore keeps being updated
+//                                 elsewhere, command counts unchanged
 //
 // It never writes and never talks to the device. Two independent guards make that hold:
 //   1. network: every fetch is checked — Firestore GET and read queries only, Google's token
@@ -30,7 +40,8 @@ const WORKER = 'crunch-site';
 const ACCOUNT = 'da6f102c1f0f6055bf42c52cfe5744aa';
 const ZONE = 'crunnchhfitness.com';
 const GYM = 'crunch-wakad';
-const EXPECT_VERSION = process.env.X2008_EXPECT_VERSION ?? '95c25fe6-c069-481f-a85e-5a93819f7adb';
+const PROD_HOST = 'www.crunnchhfitness.com';   // the Worker Custom Domain the X2008 calls
+const EXPECT_VERSION = process.env.X2008_EXPECT_VERSION ?? 'f4cfcfc0-07a9-49f5-83be-bbee4870f4f6';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CF_DIR = join(HERE, '..');
 const RUNS = process.env.X2008_RUNS_DIR ?? join(homedir(), '.crunch-x2008');
@@ -181,34 +192,66 @@ async function cfGet(path: string) {
   if (!r.success) throw new Error(r.errors?.[0]?.message ?? 'Cloudflare API error');
   return r.result;
 }
-async function cloudflareChecks(): Promise<Check[]> {
-  const out: Check[] = [];
-  const add = (name: string, verdict: Verdict, detail: string) => out.push({ name, verdict, detail });
+/** What Cloudflare says about the Worker and the zone — gathered read-only, judged by cloudflareVerdicts(). */
+interface CloudflareFacts {
+  versions?: { version_id: string; percentage: number }[];
+  bindings?: { name: string; type: string; text?: string | null }[];
+  secrets?: string[];
+  domains?: { hostname: string; service?: string; environment?: string }[];
+  zone?: { status: string } | null;
+  routes?: { pattern: string }[];
+  errors: { worker?: string; zone?: string };
+}
+async function cloudflareFacts(): Promise<CloudflareFacts> {
+  const f: CloudflareFacts = { errors: {} };
   try {
-    const dep = JSON.parse(await wrangler(['deployments', 'status', '--json'])) as { versions: { version_id: string; percentage: number }[] };
-    const live = dep.versions.map((v) => `${v.version_id} (${v.percentage}%)`).join(', ');
-    add('Worker version live (100%)', dep.versions.length === 1 && dep.versions[0].version_id === EXPECT_VERSION && dep.versions[0].percentage === 100 ? 'PASS' : 'FAIL', live);
-    const ver = JSON.parse(await wrangler(['versions', 'view', dep.versions[0].version_id, '--json'])) as { resources: { bindings: { name: string; type: string; text?: string }[] } };
-    const b = new Map(ver.resources.bindings.map((x) => [x.name, x]));
-    add('ADMS_DELIVER_CRM_COMMANDS = "0"', b.get('ADMS_DELIVER_CRM_COMMANDS')?.text === '0' ? 'PASS' : 'FAIL', JSON.stringify(b.get('ADMS_DELIVER_CRM_COMMANDS')?.text ?? 'absent'));
-    add('ADMS_UPSTREAM = old server', b.get('ADMS_UPSTREAM')?.text === 'http://122.160.158.120:5072' ? 'PASS' : 'FAIL', b.get('ADMS_UPSTREAM')?.text ?? 'absent');
-    add('FIREBASE_SERVICE_ACCOUNT bound in version', b.get('FIREBASE_SERVICE_ACCOUNT')?.type === 'secret_text' ? 'PASS' : 'FAIL', b.get('FIREBASE_SERVICE_ACCOUNT')?.type ?? 'absent');
-    const emu = EMU_VARS.filter((k) => b.has(k));
-    add('No emulator settings on the Worker', emu.length ? 'FAIL' : 'PASS', emu.join(', ') || 'none');
-    const secrets = (JSON.parse(await wrangler(['secret', 'list', '--format', 'json'])) as { name: string }[]).map((s) => s.name);
-    add('Secrets = FIREBASE_SERVICE_ACCOUNT only', secrets.length === 1 && secrets[0] === 'FIREBASE_SERVICE_ACCOUNT' ? 'PASS' : 'FAIL', secrets.join(', ') || 'none');
-  } catch (e) { add('Worker configuration readable', 'FAIL', (e as Error).message); }
+    f.versions = (JSON.parse(await wrangler(['deployments', 'status', '--json'])) as { versions: { version_id: string; percentage: number }[] }).versions;
+    if (f.versions[0]) f.bindings = (JSON.parse(await wrangler(['versions', 'view', f.versions[0].version_id, '--json'])) as { resources: { bindings: { name: string; type: string; text?: string }[] } }).resources.bindings;
+    f.secrets = (JSON.parse(await wrangler(['secret', 'list', '--format', 'json'])) as { name: string }[]).map((x) => x.name);
+  } catch (e) { f.errors.worker = (e as Error).message; }
   try {
-    const domains = (await cfGet(`/accounts/${ACCOUNT}/workers/domains`)) as { hostname: string }[];
-    add('No Worker custom domains', domains.length ? 'FAIL' : 'PASS', domains.map((d) => d.hostname).join(', ') || 'none');
+    f.domains = (await cfGet(`/accounts/${ACCOUNT}/workers/domains`)) as { hostname: string; service: string; environment: string }[];
     const zones = (await cfGet(`/zones?name=${ZONE}`)) as { id: string; status: string }[];
-    if (zones[0]) {
-      add('Zone not active (nameservers not moved)', zones[0].status === 'active' ? 'REVIEW' : 'PASS', `status ${zones[0].status}`);
-      const routes = (await cfGet(`/zones/${zones[0].id}/workers/routes`)) as { pattern: string }[];
-      add('No Worker routes on the zone', routes.length ? 'FAIL' : 'PASS', routes.map((r) => r.pattern).join(', ') || 'none');
-    } else add('Zone', 'PASS', 'no Cloudflare zone');
-  } catch (e) { add('Domains / routes readable', 'REVIEW', `${(e as Error).message} — check in the dashboard`); }
+    f.zone = zones[0] ? { status: zones[0].status } : null;
+    if (zones[0]) f.routes = (await cfGet(`/zones/${zones[0].id}/workers/routes`)) as { pattern: string }[];
+  } catch (e) { f.errors.zone = (e as Error).message; }
+  return f;
+}
+/**
+ * The production architecture this test runs in: www.crunnchhfitness.com is a Worker Custom Domain
+ * on the active crunnchhfitness.com zone, so the X2008 (which calls www.crunnchhfitness.com) reaches
+ * this Worker through DNS. Anything else — another version or a split rollout, the safety switch
+ * missing, an extra or missing domain, an inactive zone, a zone route, unreadable settings — is a FAIL.
+ */
+function cloudflareVerdicts(f: CloudflareFacts): Check[] {
+  const out: Check[] = [];
+  const add = (name: string, ok: boolean, detail: string) => out.push({ name, verdict: ok ? 'PASS' : 'FAIL', detail });
+  if (f.errors.worker || !f.versions || !f.bindings || !f.secrets) add('Worker configuration readable', false, f.errors.worker ?? 'incomplete');
+  else {
+    const v = f.versions;
+    add(`Worker version ${EXPECT_VERSION.slice(0, 8)}… live at 100%`, v.length === 1 && v[0].version_id === EXPECT_VERSION && v[0].percentage === 100, v.map((x) => `${x.version_id} (${x.percentage}%)`).join(', ') || 'none');
+    const b = new Map(f.bindings.map((x) => [x.name, x]));
+    add('ADMS_DELIVER_CRM_COMMANDS = "0"', b.get('ADMS_DELIVER_CRM_COMMANDS')?.text === '0', JSON.stringify(b.get('ADMS_DELIVER_CRM_COMMANDS')?.text ?? 'absent'));
+    add('ADMS_UPSTREAM = old server', b.get('ADMS_UPSTREAM')?.text === 'http://122.160.158.120:5072', b.get('ADMS_UPSTREAM')?.text ?? 'absent');
+    add('FIREBASE_SERVICE_ACCOUNT bound in version', b.get('FIREBASE_SERVICE_ACCOUNT')?.type === 'secret_text', b.get('FIREBASE_SERVICE_ACCOUNT')?.type ?? 'absent');
+    const emu = EMU_VARS.filter((k) => b.has(k));
+    add('No emulator settings on the Worker', !emu.length, emu.join(', ') || 'none');
+    add('Secrets = FIREBASE_SERVICE_ACCOUNT only', f.secrets.length === 1 && f.secrets[0] === 'FIREBASE_SERVICE_ACCOUNT', f.secrets.join(', ') || 'none');
+  }
+  if (f.errors.zone || !f.domains || f.zone === undefined) add('Domains / zone / routes readable', false, `${f.errors.zone ?? 'incomplete'} — check in the dashboard`);
+  else {
+    const d = f.domains;
+    add(`Exactly one custom domain: ${PROD_HOST} → ${WORKER} (production)`, d.length === 1 && d[0].hostname === PROD_HOST && d[0].service === WORKER && (d[0].environment ?? 'production') === 'production', d.map((x) => `${x.hostname} → ${x.service ?? '?'} (${x.environment ?? '?'})`).join(', ') || 'none');
+    add(`Zone ${ZONE} active (Cloudflare nameservers)`, f.zone?.status === 'active', f.zone ? `status ${f.zone.status}` : 'no zone');
+    add('No Worker routes on the zone', !!f.routes && f.routes.length === 0, f.routes ? f.routes.map((r) => r.pattern).join(', ') || 'none' : 'unreadable');
+  }
   return out;
+}
+async function cloudflareChecks(): Promise<Check[]> {
+  const file = opt('cloudflare-facts');
+  // Recorded facts (tests) are accepted ONLY with --emulator: a real preflight always asks Cloudflare
+  if (file && !EMULATOR) return [{ name: 'Cloudflare facts from a file', verdict: 'FAIL', detail: '--cloudflare-facts is for --emulator tests only' }];
+  return cloudflareVerdicts(file ? (JSON.parse(readFileSync(file, 'utf8')) as CloudflareFacts) : await cloudflareFacts());
 }
 
 // ── Runs (baseline and logs; outside the repo: raw logs contain device traffic) ──────────────────
@@ -225,7 +268,7 @@ async function preflight() {
   console.log(`X2008 preflight (read-only) — ${new Date().toISOString()}`);
   const checks: Check[] = await guardChecks();
   if (checks.some((c) => c.verdict === 'FAIL')) return report('PREFLIGHT (guards)', checks) && 1;
-  checks.push(...(EMULATOR ? [{ name: 'Cloudflare checks', verdict: 'SKIP' as Verdict, detail: '--emulator' }] : await cloudflareChecks()));
+  checks.push(...(EMULATOR && !opt('cloudflare-facts') ? [{ name: 'Cloudflare checks', verdict: 'SKIP' as Verdict, detail: '--emulator' }] : await cloudflareChecks()));
   let state: State | null = null;
   try { state = await readState(); } catch (e) { checks.push({ name: 'Firestore readable', verdict: 'FAIL', detail: (e as Error).message }); }
   if (state) {
@@ -333,7 +376,7 @@ async function monitor() {
 
   console.log(`X2008 monitor (read-only) — run ${run}`);
   console.log(`  Worker log: ${opt('input') ? `file ${opt('input')}` : `wrangler tail ${WORKER}`}; Firestore read every 60 s.`);
-  console.log('  Press Enter the moment the new address is SAVED on the X2008; type r + Enter when the old address is restored; q + Enter to finish.\n');
+  console.log('  Enter = mark a test step (e.g. the X2008 saved or restarted); r + Enter = mark the end (finishes 60 s later); q + Enter = finish now.\n');
 
   const onEvent = (s: Seen | null, text: string) => {
     if (SECRET_LIKE.test(text)) { secretHits++; banner('Secret-like text in the Worker log — finish and report'); }
@@ -343,7 +386,7 @@ async function monitor() {
     seen.push(s);
     const bad = (s.http ?? 0) >= 400 || s.outcome !== 'ok' || s.exceptions > 0 || (s.upstreamStatus !== null && s.upstreamStatus !== 200) || !!s.note;
     console.log(`${hhmmss(s.t)}  ${s.kind.padEnd(16)} http ${s.http ?? '-'}  old server ${s.upstreamStatus ?? '-'}  cpu ${s.cpu}ms${s.note ? `  NOTE: ${s.note}` : ''}${s.upstreamCommands.length ? `  old-server cmds: ${s.upstreamCommands.join(', ')}` : ''}${bad ? '  <<< PROBLEM' : ''}`);
-    if (bad) { problems.push(`${hhmmss(s.t)} ${s.kind}: http ${s.http}, outcome ${s.outcome}, exceptions ${s.exceptions}, old server ${s.upstreamStatus}${s.note ? `, ${s.note}` : ''}`); banner(`PROBLEM: ${problems.at(-1)} — consider restoring the X2008 address`); }
+    if (bad) { problems.push(`${hhmmss(s.t)} ${s.kind}: http ${s.http}, outcome ${s.outcome}, exceptions ${s.exceptions}, old server ${s.upstreamStatus}${s.note ? `, ${s.note}` : ''}`); banner(`PROBLEM: ${problems.at(-1)} — STOP and follow the runbook`); }
     if (s.kind === 'handshake') console.log('            ^ first handshake through the Worker');
   };
   const tail = workerEvents(raw, onEvent);
@@ -363,7 +406,7 @@ async function monitor() {
   const tick = setInterval(firestoreTick, 60_000);
   const watchdog = setInterval(() => {
     const from = changedAt ?? started;
-    if (!restoredAt && !seen.length && Date.now() - from > firstContactS * 1000) banner(`No device request at the Worker ${Math.round((Date.now() - from) / 1000)} s after ${changedAt ? 'the change' : 'start'} — likely TLS/DNS/address: RESTORE the X2008 address`);
+    if (!restoredAt && !seen.length && Date.now() - from > firstContactS * 1000) banner(`No device request at the Worker ${Math.round((Date.now() - from) / 1000)} s after ${changedAt ? 'the marked step' : 'start'} — the device is not reaching the Worker (DNS/TLS/address): STOP and follow the runbook`);
     const lastT = seen.at(-1)?.t;
     if (!restoredAt && lastT && Date.now() - lastT > 60_000) banner(`The device stopped calling the Worker ${Math.round((Date.now() - lastT) / 1000)} s ago`);
   }, 30_000);
@@ -371,8 +414,8 @@ async function monitor() {
   let stopAt: NodeJS.Timeout | null = null;
   const finish = () => { tail.stop(); };
   const closeInput = interactive((l) => {
-    if (l === '' && !changedAt) { changedAt = Date.now(); console.log(`${hhmmss()}  marked: address CHANGED on the X2008`); }
-    else if (l === 'r') { restoredAt = Date.now(); console.log(`${hhmmss()}  marked: address RESTORED — finishing in 60 s (then run postcheck)`); setTimeout(finish, 60_000); }
+    if (l === '' && !changedAt) { changedAt = Date.now(); console.log(`${hhmmss()}  marked: test step`); }
+    else if (l === 'r') { restoredAt = Date.now(); console.log(`${hhmmss()}  marked: end — finishing in 60 s`); setTimeout(finish, 60_000); }
     else if (l === 'q') finish();
   });
   process.once('SIGINT', finish);
@@ -408,7 +451,7 @@ async function monitor() {
   ];
   const verdict = report('MONITOR (stage 1: connectivity and polling)', checks);
   writeFileSync(join(run, 'monitor-summary.json'), JSON.stringify({ verdict, checks, changedAt, restoredAt, requests: seen.length, polls: polls.length }, null, 2));
-  console.log(`  summary saved: ${join(run, 'monitor-summary.json')}\n  Next: restore the X2008 address (if not done), then: npm run x2008 -- postcheck`);
+  console.log(`  summary saved: ${join(run, 'monitor-summary.json')}`);
   return verdict === 'FAIL' ? 1 : 0;
 }
 
@@ -422,11 +465,11 @@ async function postcheck() {
   const raw = createWriteStream(join(run, `postcheck-tail-${Date.now()}.jsonl`));
   const started = Date.now();
   let lastWorkerHit = 0; let lateHits = 0; let sN: State | null = null; let advancedAt: number | null = null;
-  console.log(`X2008 postcheck (read-only) — the device should now be back on Vercel. Watching up to ${windowS} s.`);
+  console.log(`X2008 postcheck (read-only) — for after a rollback: the device should now be OFF this Worker (back on Vercel). Watching up to ${windowS} s.`);
   const tail = workerEvents(raw, (s) => {
     if (!s || s.sn !== SN) return;
     lastWorkerHit = s.t;
-    if (s.t - started > graceS * 1000) { lateHits++; console.log(`${hhmmss(s.t)}  device still calling the Worker: ${s.kind}  <<< address not restored?`); }
+    if (s.t - started > graceS * 1000) { lateHits++; console.log(`${hhmmss(s.t)}  device still calling the Worker: ${s.kind}  <<< not moved off the Worker?`); }
   });
   const tick = async () => {
     sN = await readState().catch(() => sN);

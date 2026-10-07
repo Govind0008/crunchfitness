@@ -93,6 +93,68 @@ test('preflight: a queued CRM command is a FAIL (and the command is left exactly
   expect((await harness('preflight')).code).toBe(0);   // a clean baseline for the tests below
 });
 
+// Production since the cut-over: www is the Worker's one Custom Domain on the active zone, the switch is on
+const VERSION_NOW = 'f4cfcfc0-07a9-49f5-83be-bbee4870f4f6';
+const facts = (change: Record<string, unknown> = {}) => ({
+  versions: [{ version_id: VERSION_NOW, percentage: 100 }],
+  bindings: [
+    { name: 'ADMS_COMMAND_CHECK_MS', type: 'plain_text', text: '15000' }, { name: 'ADMS_COMMAND_LISTEN', type: 'plain_text', text: '0' },
+    { name: 'ADMS_DELIVER_CRM_COMMANDS', type: 'plain_text', text: '0' }, { name: 'ADMS_UPSTREAM', type: 'plain_text', text: 'http://122.160.158.120:5072' },
+    { name: 'ADMS_USER_CHUNK', type: 'plain_text', text: '100' }, { name: 'FIREBASE_SERVICE_ACCOUNT', type: 'secret_text', text: null },
+  ],
+  secrets: ['FIREBASE_SERVICE_ACCOUNT'],
+  domains: [{ hostname: 'www.crunnchhfitness.com', service: 'crunch-site', environment: 'production' }],
+  zone: { status: 'active' }, routes: [], errors: {}, ...change,
+});
+const withFacts = (name: string, f: object) => { const file = join(dir, `facts-${name}.json`); writeFileSync(file, JSON.stringify(f)); return harness('preflight', '--cloudflare-facts', file); };
+
+test('preflight (Cloudflare): the production custom-domain setup with the safety switch passes every check', async () => {
+  const r = await withFacts('good', facts());
+  expect(r.out).toMatch(/PASS\s+Worker version f4cfcfc0… live at 100%/);
+  expect(r.out).toMatch(/PASS\s+ADMS_DELIVER_CRM_COMMANDS = "0"/);
+  expect(r.out).toMatch(/PASS\s+Exactly one custom domain: www\.crunnchhfitness\.com → crunch-site \(production\)/);
+  expect(r.out).toMatch(/PASS\s+Zone crunnchhfitness\.com active/);
+  expect(r.out).toMatch(/PASS\s+No Worker routes on the zone/);
+  expect(r.out).toMatch(/PASS\s+Secrets = FIREBASE_SERVICE_ACCOUNT only/);
+  expect(r.out).toContain('RESULT: PASS');
+  expect(r.code).toBe(0);
+});
+
+test('preflight (Cloudflare): every unsafe or unexpected setup is a FAIL that stops the test', async () => {
+  const bindings = facts().bindings;
+  const cases: [string, Record<string, unknown>, RegExp][] = [
+    ['switch-missing', { bindings: bindings.filter((b) => b.name !== 'ADMS_DELIVER_CRM_COMMANDS') }, /FAIL\s+ADMS_DELIVER_CRM_COMMANDS = "0"\s+"absent"/],
+    ['switch-1', { bindings: bindings.map((b) => (b.name === 'ADMS_DELIVER_CRM_COMMANDS' ? { ...b, text: '1' } : b)) }, /FAIL\s+ADMS_DELIVER_CRM_COMMANDS = "0"\s+"1"/],
+    ['old-version', { versions: [{ version_id: '6a833940-4f73-463c-a413-6b3796d3f151', percentage: 100 }] }, /FAIL\s+Worker version f4cfcfc0… live at 100%\s+6a833940/],
+    ['split', { versions: [{ version_id: VERSION_NOW, percentage: 90 }, { version_id: '6a833940-4f73-463c-a413-6b3796d3f151', percentage: 10 }] }, /FAIL\s+Worker version f4cfcfc0… live at 100%/],
+    ['no-domain', { domains: [] }, /FAIL\s+Exactly one custom domain.*none/],
+    ['two-domains', { domains: [...facts().domains, { hostname: 'crunnchhfitness.com', service: 'crunch-site', environment: 'production' }] }, /FAIL\s+Exactly one custom domain/],
+    ['other-host', { domains: [{ hostname: 'x2008-test.crunnchhfitness.com', service: 'crunch-site', environment: 'production' }] }, /FAIL\s+Exactly one custom domain/],
+    ['zone-pending', { zone: { status: 'pending' } }, /FAIL\s+Zone crunnchhfitness\.com active.*status pending/],
+    ['route', { routes: [{ pattern: 'www.crunnchhfitness.com/*' }] }, /FAIL\s+No Worker routes on the zone/],
+    ['extra-secret', { secrets: ['FIREBASE_SERVICE_ACCOUNT', 'POC_PROBE_KEY'] }, /FAIL\s+Secrets = FIREBASE_SERVICE_ACCOUNT only/],
+    ['emulator-var', { bindings: [...bindings, { name: 'FIRESTORE_EMULATOR_HOST', type: 'plain_text', text: 'x' }] }, /FAIL\s+No emulator settings on the Worker/],
+    ['upstream', { bindings: bindings.map((b) => (b.name === 'ADMS_UPSTREAM' ? { ...b, text: 'http://example.com' } : b)) }, /FAIL\s+ADMS_UPSTREAM = old server/],
+    ['unreadable', { errors: { zone: 'Authentication error' }, domains: undefined }, /FAIL\s+Domains \/ zone \/ routes readable/],
+  ];
+  for (const [name, change, line] of cases) {
+    const r = await withFacts(name, facts(change));
+    expect(r.out, name).toMatch(line);
+    expect(r.out, name).toContain('RESULT: FAIL');
+    expect(r.out, name).toContain('STOP: do not touch the X2008');
+    expect(r.code, name).toBe(1);
+  }
+});
+
+test('preflight: recorded Cloudflare facts are refused outside test mode (a real preflight always asks Cloudflare)', async () => {
+  const file = join(dir, 'facts-good.json');
+  const r = await new Promise<{ code: number; out: string }>((resolve) => execFile('node', [HARNESS, 'preflight', '--cloudflare-facts', file], { env, timeout: 60_000 }, (e, so, se) => resolve({ code: e ? (e as { code?: number }).code ?? 1 : 0, out: so + se })));
+  expect(r.out).toMatch(/FAIL\s+Cloudflare facts from a file\s+--cloudflare-facts is for --emulator tests only/);
+  expect(r.out).toMatch(/FAIL\s+Firestore readable\s+Refusing: [A-Z_, ]*FIRESTORE_EMULATOR_HOST[A-Z_, ]* set/);   // and production mode never reads a test database
+  expect(r.code).toBe(1);
+  expect((await harness('preflight')).code).toBe(0);   // a clean baseline again for the tests below
+});
+
 test('monitor: handshake and steady polling with 200/200 answers → PASS', async () => {
   await diag(new Date());   // the relay recorded the device during the test (as the Worker does)
   const r = await harness('monitor', '--input', tail('good', goodRun()));

@@ -141,8 +141,9 @@ const ClientDashboard = () => {
 
   useEffect(() => {
     if (!trainerId || !clientId) return;
+    // Only the plans assigned to this client: the rules let a client read nothing else
     return onSnapshot(
-      collection(db, 'trainerData', trainerId, 'workoutPlans'),
+      query(collection(db, 'trainerData', trainerId, 'workoutPlans'), where('assignedClientIds', 'array-contains', clientId)),
       (s) => {
         const assigned = s.docs
           .map((d) => ({ id: d.id, ...d.data() } as WorkoutPlan))

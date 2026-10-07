@@ -91,7 +91,7 @@ const PaymentDetail = () => {
         {(sent === 'downloaded' || sent === 'download') && <> <a href={share} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-fg underline-offset-2 hover:underline">Open WhatsApp chat with {p.memberName}</a> <span className="text-ink-400">(opens the chat with a text message; attach the PDF there)</span></>}
       </p>
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
-        <div className="receipt-area"><Receipt p={p} /></div>
+        <div className="receipt-area min-w-0"><Receipt p={p} /></div>
         <aside className="space-y-4 print:hidden" aria-label="Payment details">
           <div className="rounded-2xl border border-white/[0.08] bg-ink-900 p-5 text-sm">
             <div className="flex items-center justify-between"><p className="font-semibold text-white">Details</p><PaymentStatus p={p} /></div>

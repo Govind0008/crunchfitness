@@ -34,6 +34,11 @@ ADMS_UPSTREAM = "http://122.160.158.120:5072"
 # Workers can't hold a Firestore listener: the periodic command check is the fallback to the
 # Open-door notify lane (see PHASE_3_PRODUCTION_READINESS.md)
 ADMS_COMMAND_LISTEN = "0"
+# TEMPORARY SAFETY SWITCH for X2008 testing: "0" = no CRM-generated command (Open door, add user,
+# enrolment, user-list requests) is sent to the X2008; queued commands are left untouched and the
+# old server's commands still pass through (api/iclock.ts). Remove this line only as an explicitly
+# approved step — while it is set, CRM Open door / enrolment / sync do not reach the device.
+ADMS_DELIVER_CRM_COMMANDS = "0"
 ADMS_COMMAND_CHECK_MS = "15000"
 # A big user list is mirrored 100 users per request (the rest on the next polls): keeps each
 # request inside the free plan's 10 ms CPU. The device's answer never depends on it.
@@ -44,3 +49,8 @@ PROBE_TARGET = "http://122.160.158.120:5072"
 #   →  npx wrangler secret put <NAME>
 # Never set FIRESTORE_EMULATOR_HOST / FIRESTORE_EMULATOR_URL / FIREBASE_AUTH_EMULATOR_HOST on a
 # deployed Worker: with production credentials present the Worker refuses to serve (503).
+
+# Final production hostname: explicitly approved cutover to the Worker.
+[[routes]]
+pattern = "www.crunnchhfitness.com"
+custom_domain = true

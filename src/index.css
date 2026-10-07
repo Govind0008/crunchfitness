@@ -563,11 +563,21 @@ html.boot-reveal [data-admin-shell] { animation: shell-settle 380ms var(--ease-s
 
 /* ── Printing a receipt: only the receipt, full size, no admin shell ────────── */
 @media print {
-  [data-admin-shell], [data-admin-shell] main { height: auto !important; overflow: visible !important; display: block !important; }
-  body * { visibility: hidden; }
-  .receipt-area, .receipt-area * { visibility: visible; }
-  .receipt-area { position: absolute; inset: 0 auto auto 0; width: 100%; }
-  body { background: #fff !important; }
+  /* Everything that isn't the receipt or one of its ancestors is removed (not just hidden), so the
+     shell can't offset or clip it and hidden content can't add blank pages. */
+  body:has(.receipt-area) > :not(:has(.receipt-area)):not(.receipt-area),
+  body:has(.receipt-area) :has(.receipt-area) > :not(:has(.receipt-area)):not(.receipt-area) { display: none !important; }
+  /* The receipt's ancestors: no offsets, padding, transforms (the page transition keeps one), clipping,
+     or entrance animation (the shell fades in — printing mid-fade must not give a blank page) */
+  body:has(.receipt-area), body:has(.receipt-area) :has(.receipt-area) {
+    display: block !important; position: static !important; transform: none !important; margin: 0 !important; padding: 0 !important;
+    border: 0 !important; width: auto !important; max-width: none !important; height: auto !important; min-height: 0 !important;
+    overflow: visible !important; background: #fff !important; box-shadow: none !important;
+    opacity: 1 !important; animation: none !important;
+  }
+  .receipt-area { width: 100%; }
+  /* One A4 page per receipt, with the same margins as the shared PDF */
+  @page { size: A4; margin: 12mm 14mm; }
 }
 
 /* ── Page transitions ──────────────────────────────────────────────────────── */

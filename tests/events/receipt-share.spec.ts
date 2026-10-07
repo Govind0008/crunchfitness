@@ -216,3 +216,44 @@ test('a void receipt offers no sharing, and print still works as before', async 
   await expect(page.getByRole('button', { name: /Share receipt PDF|Download receipt PDF/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Print' })).toBeVisible();
 });
+
+// The receipt layout itself, built by the real module in the browser: one A4 page with the brand,
+// who paid, how, what for and the amount paid; nothing invented (no balance or total line); very
+// long text continues on a second page instead of being cut off.
+test('layout: branded single A4 page with every section; long text flows to a second page, never clipped', async ({ page }) => {
+  await page.goto('/');
+  const build = (payments: Record<string, unknown>[]) => page.evaluate(async (list) => {
+    const m = await import('/src/features/admin/payments/receiptPdf.ts');
+    await m.preloadReceiptBrand();
+    return list.map((p) => Array.from(m.receiptPdf({ ...p, createdAt: { toDate: () => new Date('2026-09-28T04:50:28Z'), toMillis: () => Date.parse('2026-09-28T04:50:28Z') } } as never)));
+  }, payments);
+  const base = { id: 'x', receiptSeq: 1, paymentType: 'membership', memberId: '3644', memberPhone: '9000000123', memberPhoneKey: '9000000123', planId: 'p3', kind: 'new',
+    method: 'cash', reference: '', notes: '', status: 'paid', createdBy: 'frontdesk@crunch.test', countedPaise: 600000, paidOn: '2026-09-28', coversFrom: '2026-10-05', coversTo: '2027-01-04' };
+  const longNote = 'Paid in two parts as agreed with the member. '.repeat(120);
+  const [example, long, voided] = await build([
+    { ...base, receiptNo: 'CR-R-7434', memberName: 'Aakash Ojha', planName: '03 Month', amountPaise: 600000, listPricePaise: 650000, discountPaise: 50000 },
+    { ...base, receiptNo: 'CR-R-7435', memberName: 'Aakash Ojha', planName: '03 Month', amountPaise: 600000, notes: `${longNote}END-OF-NOTE` },
+    { ...base, receiptNo: 'CR-R-7436', memberName: 'Aakash Ojha', planName: '03 Month', amountPaise: 600000, status: 'void', voidReason: 'Entered twice' },
+  ]);
+  const bytes = Buffer.from(example);
+  const text = pdfText(bytes, 'layout.pdf');                                        // one page (checked inside)
+  for (const s of ['CRUNCH FITNESS CLUB', 'PAYMENT RECEIPT', 'CR-R-7434', 'BILLED TO', 'Aakash Ojha', 'Member ID 3644', 'PAYMENT DETAILS', 'Membership payment', 'Cash',
+    '03 Month membership', '5 Oct 2026 – 4 Jan 2027', 'Plan price', '₹6,500', 'Discount', '₹500', 'AMOUNT PAID', '₹6,000', 'Six thousand rupees only', 'PAID',
+    'OPENING HOURS', 'Thank you for training with Crunch.', 'This is a payment receipt, not a tax invoice.', 'www.crunnchhfitness.com']) expect(text, s).toContain(s);
+  expect(text).not.toMatch(/balance|total due|amount due/i);                        // balances aren't tracked: none is shown
+  expect(bytes.toString('latin1')).toContain('/Logo');                               // the logo is embedded once it has loaded
+  // Very long notes: a second page, every word kept, the footer on both pages
+  const f = join(dir, 'long.pdf');
+  writeFileSync(f, Buffer.from(long));
+  expect(execFileSync('pdfinfo', [f]).toString()).toMatch(/Pages:\s+2/);
+  const longText = execFileSync('pdftotext', [f, '-']).toString().replace(/\s+/g, ' ');
+  expect(longText).toContain('END-OF-NOTE');
+  expect(longText.match(/\bagreed\b/g)?.length).toBe(120);                          // every repetition kept (the page break may fall mid-sentence)
+  expect(longText).toContain('Page 1 of 2');
+  expect(longText).toContain('Page 2 of 2');
+  expect(longText).toContain('(continued)');
+  // Void: the status says so, the reason is printed and the VOID stamp is drawn
+  const voidText = pdfText(Buffer.from(voided), 'void-layout.pdf');
+  expect(voidText).toContain('VOID');
+  expect(voidText).toContain('Entered twice. This receipt is not valid.');
+});

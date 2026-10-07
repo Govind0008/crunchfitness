@@ -69,6 +69,8 @@ test.beforeAll(async () => {
     // Local runtime can't open loopback TCP: plain fetch() here (the TCP path is proven on the edge, see PHASE_2_VALIDATION.md)
     ADMS_UPSTREAM_TCP: '0',
     ADMS_COMMAND_LISTEN: '0', ADMS_COMMAND_CHECK_MS: '0', ADMS_ROUTINE_RECORD_MS: '0', ADMS_HEARTBEAT_MS: '0',
+    // Normal delivery, whatever wrangler.toml says: the safety switch (ADMS_DELIVER_CRM_COMMANDS=0) has its own spec
+    ADMS_DELIVER_CRM_COMMANDS: '1',
   };
   worker = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--show-interactive-dev-session=false', ...Object.entries(vars).flatMap(([k, v]) => ['--var', `${k}:${v}`])], { cwd: join(process.cwd(), 'cloudflare'), env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
   worker.stderr?.on('data', (d) => { if (/error/i.test(String(d))) console.error('[wrangler]', String(d)); });
