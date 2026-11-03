@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { eventKey, toIso, type MemberLike, type Scan } from './adms.js';
 import { DENY_TEXT, memberDecision, resultOf, trainerDecision, type MemberAccessLike } from './access.js';
-import { localDay, memberAttendanceId, onLeave, personOf, trainerAttendanceId, trainerDay } from './attendance.js';
+import { localDay, memberAttendanceId, personOf } from './attendance.js';
 import { noMeter, type Meter } from './usage.js';
 
 // Turning device punches into records. Used by the live relay (api/iclock.ts) and by the
@@ -10,6 +10,14 @@ import { noMeter, type Meter } from './usage.js';
 // retries, a second upload, a backfill run twice) changes nothing.
 
 const GYM = 'crunch-wakad';
+/**
+ * Raw punches (accessEvents) are kept for this many days, then Firestore deletes them by itself
+ * (a TTL policy on `expireAt`, set in firestore.indexes.json). What stays for good is the
+ * attendance built from them: one visit per member per day (checkins). 90 days leaves time to
+ * link a device user late and rebuild their visits with Access → Attendance check.
+ */
+export const PUNCH_RETENTION_DAYS = 90;
+const expiryOf = (atIso: string) => Timestamp.fromMillis(Date.parse(atIso) + PUNCH_RETENTION_DAYS * 86_400_000);
 
 interface Identity { id: string; personType?: string; memberId?: string | null; trainerId?: string | null; status: string; managedBy?: string | null; accessEnabled?: boolean | null; enrollment?: string | null }
 type MemberDoc = MemberLike & MemberAccessLike & { name?: string; phoneKey?: string; lastVisitAt?: Timestamp };
@@ -37,15 +45,13 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
 
   const memberIds = [...new Set([...identities.values()].map((i) => personOf(i)).filter((p) => p.type === 'member').map((p) => p.id!))];
   const trainerIds = [...new Set([...identities.values()].map((i) => personOf(i)).filter((p) => p.type === 'trainer').map((p) => p.id!))];
-  const [memberSnaps, trainerSnaps, leaveSnaps] = await Promise.all([
+  const [memberSnaps, trainerSnaps] = await Promise.all([
     memberIds.length ? fs.getAll(...memberIds.map((id) => fs.collection('members').doc(id))) : [],
     trainerIds.length ? fs.getAll(...trainerIds.map((id) => fs.collection('teamMembers').doc(id))) : [],
-    Promise.all(trainerIds.map((id) => fs.collection('trainerLeave').where('trainerId', '==', id).get())),
   ]);
-  meter.read('punches', memberIds.length + trainerIds.length + leaveSnaps.reduce((n, q) => n + Math.max(1, q.size), 0));
+  meter.read('punches', memberIds.length + trainerIds.length);
   const members = new Map(memberSnaps.filter((s) => s.exists).map((s) => [s.id, s.data() as MemberDoc]));
   const trainers = new Map(trainerSnaps.filter((s) => s.exists).map((s) => [s.id, String(s.get('name') ?? 'Trainer')]));
-  const leaves = new Map(trainerIds.map((id, i) => [id, leaveSnaps[i].docs.map((d) => d.data() as { from: string; to: string; status: string })]));
   // PT-only check, only for CRM-managed members with no membership (rare): explains the denial
   const ptOnly = new Set<string>();
   const noMembership = [...identities.values()].filter((i) => i.managedBy === 'crm' && i.memberId && members.has(i.memberId) && !members.get(i.memberId)!.membershipEnd).map((i) => i.memberId!);
@@ -57,7 +63,6 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
 
   // 1) Every punch is an access event — resolved or not — so nothing a device reports is lost
   const memberDays = new Map<string, { memberId: string; scans: { key: string; ms: number; pin: string }[] }>();
-  const trainerDays = new Map<string, { trainerId: string; scans: { key: string; ms: number; pin: string }[] }>();
   const batch = fs.batch();
   let batched = 0;
   for (const s of scans) {
@@ -66,7 +71,7 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
     const key = eventKey(GYM, deviceId, s.pin, s.time);
     const at = toIso(s.time);
     const day = localDay(s.time);
-    const base = { gymId: GYM, deviceId, deviceUserId: s.pin, at, localDate: day, verify: s.verify, statusCode: s.status, receivedAt: FieldValue.serverTimestamp(), source: 'adms-relay' };
+    const base = { gymId: GYM, deviceId, deviceUserId: s.pin, at, localDate: day, verify: s.verify, statusCode: s.status, receivedAt: FieldValue.serverTimestamp(), source: 'adms-relay', expireAt: expiryOf(at) };
     // The CRM's verdict for this scan. Legacy and unknown users are never "denied" — the old
     // system owns them. (The device has already opened the door either way: this is the record.)
     if (person.type === 'member' && members.has(person.id!)) {
@@ -83,10 +88,9 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
       const { decision, reason: code } = trainerDecision(ident, true);
       const reason = code ? DENY_TEXT[code] : decision === 'LEGACY_USER' ? 'Staff · managed by the old system' : 'Staff';
       if (writeEvents) batched++;
-      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'trainer', memberId: null, trainerId: person.id, decision, decisionReason: code, managedBy: ident?.managedBy === 'crm' ? 'crm' : 'legacy', result: resultOf(decision), reason, attendanceRef: `trainerAttendance/${trainerAttendanceId(day, person.id!)}` });
-      const k = trainerAttendanceId(day, person.id!);
-      if (!trainerDays.has(k)) trainerDays.set(k, { trainerId: person.id!, scans: [] });
-      trainerDays.get(k)!.scans.push({ key, ms: Date.parse(at), pin: s.pin });
+      if (writeEvents) batch.set(fs.collection('accessEvents').doc(key), { ...base, personType: 'trainer', memberId: null, trainerId: person.id, decision, decisionReason: code, managedBy: ident?.managedBy === 'crm' ? 'crm' : 'legacy', result: resultOf(decision), reason, attendanceRef: null });
+      // Staff scans are recorded (and expire) like any punch; attendance for staff is kept in the
+      // gym's separate HR platform, so no trainer attendance is built here
       out.trainers++;
     } else {
       // Linked to someone who no longer exists, or not linked at all: kept, and shown as unresolved
@@ -154,31 +158,5 @@ export async function ingestScans(fs: Firestore, deviceId: string, scans: Scan[]
     if (lastMs > prev) { meter.write('punches'); await fs.collection('members').doc(memberId).update({ lastVisitAt: Timestamp.fromMillis(lastMs) }).catch(() => {}); m.lastVisitAt = Timestamp.fromMillis(lastMs); }
   }
 
-  // 3) Trainer attendance: first punch = check-in, last = check-out, per local day
-  for (const [docId, { trainerId, scans: ss }] of trainerDays) {
-    const ref = fs.collection('trainerAttendance').doc(docId);
-    const day = docId.slice(0, 10);
-    const changed = await fs.runTransaction(async (tx) => {
-      const cur = await tx.get(ref);
-      const known = new Set<string>((cur.get('eventIds') as string[]) ?? []);
-      const fresh = ss.filter((x) => !known.has(x.key));
-      if (!fresh.length) return 0;
-      const punches = [...((cur.get('punches') as number[]) ?? []), ...fresh.map((x) => x.ms)].sort((a, b) => a - b);
-      const manual = (cur.get('manualCheckoutAt') as Timestamp | undefined)?.toMillis() ?? null;
-      const d = trainerDay(punches, { manualCheckoutMs: manual, onApprovedLeave: onLeave(day, leaves.get(trainerId) ?? []) });
-      const data = {
-        gymId: GYM, trainerId, trainerName: trainers.get(trainerId) ?? 'Trainer', date: day, deviceId,
-        punches, eventIds: [...known, ...fresh.map((x) => x.key)], punchCount: d.punchCount,
-        firstAt: d.firstAt ? Timestamp.fromMillis(d.firstAt) : null, lastAt: d.lastAt ? Timestamp.fromMillis(d.lastAt) : null,
-        checkoutAt: d.checkoutAt ? Timestamp.fromMillis(d.checkoutAt) : null, durationMs: d.durationMs, status: d.status, exceptions: d.exceptions,
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      tx.set(ref, cur.exists ? data : { ...data, createdAt: FieldValue.serverTimestamp() }, { merge: true });
-      return cur.exists ? 2 : 1;
-    });
-    meter.read('punches'); if (changed) meter.write('punches');
-    if (changed === 1) out.attendanceCreated++;
-    if (changed === 2) out.attendanceUpdated++;
-  }
   return out;
 }

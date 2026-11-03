@@ -16,12 +16,13 @@ export const queryClient = new QueryClient({
 });
 
 const MIN = 60_000;
+// The project runs on Firestore's free daily quota, so pages don't re-read on every visit.
 // Slow-changing reference data
-for (const key of ['team', 'trainers', 'unreadEnquiries']) queryClient.setQueryDefaults(['admin', key], { staleTime: 2 * MIN });
-// Operational data: a short window, so going back and forth between pages doesn't re-read it,
-// while punches and other changes made outside this browser show up within half a minute
-for (const key of ['dashboard', 'members', 'memberCounts', 'dues', 'payments', 'revenue', 'revenueCards', 'revenueTrend', 'attendance', 'trainerAttendance', 'trainerLeaveOn', 'trainerDays', 'trainerLeave']) {
-  queryClient.setQueryDefaults(['admin', key], { staleTime: 30_000 });
+for (const key of ['team', 'trainers', 'unreadEnquiries', 'settings']) queryClient.setQueryDefaults(['admin', key], { staleTime: 30 * MIN });
+// Operational data: going back and forth between pages doesn't re-read it; scans and other changes
+// made outside this browser show up within 5 minutes (anything saved here refreshes at once)
+for (const key of ['dashboard', 'members', 'memberCounts', 'memberExtras', 'dues', 'payments', 'revenue', 'revenueCards', 'revenueTrend', 'attendance', 'trainerAttendance', 'trainerLeaveOn', 'trainerDays', 'trainerLeave']) {
+  queryClient.setQueryDefaults(['admin', key], { staleTime: 5 * MIN });
 }
 
 const listeners = new Set<() => void>();

@@ -3,14 +3,14 @@
 // was saved on the device, disable/remove, and block someone. Online status, sync results and
 // scans are written only by the integration service (the rules refuse them from the browser).
 import {
-  collection, doc, getCountFromServer, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where,
+  collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where,
   writeBatch, type DocumentData,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { GYM } from '@/lib/gym';
 import { logTo, type AdminActor } from '@/lib/admin/activity';
 import type { Member } from '@/lib/admin/members';
-import { identityId, type AccessDevice, type AccessEvent, type AccessOverride, type BiometricIdentity, type BiometricStatus, type DeviceProtocol } from './index';
+import { CRM_USER_ID_START, identityId, type AccessDevice, type AccessEvent, type AccessOverride, type BiometricIdentity, type BiometricStatus, type DeviceProtocol } from './index';
 
 const gymId = GYM.id;
 const devicesCol = () => collection(db, 'gyms', gymId, 'devices');
@@ -58,6 +58,16 @@ export async function identitiesOfDevice(deviceId: string): Promise<BiometricIde
   return snap.docs.map((d) => withId<BiometricIdentity>(d));
 }
 
+/** When the device last finished sending its user list (one read) — so the list is re-read only when it changed */
+export async function deviceUsersSeenAt(deviceId: string): Promise<number> {
+  const d = await getDoc(doc(devicesCol(), deviceId));
+  return (d.get('usersSeenAt') as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0;
+}
+/** Just these links (one read each) — to show new links without re-reading the whole device */
+export async function identitiesByIds(ids: string[]): Promise<BiometricIdentity[]> {
+  const snaps = await Promise.all([...new Set(ids)].map((id) => getDoc(doc(idCol(), id))));
+  return snaps.filter((d) => d.exists()).map((d) => withId<BiometricIdentity>(d));
+}
 export async function identitiesOfMember(memberId: string): Promise<BiometricIdentity[]> {
   // Every access query names the gym: the rules only allow reading your own gym's records
   const snap = await getDocs(query(idCol(), where('gymId', '==', gymId), where('memberId', '==', memberId)));
@@ -104,9 +114,9 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'> & { p
     const d = await tx.get(deviceRef);
     if (!d.exists()) throw new Error('That device no longer exists.');
     let userId = opts.existingId?.trim() ?? '';
-    let next = (d.data().nextUserId as number) ?? 1;
+    let next = Math.max((d.data().nextUserId as number) ?? 1, CRM_USER_ID_START);
     if (!userId) {
-      // First free number from the device's counter (skips any IDs typed in by hand)
+      // Next number in the CRM's own series (never the old system's: see CRM_USER_ID_START).
       // Skips IDs linked in the CRM and IDs already used on the device itself (its user list)
       for (let tries = 0; tries < 50; tries++) {
         const [linked, onDevice] = await Promise.all([
@@ -122,7 +132,10 @@ export async function assignDeviceUser(member: Pick<Member, 'id' | 'name'> & { p
       throw new Error('Device user IDs are letters and digits only.');
     }
     const ref = doc(idCol(), identityId(device.id, userId));
-    if ((await tx.get(ref)).exists()) throw new DeviceUserTakenError(`Device user ${userId} is already linked to someone on ${device.name}.`);
+    // A removed link doesn't hold the ID: linking it again replaces the old record (the activity
+    // log keeps the history). New CRM numbers never reuse one — the search above skips them.
+    const current = await tx.get(ref);
+    if (current.exists() && current.data().status !== 'REMOVED') throw new DeviceUserTakenError(`Device user ${userId} is already linked to someone on ${device.name}.`);
     // A new ID handed out by the CRM is the CRM's to control; an ID already on the device
     // belongs to the old system until staff explicitly take that person over
     const managedBy = opts.existingId ? 'legacy' : 'crm';
@@ -272,7 +285,7 @@ export async function deviceCounts(deviceId: string) {
 }
 
 // ── Requests to the device (sent through the relay on its next poll, every few seconds) ──
-export type DeviceCommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door';
+export type DeviceCommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door' | 'block_user' | 'unblock_user';
 export interface DeviceCommand {
   id: string; type: DeviceCommandType; deviceUserId?: string; name?: string; personType?: 'member' | 'trainer'; personId?: string;
   status: 'queued' | 'sent' | 'done' | 'failed'; returnCode?: string; error?: string;

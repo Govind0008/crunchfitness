@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app';
 import {
-  addDoc, collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, query, setDoc, updateDoc, where, type Firestore,
+  addDoc, collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc, updateDoc, where, type Firestore,
 } from 'firebase/firestore';
 import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { ADMIN, PROJECT, ensureUser, resetFirestore, seedAdmin, seedDoc } from './emulator';
@@ -101,7 +101,11 @@ test('client portal: read trainer data, request sessions, own progress and chat 
   const db = await as('client1@crunch.test');
   expect((await getDoc(doc(db, 'userRoles', clientUid))).data()?.role).toBe('client');
   expect((await getDoc(doc(db, 'trainerData', 'T1', 'clients', 'C1'))).exists()).toBe(true);
-  await addDoc(collection(db, 'trainerData', 'T1', 'sessionRequests'), { clientId: 'C1' });
+  await addDoc(collection(db, 'trainerData', 'T1', 'sessionRequests'), {   // what the portal sends
+    clientId: 'C1', clientName: 'Client One', requestedDate: '2030-01-02', requestedTime: '06:00', duration: 60, notes: '', status: 'pending', createdAt: serverTimestamp(),
+  });
+  await denied(addDoc(collection(db, 'trainerData', 'T1', 'sessionRequests'), { clientId: 'C2', status: 'pending' }));   // not in another client's name
+  await denied(getDocs(collection(db, 'trainerData', 'T1', 'sessions')));                                                   // only their own, by query
   await denied(updateDoc(doc(db, 'trainerData', 'T1', 'clients', 'C1'), { name: 'hacked' }));
   await denied(getDoc(doc(db, 'trainerData', 'T2', 'clients', 'C9')));
   await addDoc(collection(db, 'trainerData', 'T1', 'clients', 'C1', 'progressLogs'), { weight: 70 });

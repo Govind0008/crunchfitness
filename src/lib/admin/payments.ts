@@ -92,6 +92,8 @@ export interface PaymentInput {
   other?: { category: OtherCategory; description: string };
   planId: string | null;
   planName: string;
+  /** Free months given on top of the plan ("12 + 2"); planName already says so */
+  freeMonths?: number;
   amountRupees: number;
   /** Plan price shown to staff at the time (a snapshot for the receipt), if known */
   listPriceRupees: number | null;
@@ -104,6 +106,8 @@ export interface PaymentInput {
   notes: string;
   /** Also move the member's plan/expiry to this payment's period */
   extendMembership: boolean;
+  /** The member's first ever paid period (added with dates, paid afterwards): a new membership */
+  firstPayment?: boolean;
 }
 
 const col = () => collection(db, 'payments');
@@ -183,8 +187,8 @@ export function validatePayment(i: Omit<PaymentInput, 'member'> & { member: Memb
 export const paymentKind = (member: Pick<Member, 'membershipEnd' | 'membershipStart'>, planId: string | null): NonNullable<Payment['kind']> =>
   !planId ? 'other' : member.membershipEnd || member.membershipStart ? 'renewal' : 'new';
 /** New vs renewal applies to membership payments only — never to PT. */
-export const kindFor = (i: Pick<PaymentInput, 'paymentType' | 'member' | 'planId'>): Payment['kind'] =>
-  i.paymentType === 'membership' ? paymentKind(i.member, i.planId) : null;
+export const kindFor = (i: Pick<PaymentInput, 'paymentType' | 'member' | 'planId' | 'firstPayment'>): Payment['kind'] =>
+  i.paymentType !== 'membership' ? null : i.firstPayment && i.planId ? 'new' : paymentKind(i.member, i.planId);
 export const KIND_LABEL: Record<NonNullable<Payment['kind']>, string> = { new: 'New membership', renewal: 'Renewal', other: 'Other payment' };
 
 /**
@@ -222,6 +226,7 @@ export async function recordPayment(i: PaymentInput, actor: AdminActor): Promise
     if (membershipRef) {
       tx.set(membershipRef, {
         memberId: i.member.id, planId: i.planId, planLabel: i.planName, startDate: i.coversFrom, endDate: i.coversTo,
+        ...(i.freeMonths ? { packageType: 'bonus', bonusMonths: i.freeMonths } : {}),
         paymentId: payRef.id, source: 'payment', createdBy: actor.email, createdAt: serverTimestamp(),
       });
     }

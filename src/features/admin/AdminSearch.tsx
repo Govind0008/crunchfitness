@@ -50,8 +50,9 @@ const AdminSearch = () => {
     if (small) return;
     Promise.all([
       getDocs(collection(db, 'teamMembers')).catch(() => null),
-      getDocs(query(collection(db, 'events'), orderBy('eventDate', 'desc'), limit(100))).catch(() => null),
-      getDocs(query(collection(db, 'enquiries'), orderBy('submittedAt', 'desc'), limit(300))).catch(() => null),
+      // Recent ones only: this loads when the search box is first used (free-quota budget)
+      getDocs(query(collection(db, 'events'), orderBy('eventDate', 'desc'), limit(30))).catch(() => null),
+      getDocs(query(collection(db, 'enquiries'), orderBy('submittedAt', 'desc'), limit(50))).catch(() => null),
     ]).then(([t, e, n]) => setSmall({
       trainers: t?.docs.map((d) => ({ id: d.id, ...(d.data() as { name: string; role?: string }) })) ?? [],
       events: e?.docs.map((d) => ({ id: d.id, ...(d.data() as { title: string; eventDate?: string; status?: string }) })) ?? [],

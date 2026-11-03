@@ -47,7 +47,7 @@ const ALIASES: Record<Field, string[]> = {
   membership: ['membership', 'plan', 'package', 'membership type'],
   start: ['start date', 'start', 'from', 'joining date'],
   end: ['end date', 'end', 'to', 'expiry', 'expiry date', 'valid till'],
-  paid: ['paid', 'amount', 'amount paid', 'fees', 'fee'],
+  paid: ['paid', 'amount', 'amount paid', 'amt paid', 'amt. paid', 'paid amt', 'fees', 'fee'],
   bal: ['bal', 'balance', 'bal.', 'bal amt', 'bal amount', 'balance amount', 'pending'],
   mode: ['mode', 'payment mode', 'mode of payment', 'method', 'payment method'],
   comment: ['comment', 'comments', 'remark', 'remarks', 'note', 'notes'],
@@ -164,6 +164,56 @@ export function classifyPackage(raw: unknown): PackageInfo {
   };
 }
 
+/** "6 months gym + 1 month pt", "12 months + 03 months pt", "6 months + 01 monthpt" → gym months + PT months */
+export function parseCombo(raw: unknown): { gymMonths: number; ptMonths: number } | null {
+  const t = norm(String(raw ?? '')).replace(/[().]/g, ' ').replace(/\s+/g, ' ').trim();
+  const m = t.match(/^(\d+)\s*(?:months?|mon|mnths?)?\s*(?:gym|membership)?\s*\+\s*(\d+)\s*(?:months?|mon|mnths?)?\s*(?:pt|personal training)$/);
+  if (!m) return null;
+  const gymMonths = Number(m[1]), ptMonths = Number(m[2]);
+  return gymMonths >= 1 && gymMonths <= 36 && ptMonths >= 1 && ptMonths <= 12 ? { gymMonths, ptMonths } : null;
+}
+
+// The workbook's other sheets ──────────────────────────────────────────────
+/** A row of the PT sheet (Member name · Trainers name · Mobile · Date of payment · … · Paid): the same PT payments as the Membership sheet, with the trainer */
+export interface PtSheetEntry { row: number; phoneKey: string; trainer: string; paidOn: string | null; start: string | null; end: string | null; paise: number | null }
+/** A row of the Freelancer sheet (Freelancer name · Member name · Mob · Date of payment · Start · End): who a freelance trainer paid for */
+export interface FreelanceEntry { row: number; freelancer: string; client: string; phone: string; phoneKey: string; paidOn: string | null; start: string | null; end: string | null }
+export interface SideSheets { ptSheet: string | null; pt: PtSheetEntry[]; freelanceSheet: string | null; freelance: FreelanceEntry[] }
+export const NO_SIDE_SHEETS: SideSheets = { ptSheet: null, pt: [], freelanceSheet: null, freelance: [] };
+
+const cellText = (c: XlsxCell | undefined) => (c?.value == null ? '' : String(c.value).trim());
+const okDate = (c: XlsxCell | undefined) => { const d = toDate(c); return d === 'bad' ? null : d; };
+/** Reads the PT and Freelancer sheets of a monthly workbook (any spelling of their names). Never imported on their own. */
+export function readSideSheets(sheets: XlsxSheet[], membershipSheet: string): SideSheets {
+  const out: SideSheets = { ptSheet: null, pt: [], freelanceSheet: null, freelance: [] };
+  const colOf = (h: XlsxCell[], re: RegExp) => h.findIndex((c) => re.test(cellText(c).toLowerCase()));
+  const pt = sheets.find((x) => x.name !== membershipSheet && /\bpt\b|pt[-\s]|pt sheet/i.test(x.name) && !/feedback/i.test(x.name) && colOf(x.rows[0] ?? [], /trainer/) >= 0);
+  if (pt) {
+    const h = pt.rows[0];
+    const [cP, cT, cD, cS, cE, cA] = [colOf(h, /mobile|mob\b|phone/), colOf(h, /trainer/), colOf(h, /date of payment|payment date/), colOf(h, /start/), colOf(h, /end/), colOf(h, /^(amt\.? ?)?paid$|amount/)];
+    out.ptSheet = pt.name;
+    pt.rows.slice(1).forEach((r, i) => {
+      if (!r.some((c) => cellText(c))) return;
+      const a = cA >= 0 ? toAmountPaise(r[cA]) : null;
+      out.pt.push({ row: i + 2, phoneKey: phoneKey(toPhone(r[cP])), trainer: cellText(r[cT]).replace(/\s+/g, ' '), paidOn: okDate(r[cD]), start: cS >= 0 ? okDate(r[cS]) : null, end: cE >= 0 ? okDate(r[cE]) : null, paise: typeof a === 'number' ? a : null });
+    });
+  }
+  const fl = sheets.find((x) => /freelanc/i.test(x.name) && colOf(x.rows[0] ?? [], /freelancer/) >= 0);
+  if (fl) {
+    const h = fl.rows[0];
+    const [cF, cC, cP, cD, cS, cE] = [colOf(h, /freelancer/), colOf(h, /member name/), colOf(h, /mob|mobile|phone/), colOf(h, /date of payment|payment date/), colOf(h, /start/), colOf(h, /end/)];
+    out.freelanceSheet = fl.name;
+    fl.rows.slice(1).forEach((r, i) => {
+      if (!r.some((c) => cellText(c))) return;
+      const phone = toPhone(r[cP]);
+      out.freelance.push({ row: i + 2, freelancer: cellText(r[cF]).replace(/\s+/g, ' '), client: cellText(r[cC]).replace(/\s+/g, ' '), phone, phoneKey: phoneKey(phone), paidOn: okDate(r[cD]), start: cS >= 0 ? okDate(r[cS]) : null, end: cE >= 0 ? okDate(r[cE]) : null });
+    });
+  }
+  return out;
+}
+/** First word of a name, without "freelancer"/"trainer" tags: how the sheets refer to people */
+const firstWord = (s: string) => norm(s).replace(/\b(freelancers?|freelance|freelancing|trainer)\b/g, ' ').replace(/[^a-z ]/g, ' ').trim().split(/\s+/)[0] ?? '';
+
 // Balance ─────────────────────────────────────────────────────────────────────
 export type BalanceKind = 'none' | 'settled' | 'amount' | 'sessions' | 'note';
 export interface BalanceInfo { kind: BalanceKind; amountPaise: number | null; note: string | null }
@@ -227,6 +277,16 @@ export interface LegacyRow {
   blockers: string[];
   /** Needs a person to look and decide before it's imported */
   review: string[];
+  /** "6 months gym + 1 month pt": a gym membership AND a PT package paid in one row */
+  combo: { gymMonths: number; ptMonths: number } | null;
+  /** How a combined row's amount is split (from the PT sheet, or entered by staff) */
+  split: { gymPaise: number; ptPaise: number; ptMonths: number; trainer: string | null; ptStart: string | null; ptEnd: string | null; source: 'pt_sheet' | 'staff'; ptSheetRow: number | null } | null;
+  /** The PT sheet's amount for a combined row that couldn't be split automatically (a suggestion) */
+  suggestedPtPaise: number | null;
+  /** Trainer for a PT package, from the PT sheet (same phone and payment date) */
+  trainer: string | null;
+  /** A freelance trainer's payment for their client, found in the Freelancer sheet: recorded for the client */
+  freelance: { freelancer: string; payerName: string; payerPhone: string; sheetRow: number } | null;
   /** Imported as-is; worth knowing */
   warnings: string[];
 }
@@ -288,9 +348,9 @@ export interface Analysis {
 }
 
 /** What staff decided for a row that needed review. Rows without a decision stay out. */
-export type Decision = 'include' | 'package_dates' | 'membership' | 'pt';
+export type Decision = 'include' | 'package_dates' | 'membership' | 'pt' | 'both';
 
-export function analyse(file: string, sheet: string, grid: XlsxCell[][], mapping?: Mapping, decisions: Map<number, Decision> = new Map()): Analysis {
+export function analyse(file: string, sheet: string, grid: XlsxCell[][], mapping?: Mapping, decisions: Map<number, Decision> = new Map(), side: SideSheets = NO_SIDE_SHEETS, splits: Map<number, number> = new Map()): Analysis {
   const header = grid[0] ?? [];
   const map = mapping ?? detectMapping(header);
   const missingColumns = FIELDS.filter((f) => f.required && map[f.key] < 0).map((f) => f.key);
@@ -312,6 +372,13 @@ export function analyse(file: string, sheet: string, grid: XlsxCell[][], mapping
     const srNo = srRaw == null || String(srRaw).trim() === '' ? null : String(typeof srRaw === 'number' ? Math.round(srRaw) : srRaw).trim();
     let pkg = classifyPackage(cell(r, 'membership')?.value);
     const forced = decisions.get(rowNo);
+    // A combined "gym + PT" package: read as its gym part here; the PT part is added from the PT
+    // sheet (or a staff decision) below. "All gym" / "All PT" decisions read it as one package.
+    const combo = parseCombo(cell(r, 'membership')?.value);
+    if (combo) {
+      const asPt = forced === 'pt';
+      pkg = { ...classifyPackage(asPt ? `${combo.ptMonths} months pt` : `${combo.gymMonths} months`), raw: pkg.raw };
+    }
     const forcedKind = pkg.kind === 'unknown' && (forced === 'membership' || forced === 'pt') && pkg.months ? forced : null;
     if (forcedKind) pkg = { ...pkg, kind: forcedKind, packageType: 'regular', baseMonths: pkg.months, bonusMonths: null, label: `${plural(pkg.months!, 'Month')}${forcedKind === 'pt' ? ' PT' : ''}`, normalizedDuration: plural(pkg.months!, 'month') };
     const paidOn = toDate(cell(r, 'paidOn')); const start = toDate(cell(r, 'start')); const end = toDate(cell(r, 'end'));
@@ -362,10 +429,63 @@ export function analyse(file: string, sheet: string, grid: XlsxCell[][], mapping
       startRaw: start === 'bad' ? rawText(cell(r, 'start')) : null, endRaw: end === 'bad' ? rawText(cell(r, 'end')) : null,
       amountPaise: typeof amount === 'number' ? amount : null, balance, method: pay.method, methodRaw: pay.raw, comment, feedback, highlight: fill,
       key: '', fingerprint: '', recordId: '', groupWith: null, dateIssue, suggestedEnd, sheetCandidate: null, blockers, review, warnings,
+      combo: combo && forced !== 'membership' && forced !== 'pt' ? combo : null, split: null, suggestedPtPaise: null, trainer: null, freelance: null,
     };
     row.key = clean(`lx_${hasPhone ? key10 : 'np'}_${p ?? 'nodate'}_r${rowNo}_${hashKey([src, norm(sheet), rowNo, row.nameKey, key10, p, pkg.raw, s, e, row.amountPaise].join('|'))}`);
     row.fingerprint = rowKey(row);
     rows.push(row);
+  });
+
+  // ── The PT and Freelancer sheets ──
+  // (After each row's key and fingerprint are set: those stay what the Membership sheet says, so
+  // re-importing a month — with or without these sheets — never adds a payment twice.)
+  rows.forEach((r) => {
+    if (r.blockers.length) return;
+    const ptHere = side.pt.filter((e) => e.phoneKey === r.phoneKey && r.hasPhone && e.paidOn === r.paidOn);
+    // Freelancer paid for a client: recorded for the client, as PT, with the freelancer as trainer
+    const pf = r.comment?.match(/\bpaid\s+for\s+(.+)/i);
+    if (pf && !r.combo) {
+      const client = firstWord(pf[1]), payer = firstWord(r.name);
+      const hits = side.freelance.filter((f) => client && firstWord(f.client) === client && (!payer || firstWord(f.freelancer) === payer) && f.phoneKey.length === 10 && /^[6-9]/.test(f.phoneKey));
+      if (hits.length === 1) {
+        const f = hits[0];
+        r.freelance = { freelancer: f.freelancer || r.name, payerName: r.name, payerPhone: r.phone, sheetRow: f.row };
+        r.name = f.client; r.nameKey = norm(f.client); r.phone = f.phone; r.phoneKey = f.phoneKey; r.hasPhone = true; r.sheetCandidate = null;
+        const months = r.pkg.months ?? (r.pkg.kind === 'unknown' ? null : 1);
+        if (months) r.pkg = { ...classifyPackage(`${months} months pt`), raw: r.pkg.raw };
+        if (f.start) r.start = f.start;
+        if (f.end) r.end = f.end;
+        r.trainer = f.freelancer || null;
+        r.review = r.review.filter((x) => !x.startsWith('Comment says'));
+        r.warnings.push(`Freelancer sheet row ${f.row}: ${r.freelance.payerName} paid for ${f.client} — recorded as ${r.pkg.label} for ${f.client}, trainer ${f.freelancer || r.freelance.payerName}`);
+      }
+      return;
+    }
+    if (r.combo) {
+      const amount = r.amountPaise ?? 0;
+      const priced = ptHere.filter((e) => e.paise != null);
+      const staff = decisions.get(r.row) === 'both' ? splits.get(r.row) : undefined;
+      const one = priced.length === 1 ? priced[0] : null;
+      const ptPaise = staff != null ? staff : one && one.paise! < amount ? one.paise! : null;
+      if (ptPaise != null && ptPaise > 0 && ptPaise < amount) {
+        const src = staff != null ? 'staff' : 'pt_sheet';
+        const e = src === 'pt_sheet' ? one : ptHere[0] ?? null;
+        r.split = {
+          gymPaise: amount - ptPaise, ptPaise, ptMonths: r.combo.ptMonths, trainer: e?.trainer || null,
+          ptStart: e?.start ?? r.start, ptEnd: e?.end ?? (r.start ? addMonths(r.start, r.combo.ptMonths) : null), source: src, ptSheetRow: e?.row ?? null,
+        };
+        r.trainer = r.split.trainer;
+        r.warnings.push(`Gym + PT: ${rs(r.split.gymPaise)} gym membership (${r.combo.gymMonths} months) + ${rs(ptPaise)} PT (${r.combo.ptMonths} month${r.combo.ptMonths === 1 ? '' : 's'}) — ${src === 'pt_sheet' ? `PT amount from the PT sheet, row ${e!.row}${e!.trainer ? `, trainer ${e!.trainer}` : ''}` : 'PT amount entered by staff'}`);
+      } else {
+        r.suggestedPtPaise = one?.paise ?? null;
+        const why = !priced.length ? 'the PT sheet has no PT payment for this person on this date'
+          : priced.length > 1 ? `the PT sheet has ${priced.length} PT payments for this person on this date`
+          : `the PT sheet says ${rs(one!.paise!)}, which isn’t less than this payment (${rs(amount)})`;
+        r.review.push(`“${r.pkg.raw}” is a gym membership and PT in one payment, but ${why} — choose “Both” and enter the PT part, or record it all as gym or all as PT`);
+      }
+      return;
+    }
+    if (r.pkg.kind === 'pt') r.trainer = ptHere.find((e) => e.trainer)?.trainer ?? null;
   });
 
   // ── Across rows ──
@@ -406,8 +526,11 @@ export function analyse(file: string, sheet: string, grid: XlsxCell[][], mapping
   const recordSuffix = (r: LegacyRow) => (r.pkg.kind === 'pt' ? 'pt' : 'm');
   rows.forEach((r) => {
     r.recordId = `${r.key}_${recordSuffix(r)}`;
-    if (!r.hasPhone || r.pkg.kind === 'unknown' || r.pkg.packageType === 'day' || r.dateIssue || r.blockers.length) return;
+    if (!r.hasPhone || r.pkg.kind === 'unknown' || r.pkg.packageType === 'day' || r.blockers.length || r.combo) return;
     const dated = !!(r.start && r.end);
+    // Rows whose dates don't fit the package still join when they carry the SAME written dates (an
+    // instalment copies the dates of its first bill); a row with an unreadable date never groups
+    if (r.dateIssue && !dated) return;
     // Undated rows only group for PT (a package and its balance payment); an undated membership stays separate
     if (!dated && (r.pkg.kind !== 'pt' || r.start || r.end)) return;
     const gk = [r.phoneKey, r.pkg.kind, r.pkg.packageType, r.pkg.months, r.pkg.bonusMonths ?? 0, r.start ?? 'nodates', r.end ?? 'nodates'].join('|');
@@ -476,7 +599,15 @@ export interface PlannedRecord {
   end: string | null;
   /** Payment rows to write for it in this import */
   rows: LegacyRow[];
+  /** Which part of a combined row's payment this record takes ('gym' / 'pt'); null = the whole amount */
+  part: 'gym' | 'pt' | null;
+  /** Trainer for a PT package (PT sheet or Freelancer sheet) */
+  trainer: string | null;
 }
+/** The amount a row pays towards a record (a combined row pays part to each of its two records) */
+export const partPaise = (rec: Pick<PlannedRecord, 'part'>, r: LegacyRow) => (rec.part === 'pt' ? r.split!.ptPaise : rec.part === 'gym' ? r.split!.gymPaise : r.amountPaise);
+/** Payment id for a row's payment towards a record: the PT part of a combined row gets its own */
+export const paymentIdOf = (rec: Pick<PlannedRecord, 'part'>, r: LegacyRow) => (rec.part === 'pt' ? `${r.key}_pt_p` : `${r.key}_p`);
 
 export interface Person {
   /** members/{id} — the existing member's id, or lx_<phone> for someone new */
@@ -504,6 +635,8 @@ export interface ImportPlan {
   outcomes: RowOutcome[];
   /** People with something to write */
   members: Person[];
+  /** Single-day passes to record as payments only (no member, no membership) */
+  dayPasses: RowOutcome[];
   membersToCreate: number;
   membersMatched: number;
   memberships: number;
@@ -525,6 +658,8 @@ export interface SheetSummary {
   rowsWithPhone: number;
   rowsWithoutPhone: number;
   gymRows: number;
+  /** Single-day passes (payments only) */
+  dayPassRows: number;
   ptRows: number;
   unclearRows: number;
   /** People already in the system (by phone) + phone-less rows that may be someone known */
@@ -537,6 +672,13 @@ export interface SheetSummary {
 }
 
 export const legacyMemberId = (phoneKey: string) => `lx_${phoneKey}`;
+
+/**
+ * A single-day pass ("1 day" in the Membership column): a one-off visit, recorded as a payment
+ * only — no member profile and no membership are created for it (the gym's choice), and no phone
+ * is needed. Multi-day passes ("2 day", "10 days") stay short memberships like any other row.
+ */
+export const isDayPass = (r: Pick<LegacyRow, 'pkg'>) => r.pkg.kind === 'membership' && r.pkg.packageType === 'day' && r.pkg.days === 1;
 
 /**
  * Decide what to write. `decisions` = what staff chose for rows that needed review; flagged rows
@@ -569,6 +711,12 @@ export function planImport(
   const loose = new Map<string, Person>();
 
   const outcomes: RowOutcome[] = a.rows.map((r) => {
+    if (isDayPass(r)) {
+      const done = importedRef(r);
+      const d = decisions.get(r.row);
+      const status: RowStatus = done ? 'imported' : r.blockers.length ? 'blocked' : r.review.length && !d ? 'review' : 'ready';
+      return { row: r, status, reasons: status === 'blocked' ? [...r.blockers] : status === 'review' ? [...r.review] : [], personId: null, start: r.start, end: r.end, importedFrom: done, attachTo: null };
+    }
     const reasons: string[] = [...r.blockers];
     let person: Person | null = null;
     let attachTo: RowOutcome['attachTo'] = null;
@@ -596,6 +744,9 @@ export function planImport(
     if (done) status = 'imported';
     else if (reasons.length || !person) status = 'blocked';
     else if (r.pkg.kind === 'unknown') status = 'review';
+    // A gym + PT payment is never imported half-done: it waits until it's split (PT sheet or the PT
+    // part entered by staff), or staff record it all as gym or all as PT
+    else if (r.combo && !r.split) status = 'review';
     else if (review.length && !d) status = 'review';
     else status = 'ready';
     const o: RowOutcome = { row: r, status, reasons: status === 'blocked' ? reasons : status === 'review' ? review : [], personId: person?.id ?? null, start, end, importedFrom: done, attachTo };
@@ -612,8 +763,13 @@ export function planImport(
     const byRecord = new Map<string, PlannedRecord>();
     p.outcomes.filter((o) => o.status === 'ready').forEach((o) => {
       const r = o.row;
-      const rec = byRecord.get(r.recordId) ?? { id: r.recordId, kind: r.pkg.kind as 'membership' | 'pt', pkg: r.pkg, start: o.start, end: o.end, rows: [] };
+      const part = r.split ? 'gym' as const : null;
+      const rec = byRecord.get(r.recordId) ?? { id: r.recordId, kind: r.pkg.kind as 'membership' | 'pt', pkg: r.pkg, start: o.start, end: o.end, rows: [], part, trainer: r.pkg.kind === 'pt' ? r.trainer : null };
       rec.rows.push(r); byRecord.set(r.recordId, rec);
+      if (r.split) {
+        const ptId = `${r.key}_cpt`;
+        byRecord.set(ptId, { id: ptId, kind: 'pt', pkg: { ...classifyPackage(`${r.split.ptMonths} months pt`), raw: r.pkg.raw }, start: r.split.ptStart, end: r.split.ptEnd, rows: [r], part: 'pt', trainer: r.split.trainer });
+      }
     });
     p.records = [...byRecord.values()];
     const latest = p.records.filter((x) => x.kind === 'membership' && x.end).sort((x, y) => (y.end ?? '').localeCompare(x.end ?? ''))[0];
@@ -640,11 +796,13 @@ export function planImport(
     people: all,
     outcomes,
     members,
+    dayPasses: outcomes.filter((o) => o.status === 'ready' && isDayPass(o.row)),
     membersToCreate: members.filter((m) => !m.existing).length,
     membersMatched: members.filter((m) => m.existing).length,
     memberships: records.filter((x) => x.kind === 'membership').length,
     ptPackages: records.filter((x) => x.kind === 'pt').length,
-    payments: ready.length,
+    // A combined row that's split pays twice (gym part + PT part)
+    payments: ready.length + ready.filter((o) => o.row.split).length,
     alreadyImported: outcomes.filter((o) => o.status === 'imported'),
     needsReview: outcomes.filter((o) => o.status === 'review'),
     skipped: outcomes.filter((o) => o.status === 'blocked'),
@@ -656,7 +814,8 @@ export function planImport(
       uniqueMembers: all.length,
       rowsWithPhone: a.rows.filter((r) => r.hasPhone).length,
       rowsWithoutPhone: a.rows.filter((r) => !r.phone).length,
-      gymRows: a.rows.filter((r) => r.pkg.kind === 'membership').length,
+      gymRows: a.rows.filter((r) => r.pkg.kind === 'membership' && !isDayPass(r)).length,
+      dayPassRows: a.rows.filter((r) => isDayPass(r)).length,
       ptRows: a.rows.filter((r) => r.pkg.kind === 'pt').length,
       unclearRows: a.rows.filter((r) => r.pkg.kind === 'unknown').length,
       possibleExisting: [...people.values()].filter((p) => p.existing).length + outcomes.filter((o) => o.attachTo).length,

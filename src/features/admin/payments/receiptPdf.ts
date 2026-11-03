@@ -234,7 +234,7 @@ export function receiptPdf(p: Payment): Uint8Array<ArrayBuffer> {
   if (standard(p.memberName)) for (const l of wrap(p.memberName, 'F2', 16, colW)) { doc.text(l, M, ly, { font: 'F2', size: 16 }); ly += 19; }
   else { doc.text(p.memberName, M, ly, { font: 'F2', size: 16, maxWidth: colW }); ly += 19; }
   if (p.memberPhone) { doc.text(formatPhone(p.memberPhone), M, ly, { size: 9.5, color: MUTED }); ly += 14; }
-  for (const l of wrap(`Member ID  ${p.memberId}`, 'F1', 8.5, colW)) { doc.text(l, M, ly, { size: 8.5, color: MUTED }); ly += 12; }
+  for (const l of wrap(p.memberId ? `Member ID  ${p.memberId}` : 'Walk-in · day pass', 'F1', 8.5, colW)) { doc.text(l, M, ly, { size: 8.5, color: MUTED }); ly += 12; }
 
   doc.label('Payment details', cx2, ry); ry += 21;
   const kv = (k: string, v: string, color: RGB = INK) => {

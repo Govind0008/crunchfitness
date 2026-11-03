@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { readPublic } from '@/lib/publicCache';
 import { Clock, Calendar, ArrowRight } from 'lucide-react';
 import Footer from '../components/Footer';
 import { PageHeader, Section } from '@/components/site/Section';
@@ -80,12 +81,11 @@ const Blog = () => {
       collection(db, 'posts'),
       where('published', '==', true),
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost));
-      setPosts(all.sort((a, b) => (b.publishedAt?.seconds ?? 0) - (a.publishedAt?.seconds ?? 0)));
-      setLoading(false);
-    }, () => setLoading(false));
-    return unsub;
+    let cancelled = false;
+    readPublic('posts', () => getDocs(q).then((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as BlogPost))))
+      .then((all) => { if (!cancelled) { setPosts([...all].sort((a, b) => (b.publishedAt?.seconds ?? 0) - (a.publishedAt?.seconds ?? 0))); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const filtered = activeCategory === 'All'

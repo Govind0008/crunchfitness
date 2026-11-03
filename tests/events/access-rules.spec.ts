@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test';
 import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app';
 import { connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, collection, query, serverTimestamp, setDoc, updateDoc, where, type Firestore } from 'firebase/firestore';
 import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { connectStorageEmulator, getBytes, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { ADMIN, PROJECT, ensureUser, resetFirestore, seedAdmin, seedDoc } from './emulator';
 
 // Access control and member photos are admin-only, scoped to the admin's gym, and the browser
@@ -12,15 +11,13 @@ test.skip(({ isMobile }) => isMobile, 'rules tests run once');
 
 const GYM = 'crunch-wakad';
 const apps: FirebaseApp[] = [];
-async function as(email?: string): Promise<{ db: Firestore; st: FirebaseStorage }> {
-  const app = initializeApp({ projectId: PROJECT, apiKey: 'fake-key', storageBucket: `${PROJECT}.appspot.com` }, `a${apps.length}-${Date.now()}`);
+async function as(email?: string): Promise<{ db: Firestore }> {
+  const app = initializeApp({ projectId: PROJECT, apiKey: 'fake-key' }, `a${apps.length}-${Date.now()}`);
   apps.push(app);
   const db = getFirestore(app);
   connectFirestoreEmulator(db, '127.0.0.1', 8085);
-  const st = getStorage(app);
-  connectStorageEmulator(st, '127.0.0.1', 9199);
   if (email) { const a = getAuth(app); connectAuthEmulator(a, 'http://127.0.0.1:9099', { disableWarnings: true }); await signInWithEmailAndPassword(a, email, 'crunch-test-pass'); }
-  return { db, st };
+  return { db };
 }
 const denied = async (p: Promise<unknown>) => {
   const err = await p.then(() => null, (e: { code?: string }) => e);
@@ -110,26 +107,31 @@ test('marketing, trainers, clients and the public get no access-control data', a
 
 test('member photo metadata and staff blocks are validated', async () => {
   const { db } = await as(ADMIN.email);
-  await updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'members/m1/photo', contentType: 'image/jpeg', size: 40000, updatedAt: serverTimestamp() } });
-  await denied(updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'members/m2/photo', contentType: 'image/jpeg', size: 40000 } }));       // another member's file
-  await denied(updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'members/m1/photo', contentType: 'application/pdf', size: 1 } }));
+  await updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'memberPhotos/m1', contentType: 'image/jpeg', size: 40000, updatedAt: serverTimestamp() } });
+  await denied(updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'memberPhotos/m2', contentType: 'image/jpeg', size: 40000 } }));       // another member's photo
+  await denied(updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'memberPhotos/m1', contentType: 'application/pdf', size: 1 } }));
+  await denied(updateDoc(doc(db, 'members', 'm1'), { photo: { path: 'memberPhotos/m1', contentType: 'image/jpeg', size: 900000 } }));
   await updateDoc(doc(db, 'members', 'm1'), { accessOverride: 'blocked', accessOverrideReason: 'Card shared' });
   await denied(updateDoc(doc(db, 'members', 'm1'), { accessOverride: 'vip' }));
   await updateDoc(doc(db, 'members', 'm1'), { accessOverride: null, accessOverrideReason: null });
 });
 
-test('member photos in Storage: admins only', async () => {
-  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+test('member photos (memberPhotos): admins only, small JPEGs only', async () => {
+  const photo = (extra: Record<string, unknown> = {}) => ({ data: '/9j/4AAQSkZJRg==', contentType: 'image/jpeg', size: 12, updatedAt: serverTimestamp(), updatedBy: ADMIN.email, ...extra });
   const admin = await as(ADMIN.email);
-  await uploadBytes(ref(admin.st, 'members/m1/photo'), jpeg, { contentType: 'image/jpeg' });
-  expect((await getBytes(ref(admin.st, 'members/m1/photo'))).byteLength).toBe(jpeg.byteLength);
-  await denied(uploadBytes(ref(admin.st, 'members/m1/photo'), jpeg, { contentType: 'application/pdf' }));
-  await denied(uploadBytes(ref(admin.st, 'public/anything.jpg'), jpeg, { contentType: 'image/jpeg' }));
+  await setDoc(doc(admin.db, 'memberPhotos', 'm1'), photo());
+  expect((await getDoc(doc(admin.db, 'memberPhotos', 'm1'))).get('data')).toBe('/9j/4AAQSkZJRg==');
+  await denied(setDoc(doc(admin.db, 'memberPhotos', 'm1'), photo({ contentType: 'application/pdf' })));
+  await denied(setDoc(doc(admin.db, 'memberPhotos', 'm1'), photo({ data: 'x'.repeat(540001) })));          // too big to be a shrunk photo
+  await denied(setDoc(doc(admin.db, 'memberPhotos', 'm1'), photo({ url: 'https://elsewhere' })));          // nothing but the photo
+  await denied(setDoc(doc(admin.db, 'memberPhotos', 'm1'), photo({ data: '' })));
   for (const e of ['ac-marketing@crunch.test', 'ac-trainer@crunch.test', 'ac-client@crunch.test', undefined]) {
-    const { st } = await as(e);
-    await denied(getBytes(ref(st, 'members/m1/photo')));
-    await denied(uploadBytes(ref(st, 'members/m1/photo'), jpeg, { contentType: 'image/jpeg' }));
+    const { db } = await as(e);
+    await denied(getDoc(doc(db, 'memberPhotos', 'm1')));
+    await denied(setDoc(doc(db, 'memberPhotos', 'm1'), photo()));
+    await denied(deleteDoc(doc(db, 'memberPhotos', 'm1')));
   }
+  await deleteDoc(doc(admin.db, 'memberPhotos', 'm1'));
 });
 
 test('device commands: admins may only queue the three safe requests; the relay alone records results', async () => {

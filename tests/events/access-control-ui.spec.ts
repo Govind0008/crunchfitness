@@ -58,7 +58,7 @@ test('Open Biometric for a trainer: each step is the device’s answer — a ref
   await drawer.getByRole('button', { name: 'Start enrolment' }).click();
   const enrol = drawer.getByRole('region', { name: 'Enrol on device' });
   await expect(enrol).toContainText('Sending…');                                   // waiting for the device to collect it
-  await expect(enrol.getByLabel('Device user ID 900')).toBeVisible();              // a new ID, never one already on the device
+  await expect(enrol.getByLabel('Device user ID 20001')).toBeVisible();              // a new ID, never one already on the device
   await expect(enrol).not.toContainText('Enrolled');
   // The device refuses remote enrolment
   const cmds = await (await fetch(`${DOCS}/gyms/crunch-wakad/devices/dev1/commands`, { headers: owner })).json() as { documents: { name: string; fields: { type: { stringValue: string } } }[] };
@@ -66,7 +66,7 @@ test('Open Biometric for a trainer: each step is the device’s answer — a ref
   await fetch(`${DOCS}/${enrollCmd}?updateMask.fieldPaths=status&updateMask.fieldPaths=returnCode`, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { status: { stringValue: 'failed' }, returnCode: { stringValue: '-1002' } } }) });
   await expect(enrol).toContainText('Failed');
   await expect(enrol).toContainText('code -1002');
-  await expect(enrol).toContainText('enrol user ID 900 on the device itself');
+  await expect(enrol).toContainText('enrol user ID 20001 on the device itself');
   await expect(enrol.getByRole('button', { name: 'Try again' })).toBeVisible();
 });
 
@@ -74,13 +74,13 @@ test('trainer profile → Biometric: the same facts, and an accepted request is 
   await login(page);
   await page.goto('/admin/trainers/T1?tab=access');
   const panel = page.getByRole('region', { name: 'Biometric access' });
-  await expect(panel).toContainText('900');
+  await expect(panel).toContainText('20001');
   await expect(panel).toContainText('New CRM');
   await expect(panel).toContainText('Enabled');
-  await fetch(`${DOCS}/biometricIdentities/dev1_900?updateMask.fieldPaths=enrollment`, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { enrollment: { stringValue: 'device_accepted' } } }) });
+  await fetch(`${DOCS}/biometricIdentities/dev1_20001?updateMask.fieldPaths=enrollment`, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { enrollment: { stringValue: 'device_accepted' } } }) });
   await page.reload();
   await expect(panel).toContainText('Device is enrolling — waiting for the fingerprint');
-  await fetch(`${DOCS}/biometricIdentities/dev1_900?updateMask.fieldPaths=enrollment&updateMask.fieldPaths=enrollmentEvidence`, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { enrollment: { stringValue: 'confirmed' }, enrollmentEvidence: { stringValue: 'fingerprint_template_reported' } } }) });
+  await fetch(`${DOCS}/biometricIdentities/dev1_20001?updateMask.fieldPaths=enrollment&updateMask.fieldPaths=enrollmentEvidence`, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { enrollment: { stringValue: 'confirmed' }, enrollmentEvidence: { stringValue: 'fingerprint_template_reported' } } }) });
   await page.reload();
   await expect(panel).toContainText('Enrolled (confirmed by the device)');
   // Turning access off is recorded and explained — it doesn't pretend to lock the door

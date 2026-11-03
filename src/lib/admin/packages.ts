@@ -114,6 +114,16 @@ export async function ptPackagesOf(memberId: string): Promise<PtPackage[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PtPackage).sort(byEndDesc);
 }
 
+/**
+ * The member's running period has no payment on record — e.g. added with a plan and dates, and the
+ * money not collected yet. Collecting then pays for THIS period, not the next one. Expired
+ * memberships never count: those renew from today.
+ */
+export const unpaidCurrentPeriod = (m: { membershipEnd: string | null }, records: Pick<MembershipRecord, 'paymentId' | 'endDate'>[], today: string) =>
+  !!m.membershipEnd && m.membershipEnd >= today && !records.some((r) => r.paymentId && r.endDate && r.endDate >= m.membershipEnd!);
+/** No period of theirs was ever paid: their first membership payment is a new membership, not a renewal. */
+export const neverPaid = (records: Pick<MembershipRecord, 'paymentId'>[]) => !records.some((r) => r.paymentId);
+
 /** The PT package running today, if any (the latest-ending one). */
 export const currentPt = (list: PtPackage[], today: string) => list.find((p) => periodState(p, today) === 'current') ?? null;
 

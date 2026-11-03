@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { writeBatch } from '@/lib/admin/writes';
 import { db } from '@/lib/firebase';
+import { onAdminDataChanged } from '@/lib/queryClient';
 import { phoneKey } from './phone';
 import { logTo, type AdminActor } from './activity';
 
@@ -42,7 +43,7 @@ export interface Member {
   code?: string;
   emergencyName?: string;
   emergencyPhone?: string;
-  /** Private photo in Firebase Storage (members/{id}/photo) — only metadata lives here */
+  /** Private photo in Firestore (memberPhotos/{id}) — only metadata lives here */
   photo?: { path: string; contentType: string; size: number; updatedAt?: Timestamp } | null;
   /** Staff block — always wins over the membership for door access */
   accessOverride?: 'blocked' | 'suspended' | null;
@@ -78,6 +79,19 @@ export function periodEnd(start: string, duration: string | undefined) {
   if (unit === 'year') { d.setFullYear(d.getFullYear() + n); d.setDate(d.getDate() - 1); }
   return new Intl.DateTimeFormat('en-CA').format(d);
 }
+
+/**
+ * A plan with free months on top ("12 months + 2 free"): the plan's own period, then the free
+ * months straight after it. Gyms offer these case by case, so it's chosen per sale, not per plan.
+ */
+export function periodEndWithFree(start: string, duration: string | undefined, freeMonths: number) {
+  const end = periodEnd(start, duration);
+  return end && freeMonths > 0 ? periodEnd(addDays(end, 1), `${freeMonths} months`) : end;
+}
+export const withFreeLabel = (plan: string, freeMonths: number) =>
+  freeMonths > 0 ? `${plan} + ${freeMonths} free month${freeMonths === 1 ? '' : 's'}` : plan;
+/** Free months typed by staff: whole months, 0–24 */
+export const parseFreeMonths = (v: string) => Math.min(24, Math.max(0, Math.floor(Number(v.replace(/\D/g, '')) || 0)));
 
 export const activeUntilOf = (m: Pick<Member, 'status' | 'membershipEnd'>) =>
   m.status === 'inactive' ? NEVER : m.membershipEnd || FOREVER;
@@ -165,8 +179,24 @@ export async function listMembers(filter: MemberFilter, expiringDays: number, af
   return { members: docs.map(toMember), last: docs[docs.length - 1], more: snap.size > size };
 }
 
+// The same term typed again (search box, command palette, backspacing) isn't read twice for a
+// couple of minutes; anything saved in the admin clears it (see adminDataChanged)
+const searchCache = new Map<string, { at: number; result: Promise<Member[]> }>();
+const SEARCH_CACHE_MS = 2 * 60_000;
+export const forgetMemberSearches = () => searchCache.clear();
+onAdminDataChanged(forgetMemberSearches);
+
 /** Name / phone / email prefix search, or an exact member ID. Returns at most 20. */
-export async function searchMembers(raw: string): Promise<Member[]> {
+export function searchMembers(raw: string): Promise<Member[]> {
+  const key = raw.trim().toLowerCase();
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.at < SEARCH_CACHE_MS) return hit.result;
+  const result = searchMembersNow(raw);
+  searchCache.set(key, { at: Date.now(), result });
+  result.catch(() => searchCache.delete(key));
+  return result;
+}
+async function searchMembersNow(raw: string): Promise<Member[]> {
   const q = raw.trim();
   if (!q) return [];
   const prefix = (field: string, v: string) => getDocs(query(col(), orderBy(field), where(field, '>=', v), where(field, '<=', `${v}`), limit(20)));
@@ -279,6 +309,7 @@ export async function linkTrainerClient(m: Member, link: Member['trainerClient']
 export async function deleteMember(m: Member, actor: AdminActor) {
   const b = writeBatch(db);
   b.delete(doc(col(), m.id));
+  if (m.photo) b.delete(doc(db, 'memberPhotos', m.id));   // their face doesn't outlive the record
   logTo(b, actor, 'Member deleted', 'member', m.id, { name: m.name });
   await b.commit();
 }

@@ -1,0 +1,11 @@
+{
+  "name": "billing-cap",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "dependencies": {
+    "@google-cloud/functions-framework": "3.4.2",
+    "google-auth-library": "9.14.2"
+  }
+}

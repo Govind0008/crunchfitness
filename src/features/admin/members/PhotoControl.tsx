@@ -4,10 +4,11 @@ import { cn } from '@/lib/utils';
 import type { Member } from '@/lib/admin/members';
 import { useActor } from '@/features/events/admin/actor';
 import Avatar from './Avatar';
+import CameraCapture from './CameraCapture';
 
 /**
- * The member's photo, large, with upload / replace / remove in place. The image goes to private
- * Firebase Storage (admins only); a local preview shows while it uploads.
+ * The member's photo, large, with take / upload / replace / remove in place. The image is stored
+ * privately (admins only); a local preview shows while it uploads.
  */
 const PhotoControl = ({ m, onChanged, size = 104 }: { m: Member; onChanged: () => void; size?: number }) => {
   const actor = useActor();
@@ -15,6 +16,7 @@ const PhotoControl = ({ m, onChanged, size = 104 }: { m: Member; onChanged: () =
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState<'upload' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const upload = async (file: File | undefined) => {
@@ -46,9 +48,11 @@ const PhotoControl = ({ m, onChanged, size = 104 }: { m: Member; onChanged: () =
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo" tabIndex={-1}
         onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ''; }} />
       <div className="flex gap-3 text-xs">
-        <button type="button" className="font-semibold text-ink-300 hover:text-white" onClick={() => input.current?.click()} disabled={!!busy}>{busy === 'upload' ? 'Uploading…' : m.photo ? 'Replace' : 'Upload photo'}</button>
+        <button type="button" className="font-semibold text-ink-300 hover:text-white" onClick={() => setCamera(true)} disabled={!!busy}>Take photo</button>
+        <button type="button" className="font-semibold text-ink-300 hover:text-white" onClick={() => input.current?.click()} disabled={!!busy}>{busy === 'upload' ? 'Uploading…' : m.photo ? 'Replace' : 'Upload'}</button>
         {m.photo && <button type="button" className="text-ink-500 hover:text-red-300" onClick={remove} disabled={!!busy}>{busy === 'remove' ? 'Removing…' : 'Remove'}</button>}
       </div>
+      <CameraCapture open={camera} onOpenChange={setCamera} onCapture={upload} />
       {error && <p role="alert" className="max-w-[14rem] text-center text-xs text-red-300">{error}</p>}
     </div>
   );

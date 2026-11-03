@@ -68,7 +68,7 @@ test.beforeAll(async () => {
     ADMS_UPSTREAM: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
     // Local runtime can't open loopback TCP: plain fetch() here (the TCP path is proven on the edge, see PHASE_2_VALIDATION.md)
     ADMS_UPSTREAM_TCP: '0',
-    ADMS_COMMAND_LISTEN: '0', ADMS_COMMAND_CHECK_MS: '0', ADMS_ROUTINE_RECORD_MS: '0', ADMS_HEARTBEAT_MS: '0',
+    ADMS_COMMAND_LISTEN: '0', ADMS_COMMAND_CHECK_MS: '0', ADMS_ROUTINE_RECORD_MS: '0', ADMS_HEARTBEAT_MS: '0', ADMS_UPSTREAM_RETRY_MS: '0',
     // Normal delivery, whatever wrangler.toml says: the safety switch (ADMS_DELIVER_CRM_COMMANDS=0) has its own spec
     ADMS_DELIVER_CRM_COMMANDS: '1',
   };
@@ -158,17 +158,29 @@ test('Open Door: sent as AC_UNLOCK, done on Return=0; a stale one expires and is
   expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/u2'))!.status.stringValue).toBe('failed');
 });
 
-test('old server down: the device is told to retry (503) and the error shows; the next good request clears it', async () => {
+test('old server down: the CRM answers and says so; a scan is kept for the old server and sent when it’s back; the notice clears', async () => {
   upstreamDown = true;
-  expect((await send(`getrequest.aspx?SN=${SN}`)).status).toBe(503);
+  expect((await send(`getrequest.aspx?SN=${SN}`)).status).toBe(200);
+  const scan = '501\t2026-10-27 08:00:00\t0\t1\t0\t0\n';
+  const up = await send(`cdata.aspx?SN=${SN}&table=ATTLOG&Stamp=777`, 'POST', scan);
+  expect(up.status).toBe(200);
+  await recorded(async () => expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('isn’t answering'));
   upstreamDown = false;
-  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('didn’t answer');
-  await send(`getrequest.aspx?SN=${SN}`);
+  // The device keeps polling; within about 15 s one poll passes the copy on — once, unchanged
+  await expect(async () => {
+    await send(`getrequest.aspx?SN=${SN}`);
+    expect(received.filter((r) => r.url.includes('Stamp=777')).map((r) => r.body)).toEqual([scan]);
+  }).toPass({ timeout: 40_000, intervals: [1000] });
   await recorded(async () => expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError).toEqual({ nullValue: null }));
 });
 
 test('528-user list: answered at once with the old server’s reply; mirrored 100 per request; nothing lost; templates never stored', async () => {
   const tmp = 'A'.repeat(1400);   // a template-sized field (never stored)
+  // Links in this list: a big list reads only links still waiting (not all 500+), and still updates them
+  const link = (pin: number, extra: Record<string, unknown>) => seedDoc(`biometricIdentities/dev1_${pin}`, { gymId: 'crunch-wakad', memberId: `m${pin}`, deviceId: 'dev1', deviceUserId: String(pin), method: 'fingerprint', managedBy: 'legacy', ...extra });
+  await link(2005, { status: 'PENDING', enrollment: 'unverified' });
+  await link(2006, { status: 'SYNCED', enrollment: 'confirmed' });
+  await link(2007, { status: 'SYNCED', enrollment: 'unverified' });
   const lines: string[] = [];
   for (let i = 1; i <= 528; i++) {
     lines.push(`USER PIN=${2000 + i}\tName=MEMBER ${i}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000\tVerify=0`);
@@ -185,6 +197,13 @@ test('528-user list: answered at once with the old server’s reply; mirrored 10
     expect(await count('gyms/crunch-wakad/devices/dev1', 'deviceUsers')).toBe(2 + 100);   // first chunk…
     expect((await getDoc('gyms/crunch-wakad/devices/dev1/userBacklog/pending'))!.users.arrayValue!.values!.length).toBe(428);
   });
+  await recorded(async () => {
+    const waiting = (await getDoc('biometricIdentities/dev1_2005'))!;
+    expect(waiting.status.stringValue).toBe('SYNCED');                                // on the device → confirmed
+    expect(waiting.enrollment.stringValue).toBe('confirmed');                         // its fingerprint was reported
+    expect((await getDoc('biometricIdentities/dev1_2007'))!.enrollment.stringValue).toBe('confirmed');
+  });
+  expect((await getDoc('biometricIdentities/dev1_2006'))!.enrollmentConfirmedAt).toBeUndefined();   // already done: not rewritten
   for (let i = 0; i < 5; i++) { await send(`getrequest.aspx?SN=${SN}`); await new Promise((res) => setTimeout(res, 700)); }   // …the rest on the next polls
   await recorded(async () => expect(await count('gyms/crunch-wakad/devices/dev1', 'deviceUsers')).toBe(2 + 528));
   expect(await getDoc('gyms/crunch-wakad/devices/dev1/userBacklog/pending')).toBeNull();

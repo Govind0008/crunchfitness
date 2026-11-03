@@ -67,7 +67,7 @@ const InstagramSection: React.FC = () => {
       .catch(() => {
         // Live feed unavailable — try the posts staff picked in the events admin
         import('@/lib/socialHighlights')
-          .then(({ getPublicHighlights }) => getPublicHighlights())
+          .then(({ getPublicHighlights }) => import('@/lib/publicCache').then(({ readPublic }) => readPublic('highlights', getPublicHighlights)))
           .then((h) => { if (!cancelled) setHighlights(h.map((x) => x.url).slice(0, 3)); })
           .catch(() => { /* photo mosaic below covers this */ });
       });

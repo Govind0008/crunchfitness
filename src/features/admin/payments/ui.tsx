@@ -60,7 +60,7 @@ export const Receipt = ({ p }: { p: Payment }) => {
             <Label>Billed to</Label>
             <p className="mt-2 break-words text-xl font-bold">{p.memberName}</p>
             <p className="mt-1 text-sm text-ink-600">{formatPhone(p.memberPhone)}</p>
-            <p className="mt-1 [overflow-wrap:anywhere] text-xs text-ink-500">Member ID {p.memberId}</p>
+            <p className="mt-1 [overflow-wrap:anywhere] text-xs text-ink-500">{p.memberId ? `Member ID ${p.memberId}` : 'Walk-in · day pass'}</p>
           </section>
           <section aria-label="Payment details">
             <Label>Payment details</Label>

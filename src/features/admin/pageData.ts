@@ -75,9 +75,9 @@ export function prefetchCommonPages() {
   void getSettings().then((s) => {
     void queryClient.prefetchQuery(settingsQuery());
     void queryClient.prefetchQuery(memberCountsQuery(s.expiringSoonDays));
-    void queryClient.fetchQuery(allMembersQuery(s.expiringSoonDays)).then((page) => queryClient.prefetchQuery(memberExtrasQuery(page.members))).catch(() => {});
+    void queryClient.prefetchQuery(allMembersQuery(s.expiringSoonDays));
   });
   void queryClient.prefetchQuery(attendanceQuery(today));
-  void queryClient.prefetchQuery(duesQuery());
-  void queryClient.prefetchQuery(paymentsQuery(monthStart(today), today));
+  // Not prefetched (free-quota budget): the dues list (hundreds of members), the month's payments
+  // and the member list's PT / device / last-visit extras — each loads when its page is opened
 }

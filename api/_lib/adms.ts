@@ -53,7 +53,7 @@ export interface MemberLike { status?: string; membershipEnd?: string | null; ac
 // Access decisions live in ./access.ts (explicit CRM ownership; legacy users are never denied).
 
 // ── Commands we send to the device (built here, never taken from the browser) ─
-export type CommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door';
+export type CommandType = 'query_users' | 'add_user' | 'enroll_fp' | 'unlock_door' | 'block_user' | 'unblock_user';
 const clean = (s: string) => s.replace(/[\t\r\n=]/g, ' ').trim().slice(0, 24);
 export function commandText(c: { type: CommandType; pin?: string; name?: string }): string | null {
   if (c.type === 'query_users') return 'DATA QUERY USERINFO';
@@ -62,6 +62,11 @@ export function commandText(c: { type: CommandType; pin?: string; name?: string 
   if (!c.pin || !PIN.test(c.pin)) return null;
   if (c.type === 'add_user') return `DATA UPDATE USERINFO PIN=${c.pin}\tName=${clean(c.name ?? '')}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000\tVerify=0`;
   if (c.type === 'enroll_fp') return `ENROLL_FP PIN=${c.pin}\tFID=6\tRETRY=3\tOVERWRITE=0`;
+  // TZ: 4 digits "use the user's own time zones" flag, then three time zone numbers. Own zones,
+  // all none = no allowed hours (blocked); the group's zones = as when the CRM added them. The
+  // fingerprint is kept. Whether this firmware honours it is tested at the gym before "on".
+  if (c.type === 'block_user') return `DATA UPDATE USERINFO PIN=${c.pin}\tName=${clean(c.name ?? '')}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0001000000000000\tVerify=0`;
+  if (c.type === 'unblock_user') return `DATA UPDATE USERINFO PIN=${c.pin}\tName=${clean(c.name ?? '')}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000\tVerify=0`;
   return null;
 }
 /** Our command ids live in their own range so they never collide with the old server's. */
@@ -76,7 +81,11 @@ export function parseCommandResults(body: string): CommandResult[] {
 
 /** Handshake reply when there is no upstream server (after the old software is retired). */
 export function ownHandshake(sn: string) {
-  return [`GET OPTION FROM: ${sn}`, 'ATTLOGStamp=None', 'OPERLOGStamp=9999', 'ATTPHOTOStamp=None', 'ErrorDelay=30', 'Delay=10',
-    'TransTimes=00:00;14:05', 'TransInterval=1', 'TransFlag=TransData AttLog OpLog EnrollUser ChgUser EnrollFP ChgFP UserPic',
-    'Realtime=1', 'Encrypt=0'].join('\n');
+  // The old server's own answer to this X2008 (read 27 Oct 2026), word for word: with the CRM
+  // answering instead, the device keeps exactly the settings it has always run with. "None"
+  // stamps don't make it re-send old scans — it keeps its own upload position.
+  return [`GET OPTION FROM: ${sn}`, 'ATTLOGStamp=None', 'OPERLOGStamp=None', 'ATTPHOTOStamp=None', 'ErrorDelay=10', 'Delay=3',
+    'TransTimes=00:00;23:59', 'TransInterval=1', 'TransFlag=1111000000', 'TimeZone=0', 'Realtime=1', 'Encrypt=None',
+    'ServerVer=3.0', 'PushProtVer=2.4.1', 'PushOptionsFlag=1',
+    'PushOptions=FingerFunOn,FaceFunOn,PalmFunOn,VisilightFun,MultiBioDataSupport,MultiBioVersion,MultiBioCount'].join('\n');
 }

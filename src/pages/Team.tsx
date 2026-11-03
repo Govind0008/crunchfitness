@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Instagram, Crown } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { readPublic } from '@/lib/publicCache';
 import Footer from '../components/Footer';
 import { PageHeader, Section } from '@/components/site/Section';
 import CtaBand from '@/components/site/CtaBand';
@@ -185,15 +186,11 @@ const Team = () => {
   const [loadingFirestore, setLoadingFirestore] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'teamMembers'), orderBy('order', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Member))
-        .filter((m) => m.visible !== false);
-      setFirestoreMembers(data);
-      setLoadingFirestore(false);
-    }, () => setLoadingFirestore(false));
-    return unsub;
+    let cancelled = false;
+    readPublic('team', () => getDocs(query(collection(db, 'teamMembers'), orderBy('order', 'asc'))).then((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as Member))))
+      .then((all) => { if (!cancelled) { setFirestoreMembers(all.filter((m) => m.visible !== false)); setLoadingFirestore(false); } })
+      .catch(() => { if (!cancelled) setLoadingFirestore(false); });
+    return () => { cancelled = true; };
   }, []);
 
   // Use Firestore data once it's loaded and non-empty; otherwise show static fallback

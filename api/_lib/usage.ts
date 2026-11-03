@@ -13,7 +13,9 @@ export type UsageCause =
   | 'heartbeat'     // the device's lastSeenAt
   | 'deviceLookup'  // serial → CRM device id
   | 'punches'       // access events, attendance, member last visit (api/_lib/ingest.ts)
-  | 'deviceUsers';  // the device's user list and fingerprint reports
+  | 'deviceUsers'   // the device's user list and fingerprint reports
+  | 'enforce'       // on-device blocking: which CRM-controlled users must change
+  | 'replay';       // uploads kept for the old server while it was down
 
 export interface Meter { read: (cause: UsageCause, n?: number) => void; write: (cause: UsageCause, n?: number) => void }
 

@@ -30,7 +30,13 @@ enabled = true
 "firebase-admin/auth" = "./src/admin-auth.ts"
 
 [vars]
+# The old attendance server. Set to "none" to have the CRM answer the X2008 itself (tested) — only
+# once old members are linked in the CRM and the CRM can block expired members on the device.
 ADMS_UPSTREAM = "http://122.160.158.120:5072"
+# Blocking CRM-managed users ON the device when they may not enter (api/_lib/enforce.ts):
+# "dry" records what it would block/unblock and sends nothing; "on" only after the test at the gym
+# with one test member (ACCESS_CONTROL.md §6); "off" stops it.
+ADMS_ENFORCE_ACCESS = "dry"
 # Workers can't hold a Firestore listener: the periodic command check is the fallback to the
 # Open-door notify lane (see PHASE_3_PRODUCTION_READINESS.md)
 ADMS_COMMAND_LISTEN = "0"
@@ -38,11 +44,21 @@ ADMS_COMMAND_LISTEN = "0"
 # enrolment, user-list requests) is sent to the X2008; queued commands are left untouched and the
 # old server's commands still pass through (api/iclock.ts). Remove this line only as an explicitly
 # approved step — while it is set, CRM Open door / enrolment / sync do not reach the device.
-ADMS_DELIVER_CRM_COMMANDS = "0"
+ADMS_DELIVER_CRM_COMMANDS = "1"
+# Regular look for queued commands (one read, shared by all instances, ≈ 5,800 reads a day).
+# The "command queued" signal lives in one Cloudflare location's edge cache, so it is missed
+# whenever staff's browser and the device reach different locations (e.g. a phone on mobile data).
+# This look must then deliver Open door before its 30-second expiry: keep it at 15 s. 60 s made
+# missed signals expire unsent (28 Oct).
 ADMS_COMMAND_CHECK_MS = "15000"
 # A big user list is mirrored 100 users per request (the rest on the next polls): keeps each
 # request inside the free plan's 10 ms CPU. The device's answer never depends on it.
 ADMS_USER_CHUNK = "100"
+# Routine relay bookkeeping, kept inside Firestore's free tier: the device's "last seen" at most every
+# 5 minutes (the CRM shows Online within 10), and the connection-diagnostics record every 30 minutes.
+# Errors, device restarts and command results are still recorded at once.
+ADMS_HEARTBEAT_MS = "300000"
+ADMS_ROUTINE_RECORD_MS = "1800000"
 # /poc/old-server-probe target (front page only)
 PROBE_TARGET = "http://122.160.158.120:5072"
 # Secrets (never in this file): FIREBASE_SERVICE_ACCOUNT (required), POC_PROBE_KEY (optional)
@@ -54,3 +70,13 @@ PROBE_TARGET = "http://122.160.158.120:5072"
 [[routes]]
 pattern = "www.crunnchhfitness.com"
 custom_domain = true
+
+# Open-door signal shared by every Cloudflare location (src/command-signal.ts): one small Durable
+# Object per device. SQLite-backed, as the Workers Free plan requires.
+[[durable_objects.bindings]]
+name = "COMMAND_SIGNAL"
+class_name = "CommandSignalObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CommandSignalObject"]

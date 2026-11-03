@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { CalendarPlus, ClipboardCheck, Fingerprint, IndianRupee, UserPlus } from 'lucide-react';
 import { addDays, todayIST, type Member } from '@/lib/admin/members';
-import { PAYMENT_LABEL, monthStart, parsePrice, paymentTypeOf, revenueBetween, rupees, toPaise } from '@/lib/admin/payments';
+import { PAYMENT_LABEL, monthStart, paymentTypeOf, revenueBetween, rupees } from '@/lib/admin/payments';
 import { ACCESS_CONNECTED, deviceHealth } from '@/lib/access';
 import { identitiesOfMember } from '@/lib/access/store';
 import type { BiometricIdentity } from '@/lib/access';
@@ -18,7 +18,7 @@ import MemberPicker from '@/features/admin/members/MemberPicker';
 import EnrollWizard, { memberPerson } from '@/features/admin/access/EnrollWizard';
 import PaymentForm from '@/features/admin/payments/PaymentForm';
 import StaffCheckIn from '@/features/admin/StaffCheckIn';
-import { fmtTime, useLookups } from '@/features/admin/members/lookups';
+import { fmtTime } from '@/features/admin/members/lookups';
 import { GYM } from '@/lib/gym';
 import { cn } from '@/lib/utils';
 
@@ -40,7 +40,6 @@ const Panel = ({ id, title, link, children, className }: { id: string; title: st
 /** Dashboard — the gym today, what needs doing, and the shortcuts to do it. Real data only. */
 const Overview = () => {
   const today = todayIST();
-  const { plans } = useLookups();
   const [range, setRange] = useState<Range>('today');
   // Quick actions open their task in a drawer, on top of the dashboard
   const navigate = useNavigate();
@@ -70,7 +69,6 @@ const Overview = () => {
   const split = { membership: 0, pt: 0, other: 0 };
   (todays ?? []).filter((p) => p.status === 'paid').forEach((p) => { split[paymentTypeOf(p)] += p.amountPaise; });
   // Estimated renewals: each due member's plan at its current price (never money owed)
-  const dueEstimate = (due ?? []).reduce((s, m) => { const p = m.planId ? parsePrice(plans.get(m.planId)?.price) : null; return s + (p != null ? toPaise(p) : 0); }, 0);
   const online = access?.devices.filter((d) => deviceHealth(d) === 'online').length ?? 0;
   const accessIssues = access ? access.pending + access.failed + access.devices.filter((d) => deviceHealth(d) === 'offline').length : 0;
   const upcoming = (events ?? []).filter((e) => e.status !== 'results_published').slice(0, 4);
@@ -93,7 +91,7 @@ const Overview = () => {
           { label: 'Active members', value: !membersUnavailable && counts?.total ? counts.active : '—', sub: membersUnavailable ? 'Unavailable' : !counts?.total ? 'No members added yet' : `of ${counts.total} member${counts.total === 1 ? '' : 's'}`, to: '/admin/members?filter=active' },
           { label: 'Visits today', value: checkIns ?? '—', sub: checkIns == null ? 'Unavailable' : d?.visitsWeek != null ? `${d.visitsWeek} this week · fingerprint and desk` : 'Fingerprint and front desk', to: '/admin/attendance' },
           { label: 'Today’s collection', value: collection_ && range === 'today' ? rupees(collection_.paise) : todays ? rupees(split.membership + split.pt + split.other) : '…', sub: todays?.length ? `Membership ${rupees(split.membership)} · PT ${rupees(split.pt)} · Other ${rupees(split.other)}` : 'No payments yet today', to: '/admin/payments' },
-          { label: 'Renewals due', value: due ? due.length : '—', sub: due?.length ? `Estimated next renewals ${rupees(dueEstimate)}` : 'No renewals due', to: '/admin/payments/dues', warn: !!due?.length },
+          { label: 'Renewals due', value: due ?? '—', sub: due ? 'Overdue or expiring soon — see the list' : 'No renewals due', to: '/admin/payments/dues', warn: !!due },
         ].map((k) => (
           <Link key={k.label} to={k.to} className="group border-white/[0.06] px-4 py-3 transition-colors hover:bg-white/[0.03] max-lg:[&:nth-child(odd)]:border-r max-lg:[&:nth-child(-n+2)]:border-b lg:[&:not(:last-child)]:border-r">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">{k.label}</p>
@@ -153,12 +151,6 @@ const Overview = () => {
         <Panel id="ops-att" title="Attendance" link={{ to: '/admin/attendance', label: 'Open' }}>
           <p className="font-display text-3xl font-bold tabular-nums text-white">{checkIns ?? '—'}<span className="ml-2 font-sans text-sm font-normal text-ink-400">visit{checkIns === 1 ? '' : 's'} today</span></p>
           <p className="mt-1 text-xs text-ink-500">{d?.visitsWeek != null ? `${d.visitsWeek} this week · ` : ''}one per member per day</p>
-          <div className="mt-4 border-t border-white/[0.06] pt-3">
-            <div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Trainers</p><Link to="/admin/trainers?tab=attendance" className="text-xs text-ink-400 hover:text-white">Attendance →</Link></div>
-            {!d?.trainers ? <p className="mt-1 text-sm text-ink-500">{d ? 'Unavailable' : '…'}</p> : (
-              <p className="mt-1 text-sm text-ink-200"><span className="font-semibold text-white">{d.trainers.present}</span> of {d.trainers.team} present · {d.trainers.completed} completed{d.trainers.missing ? <> · <span className="text-amber-200">{d.trainers.missing} missing check-out</span></> : null}</p>
-            )}
-          </div>
         </Panel>
         <Panel id="payments-heading" title="Payments" link={{ to: '/admin/payments', label: 'Open' }}>
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">

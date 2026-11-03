@@ -15,7 +15,7 @@ import { useCached } from '../useCached';
 import { ListBox, Pill, SideDrawer, type Tone } from '../kit';
 import EnrollWizard, { memberPerson, type EnrollPerson } from './EnrollWizard';
 
-const COMMAND_LABEL: Record<DeviceCommand['type'], string> = { query_users: 'Send user list', add_user: 'Create user', enroll_fp: 'Fingerprint enrolment', unlock_door: 'Open door' };
+const COMMAND_LABEL: Record<DeviceCommand['type'], string> = { query_users: 'Send user list', add_user: 'Create user', enroll_fp: 'Fingerprint enrolment', unlock_door: 'Open door', block_user: 'Block (membership not valid)', unblock_user: 'Unblock' };
 /** A request's state, from what the device actually did — never assumed. */
 function commandState(c: DeviceCommand, online: boolean): { label: string; tone: Tone } {
   if (c.status === 'done') return { label: 'Success', tone: 'ok' };

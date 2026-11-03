@@ -11,7 +11,7 @@ import { accessEventsOfMember, identitiesOfMember } from '@/lib/access/store';
 import { activityFor, type ActivityEntry } from '@/lib/admin/activity';
 import { checkInsForPhone, manualCheckInsOf, periodStarts } from '@/lib/admin/attendance';
 import { METHOD_LABEL, PAYMENT_LABEL, TYPE_LABEL, parsePrice, paymentTypeOf, paymentsOfMember, receiptLabel, rupees, type Payment, type PaymentType } from '@/lib/admin/payments';
-import { PERIOD_LABEL, balanceText, currentPt, membershipsOf, periodState, ptPackagesOf, sessionsLeft, type MembershipRecord, type PtPackage } from '@/lib/admin/packages';
+import { PERIOD_LABEL, balanceText, currentPt, membershipsOf, periodState, ptPackagesOf, sessionsLeft, unpaidCurrentPeriod, type MembershipRecord, type PtPackage } from '@/lib/admin/packages';
 import { getSettings } from '@/lib/admin/settings';
 import { formatPhone, phoneKey } from '@/lib/admin/phone';
 import { STATUS, formatEventDate, formatScore, passNumber, type Category, type CrunchEvent, type Result } from '@/lib/events';
@@ -49,6 +49,14 @@ const Story = ({ title, action, children }: { title: string; action?: { label: s
 );
 const Row = ({ k, v }: { k: string; v: ReactNode }) => (
   <div className="flex justify-between gap-4 py-1.5 text-sm"><dt className="text-ink-400">{k}</dt><dd className="text-right text-white">{v}</dd></div>
+);
+
+/** The running period has no payment on record (added with dates, money not collected yet). */
+const UnpaidNote = ({ onCollect }: { onCollect: () => void }) => (
+  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2">
+    <p className="text-sm text-amber-100">No payment recorded for this period</p>
+    <Button type="button" size="sm" variant="outline" onClick={onCollect}><IndianRupee /> Collect payment</Button>
+  </div>
 );
 
 /** One visit = one attendance day (front desk and/or fingerprint), never one raw punch. */
@@ -206,6 +214,7 @@ const MemberProfile = () => {
 
   const state = memberState(m, expDays);
   const plan = m.planId ? plans.get(m.planId) : undefined;
+  const unpaidNow = memberships !== null && unpaidCurrentPeriod(m, memberships, todayIST());
   const daysLeft = m.membershipEnd ? Math.round((new Date(`${m.membershipEnd}T00:00:00`).getTime() - new Date(`${todayIST()}T00:00:00`).getTime()) / 86400000) : null;
   const trainer = m.trainerId ? trainers.get(m.trainerId) : undefined;
   const today = todayIST();
@@ -225,7 +234,7 @@ const MemberProfile = () => {
   const bio = liveIds[0];
   const membershipTone = state === 'active' ? 'ok' : state === 'expiring' ? 'warn' : state === 'expired' ? 'bad' : 'muted';
   const closeDrawer = () => { setDrawer(null); setPaid(null); };
-  const refresh = () => { reload(); paymentsOfMember(id).then(setPayments); ptPackagesOf(id).then(setPt); identitiesOfMember(id).then(setIdentities); };
+  const refresh = () => { reload(); paymentsOfMember(id).then(setPayments); membershipsOf(id).then(setMemberships); ptPackagesOf(id).then(setPt); identitiesOfMember(id).then(setIdentities); };
 
   return (
     <AdminShell title={m.name} nav="members" area="People" back={{ to: '/admin/members', label: 'Members' }} bare>
@@ -277,6 +286,7 @@ const MemberProfile = () => {
               <p className="font-display text-2xl font-bold uppercase text-white">{plan?.duration ?? (m.membershipEnd ? 'Membership' : 'No membership')}</p>
               <p className="mt-1 text-sm text-ink-300">{m.membershipStart ? fmtDate(m.membershipStart) : '—'} → {m.membershipEnd ? fmtDate(m.membershipEnd) : 'no expiry'}</p>
               <p className="mt-2 text-xs text-ink-500">{daysLeft != null ? (daysLeft >= 0 ? `${daysLeft} days left` : `Ended ${-daysLeft} days ago`) : 'No expiry date on record'}</p>
+              {unpaidNow && <UnpaidNote onCollect={() => setDrawer('payment')} />}
             </Story>
             <Story title="Personal training" action={{ label: ptNow ? 'Manage PT' : 'Add PT package', onClick: () => (ptNow ? go('pt') : setDrawer('pt')) }}>
               {ptNow ? (
@@ -352,6 +362,7 @@ const MemberProfile = () => {
             <Row k="Expires" v={m.membershipEnd ? `${fmtDate(m.membershipEnd)}${daysLeft != null ? ` · ${daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days ago`}` : ''}` : 'No expiry set'} />
             <Row k="Added" v={`${fmtDate(m.createdAt)} · ${m.source === 'import' ? 'CSV import' : m.source === 'trainer_client' ? 'from trainer clients' : m.source === 'legacy_excel' ? 'old member sheet' : 'manually'}`} />
           </dl>
+          {unpaidNow && <UnpaidNote onCollect={() => setDrawer('payment')} />}
           <div className="mt-4 border-t border-white/[0.06] pt-3 text-sm">
             <p className="flex justify-between gap-3"><span className="text-ink-400">Gym entry</span>
               <span className={access.eligible ? 'text-brand-fg' : access.eligible === false ? 'text-red-300' : 'text-ink-300'}>{access.eligible ? 'Allowed' : access.eligible === false ? 'Not allowed' : 'Check membership'}</span></p>

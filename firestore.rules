@@ -122,12 +122,23 @@ service cloud.firestore {
         && request.resource.data.activeUntil is string
         // Staff block for door access (always wins over the membership)
         && request.resource.data.get('accessOverride', null) in [null, 'blocked', 'suspended']
-        // Photo metadata only — the image itself is private in Storage at members/{id}/photo
+        // Photo metadata only — the image itself is private at memberPhotos/{id}
         && (request.resource.data.get('photo', null) == null
-          || (request.resource.data.photo.path == 'members/' + memberId + '/photo'
-            && request.resource.data.photo.contentType.matches('image/.*')
-            && request.resource.data.photo.size is int && request.resource.data.photo.size < 8388608));
+          || (request.resource.data.photo.path == 'memberPhotos/' + memberId
+            && request.resource.data.photo.contentType == 'image/jpeg'
+            && request.resource.data.photo.size is int && request.resource.data.photo.size <= 400000));
       allow delete: if isAdmin();
+    }
+
+    // Member photos: one small JPEG (base64) per member, admins only — never trainers or the public
+    match /memberPhotos/{memberId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['data', 'contentType', 'size', 'updatedAt', 'updatedBy'])
+        && request.resource.data.contentType == 'image/jpeg'
+        && request.resource.data.data is string && request.resource.data.data.size() > 0 && request.resource.data.data.size() <= 540000
+        && request.resource.data.size is int && request.resource.data.size <= 400000
+        && request.resource.data.updatedAt == request.time;
     }
 
     // Gym-wide admin activity log: append-only
@@ -292,7 +303,10 @@ service cloud.firestore {
       // Checking whether an ID is free reads a document that may not exist yet
       allow get: if isAdmin() && (resource == null || isGymAdmin(resource.data.gymId));
       allow list: if isGymAdmin(resource.data.gymId);
-      allow create: if isGymAdmin(request.resource.data.gymId)
+      // A new link to one person. Also how a REMOVED link is reused: the same device user linked
+      // again (e.g. to the right person after a mistake), checked exactly like a new one
+      function validNewLink() {
+        return isGymAdmin(request.resource.data.gymId)
         && identityId == request.resource.data.deviceId + '_' + request.resource.data.deviceUserId
         && request.resource.data.deviceUserId.matches('[A-Za-z0-9_-]{1,24}')
         && exists(/databases/$(database)/documents/gyms/$(request.resource.data.gymId)/devices/$(request.resource.data.deviceId))
@@ -311,16 +325,21 @@ service cloud.firestore {
         && request.resource.data.get('accessEnabled', true) == true
         // Enrolment is confirmed only by the server, from the device's own evidence
         && request.resource.data.get('enrollment', 'unverified') in ['not_enrolled', 'unverified'];
-      allow update: if isGymAdmin(resource.data.gymId)
+      }
+      allow create: if validNewLink();
+      allow update: if (resource.data.status == 'REMOVED' && resource.data.gymId == request.resource.data.gymId && validNewLink())
+        || (isGymAdmin(resource.data.gymId)
         && changed().hasOnly(['status', 'enrolledAt', 'updatedAt', 'managedBy', 'accessEnabled', 'enrollment', 'enrollmentRequestedAt'])
-        && request.resource.data.status in ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED']
+        // Staff set only these statuses; a status the relay gave (SYNCED, SYNC_FAILED…) may stay
+        // as it is while staff change something else — e.g. hand a synced user to the new CRM
+        && (!changed().hasAny(['status']) || request.resource.data.status in ['PENDING', 'ENROLLED', 'DISABLED', 'REMOVED'])
         && request.resource.data.get('managedBy', 'legacy') in ['crm', 'legacy']
         && request.resource.data.get('accessEnabled', true) is bool
         // Staff can only ask for an enrolment (CRM-managed users); never mark one confirmed
         && (!changed().hasAny(['enrollment'])
           || (request.resource.data.enrollment == 'requested' && request.resource.data.get('managedBy', 'legacy') == 'crm'))
         // The access switch applies to CRM-managed users only
-        && (!changed().hasAny(['accessEnabled']) || request.resource.data.get('managedBy', 'legacy') == 'crm');
+        && (!changed().hasAny(['accessEnabled']) || request.resource.data.get('managedBy', 'legacy') == 'crm'));
       allow delete: if false;
     }
 
@@ -385,13 +404,25 @@ service cloud.firestore {
     }
 
     // ── Trainer portal ────────────────────────────────────────────────────────
-    // Trainer: full access to their own data. Client: read their trainer's data and
-    // send session requests (ClientDashboard adds to sessionRequests).
+    // Trainer: full access to their own data. Client: only what is theirs — their own client
+    // record, sessions, session requests and the workout plans assigned to them — plus the
+    // trainer's availability (a schedule, no client data). A trainer's other clients stay
+    // invisible to a client, whatever the browser asks for: the portal's queries filter by the
+    // client's own id (rules are not filters). Session requests are created in the client's own
+    // name, as pending, with only the fields the portal sends.
     match /trainerData/{trainerId}/{sub}/{docId} {
       allow read: if isAdmin();
       allow read, write: if isTrainerOf(trainerId);
-      allow read: if isClientOf(trainerId);
-      allow create: if isClientOf(trainerId) && sub == 'sessionRequests';
+      allow read: if isClientOf(trainerId) && (
+           sub == 'availability'
+        || (sub == 'clients' && docId == myRole().clientId)
+        || ((sub == 'sessions' || sub == 'sessionRequests') && resource.data.clientId == myRole().clientId)
+        || (sub == 'workoutPlans' && myRole().clientId in resource.data.assignedClientIds)
+      );
+      allow create: if isClientOf(trainerId) && sub == 'sessionRequests'
+        && request.resource.data.clientId == myRole().clientId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['clientId', 'clientName', 'requestedDate', 'requestedTime', 'duration', 'notes', 'status', 'createdAt']);
     }
 
     // Progress logs: the trainer, or the client the log belongs to

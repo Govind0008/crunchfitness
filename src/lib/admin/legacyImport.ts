@@ -22,12 +22,16 @@ import { activeUntilOf } from './members';
 import { logTo, type AdminActor } from './activity';
 import type { LegacyRef } from './packages';
 import type { Analysis, ImportPlan, ImportedRef, LegacyRow, PlannedRecord, RowOutcome } from './legacySheet';
+import { partPaise, paymentIdOf } from './legacySheet';
 
 export * from './legacySheet';
 
 // ── 5. Write ─────────────────────────────────────────────────────────────────
 export const LEGACY_SOURCE = 'legacy_excel';
 const paymentId = (r: LegacyRow) => `${r.key}_p`;
+/** How an imported single-day pass appears in payments (category of an "other" payment) */
+export const DAY_PASS_CATEGORY = 'Day pass';
+const DAY_PASS_CHUNK = 20;
 
 /**
  * Payments already in the system for these rows, by fingerprint. Also finds payments from earlier
@@ -75,6 +79,8 @@ export interface ImportResult {
   memberships: number;
   ptPackages: number;
   payments: number;
+  /** Single-day passes recorded as payments only (included in payments) */
+  dayPasses: number;
   skipped: number;
   needsReview: number;
   duplicatesPrevented: number;
@@ -116,7 +122,7 @@ export async function runImport(a: Analysis, plan: ImportPlan, actor: AdminActor
     // Counted from the attempt that commits (a transaction can be retried)
     const t = await runTransaction(db, async (tx) => {
       const recs = m.records.map((rec) => ({ rec, ref: doc(db, rec.kind === 'pt' ? 'ptPackages' : 'memberships', rec.id) }));
-      const pays = m.records.flatMap((rec) => rec.rows.map((r) => ({ rec, r, ref: doc(db, 'payments', paymentId(r)) })));
+      const pays = m.records.flatMap((rec) => rec.rows.map((r) => ({ rec, r, ref: doc(db, 'payments', paymentIdOf(rec, r)) })));
       const [memberSnap, ...snaps] = await Promise.all([tx.get(memberRef), ...recs.map((x) => tx.get(x.ref)), ...pays.map((x) => tx.get(x.ref))]);
       const recSnaps = snaps.slice(0, recs.length), paySnaps = snaps.slice(recs.length);
       let madeMember = false, nm = 0, np = 0, npay = 0;
@@ -144,9 +150,9 @@ export async function runImport(a: Analysis, plan: ImportPlan, actor: AdminActor
         if (recSnaps[i].exists() || !rows.length) return;       // already there (an earlier instalment) — never overwritten
         const first = rows[0];
         const legacy: LegacyRef = { ...legacyOf(a, first), key: rec.id, rows: rows.map((r) => r.row) };
-        const base = { memberId: memberRef.id, paymentId: paymentId(first), source: LEGACY_SOURCE, legacy, ...balanceOf(first), ...recordFields(rec), createdBy: actor.email, createdAt: serverTimestamp() };
+        const base = { memberId: memberRef.id, paymentId: paymentIdOf(rec, first), source: LEGACY_SOURCE, legacy, ...balanceOf(first), ...recordFields(rec), createdBy: actor.email, createdAt: serverTimestamp() };
         if (rec.kind === 'pt') {
-          tx.set(ref, { ...base, trainerId: null, packageName: rec.pkg.label, sessionsIncluded: null, sessionsRemaining: null, startDate: rec.start, endDate: rec.end, notes: notesOf(first), updatedAt: serverTimestamp() });
+          tx.set(ref, { ...base, trainerId: null, trainerName: rec.trainer ?? null, ...(first.freelance ? { freelance: { trainer: first.freelance.freelancer, paidBy: first.freelance.payerName, paidByPhone: first.freelance.payerPhone } } : {}), ...(rec.part ? { combinedWith: 'gym membership' } : {}), packageName: rec.pkg.label, sessionsIncluded: null, sessionsRemaining: null, startDate: rec.start, endDate: rec.end, notes: notesOf(first), updatedAt: serverTimestamp() });
           np++;
         } else {
           const months = rec.pkg.packageType === 'bonus' ? rec.pkg.baseMonths : rec.pkg.months;
@@ -156,17 +162,19 @@ export async function runImport(a: Analysis, plan: ImportPlan, actor: AdminActor
       });
       newPays.forEach(({ rec, r, ref }) => {
         const isPt = rec.kind === 'pt';
+        const amount = partPaise(rec, r);
         tx.set(ref, {
           receiptNo: null, receiptSeq: null, paymentType: isPt ? 'pt' : 'membership', source: LEGACY_SOURCE,
           membershipId: isPt ? null : rec.id, ptPackageId: isPt ? rec.id : null,
           memberId: memberRef.id, memberName, memberPhone: m.phone, memberPhoneKey: m.phoneKey,
-          planId: null, planName: rec.pkg.label, amountPaise: r.amountPaise, countedPaise: r.amountPaise,
+          planId: null, planName: rec.pkg.label, amountPaise: amount, countedPaise: amount,
           listPricePaise: null, discountPaise: 0, kind: null,
           method: r.method, reference: '', paidOn: r.paidOn, coversFrom: rec.start, coversTo: rec.end,
-          notes: notesOf(r), status: 'paid', legacy: { ...legacyOf(a, r), ...balanceOf(r), sheetName: r.name },
+          notes: [r.freelance && `Paid by ${r.freelance.payerName} (freelance trainer) for ${r.name}`, rec.part && `${rec.part === 'pt' ? 'PT' : 'Gym'} part of a combined “${r.pkg.raw}” payment of ₹${((r.amountPaise ?? 0) / 100).toLocaleString('en-IN')}`, notesOf(r)].filter(Boolean).join(' · '),
+          status: 'paid', legacy: { ...legacyOf(a, r), ...balanceOf(r), sheetName: r.freelance ? r.freelance.payerName : r.name, ...(r.freelance ? { paidBy: r.freelance.payerName, paidByPhone: r.freelance.payerPhone, freelancerSheetRow: r.freelance.sheetRow } : {}), ...(rec.part ? { part: rec.part, rowAmountPaise: r.amountPaise, ptSheetRow: r.split?.ptSheetRow ?? null, splitSource: r.split?.source ?? null } : {}) },
           createdBy: actor.email, createdAt: serverTimestamp(),
         });
-        rowsDone.set(r.row, { memberId: memberRef.id, recordId: rec.id, paymentId: paymentId(r) });
+        if (!rowsDone.has(r.row)) rowsDone.set(r.row, { memberId: memberRef.id, recordId: rec.id, paymentId: paymentIdOf(rec, r) });
         npay++;
       });
       if (madeMember || npay) logTo(tx, actor, 'Legacy records imported', 'member', memberRef.id, { name: memberName, rows: npay, newMember: madeMember, file: a.file });
@@ -176,7 +184,41 @@ export async function runImport(a: Analysis, plan: ImportPlan, actor: AdminActor
     memberships += t.nm; pts += t.np; payments += t.npay;
     t.rowsDone.forEach((v, k) => written.set(k, v));
     t.alreadyThere.forEach((row) => raced.add(row));
-    onProgress?.(++n, plan.members.length);
+    onProgress?.(++n, plan.members.length + Math.ceil(plan.dayPasses.length / DAY_PASS_CHUNK));
+  }
+
+  // Single-day passes: a payment each, with the visitor's name and phone on the payment, and no
+  // member or membership. Same deterministic ids and create-only writes as above, so re-running
+  // never duplicates one.
+  let dayPasses = 0;
+  for (let i = 0; i < plan.dayPasses.length; i += DAY_PASS_CHUNK) {
+    const chunk = plan.dayPasses.slice(i, i + DAY_PASS_CHUNK);
+    const t = await runTransaction(db, async (tx) => {
+      const refs = chunk.map((o) => doc(db, 'payments', paymentId(o.row)));
+      const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
+      const done: typeof written = new Map();
+      const already = new Set<number>();
+      chunk.forEach((o, k) => {
+        const r = o.row;
+        if (snaps[k].exists()) { already.add(r.row); return; }
+        tx.set(refs[k], {
+          receiptNo: null, receiptSeq: null, paymentType: 'other', category: DAY_PASS_CATEGORY, dayPass: true, source: LEGACY_SOURCE,
+          membershipId: null, ptPackageId: null,
+          memberId: '', memberName: r.name, memberPhone: r.phone, memberPhoneKey: r.phoneKey ?? '',
+          planId: null, planName: r.pkg.label, amountPaise: r.amountPaise, countedPaise: r.amountPaise,
+          listPricePaise: null, discountPaise: 0, kind: null,
+          method: r.method, reference: '', paidOn: r.paidOn, coversFrom: o.start ?? r.paidOn, coversTo: o.end ?? o.start ?? r.paidOn,
+          notes: notesOf(r), status: 'paid', legacy: { ...legacyOf(a, r), ...balanceOf(r), sheetName: r.name },
+          createdBy: actor.email, createdAt: serverTimestamp(),
+        });
+        done.set(r.row, { memberId: '', recordId: '', paymentId: refs[k].id });
+      });
+      return { done, already };
+    });
+    t.done.forEach((v, k) => written.set(k, v));
+    t.already.forEach((row) => raced.add(row));
+    dayPasses += t.done.size; payments += t.done.size;
+    onProgress?.(++n, plan.members.length + Math.ceil(plan.dayPasses.length / DAY_PASS_CHUNK));
   }
 
   const trace = traceOf(plan, written, raced);
@@ -184,14 +226,14 @@ export async function runImport(a: Analysis, plan: ImportPlan, actor: AdminActor
   const rowsOf = (o: TraceOutcome) => trace.filter((t) => t.outcome === o).map((t) => t.row);
   const result: ImportResult = {
     id: logRef.id, file: a.file, sheet: a.sheet, rows: a.rows.length, membersCreated: created, membersMatched: matched,
-    memberships, ptPackages: pts, payments, skipped: plan.skipped.length, needsReview: plan.needsReview.length,
+    memberships, ptPackages: pts, payments, dayPasses, skipped: plan.skipped.length, needsReview: plan.needsReview.length,
     duplicatesPrevented: rowsOf('already_imported').length, warnings: plan.warnings, conflicts: plan.summary.conflicts,
     rowsImported: rowsOf('imported'), rowsAlreadyImported: rowsOf('already_imported'), rowsNeedingReview: rowsOf('needs_review'), rowsNotImported: rowsOf('cannot_import'),
   };
   const b = writeBatch(db);
   const { id: _id, ...counts } = result; void _id;
   b.set(logRef, { ...counts, kind: 'legacy_member_sheet', createdBy: actor.email, actorUid: actor.uid, createdAt: serverTimestamp() });
-  logTo(b, actor, 'Legacy import finished', 'import', logRef.id, { file: a.file, sheet: a.sheet, created, matched, payments });
+  logTo(b, actor, 'Legacy import finished', 'import', logRef.id, { file: a.file, sheet: a.sheet, created, matched, payments, dayPasses });
   await b.commit();
   return { ...result, trace };
 }
@@ -203,7 +245,7 @@ export function traceOf(plan: ImportPlan, written = new Map<number, { memberId: 
     const w = written.get(r.row);
     const outcome: TraceOutcome = w ? 'imported' : o.status === 'imported' || raced.has(r.row) ? 'already_imported' : o.status === 'review' ? 'needs_review' : o.status === 'blocked' ? 'cannot_import' : 'already_imported';
     const note = outcome === 'already_imported' ? (o.importedFrom ? `Already imported from ${o.importedFrom.file}, row ${o.importedFrom.row}` : 'Already imported')
-      : outcome === 'imported' ? [o.attachTo && `Added to ${o.attachTo.name} (no phone in the sheet)`, r.groupWith && `Same record as row ${r.groupWith}`].filter(Boolean).join(' · ')
+      : outcome === 'imported' ? (w?.memberId === '' ? 'Day pass — recorded as a payment only, no member' : [o.attachTo && `Added to ${o.attachTo.name} (no phone in the sheet)`, r.groupWith && `Same record as row ${r.groupWith}`, r.split && `Gym + PT: ₹${r.split.gymPaise / 100} gym + ₹${r.split.ptPaise / 100} PT`, r.freelance && `Paid by ${r.freelance.payerName} — recorded for ${r.name}`].filter(Boolean).join(' · '))
       : o.reasons.join(' · ');
     return {
       row: r.row, name: r.name, phone: r.phone, packageRaw: r.pkg.raw, type: r.pkg.kind, amountPaise: r.amountPaise, paidOn: r.paidOn,

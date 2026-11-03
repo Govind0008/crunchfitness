@@ -67,12 +67,12 @@ test('enrolment shows only what the device reports; “Enrolled” needs the dev
   await wiz.getByRole('button', { name: 'Start enrolment' }).click();
   const enrol = wiz.getByRole('region', { name: 'Enrol on device' });
   await expect(enrol).toContainText('Device offline');
-  await expect(enrol.getByLabel('Device user ID 1')).toBeVisible();
+  await expect(enrol.getByLabel('Device user ID 20001')).toBeVisible();
   await expect(enrol).not.toContainText('Enrolled');
   await expect(enrol.getByRole('button', { name: /Fingerprint saved/ })).toHaveCount(0);                     // no "trust me" button
   // The device confirms (as the relay would record it): only now is it enrolled
   const ids = await (await fetch(`${FS_DOCS}/biometricIdentities`, { headers: { Authorization: 'Bearer owner' } })).json() as { documents: { name: string }[] };
-  const path = ids.documents.map((d) => d.name.split('/documents/')[1]).find((n) => n.endsWith('_1'))!;
+  const path = ids.documents.map((d) => d.name.split('/documents/')[1]).find((n) => n.endsWith('_20001'))!;
   // exactly what the relay writes on a fingerprint-verified scan (api/_lib/ingest.ts)
   await fetch(`${FS_DOCS}/${path}?updateMask.fieldPaths=enrollment&updateMask.fieldPaths=enrollmentEvidence&updateMask.fieldPaths=status`, {
     method: 'PATCH', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
@@ -93,9 +93,9 @@ test('enrolment shows only what the device reports; “Enrolled” needs the dev
   const wiz2 = page.getByRole('dialog', { name: 'Enroll access' });
   await wiz2.getByRole('button', { name: 'Continue' }).click();
   await wiz2.getByLabel(/Already on the device/).check();
-  await wiz2.getByLabel('User ID on the device').fill('1');
+  await wiz2.getByLabel('User ID on the device').fill('20001');
   await wiz2.getByRole('button', { name: 'Link user ID' }).click();
-  await expect(wiz2.getByRole('alert')).toContainText('Device user 1 is already linked to someone on Main entrance');
+  await expect(wiz2.getByRole('alert')).toContainText('Device user 20001 is already linked to someone on Main entrance');
   await wiz2.getByLabel('User ID on the device').fill('207');
   await wiz2.getByRole('button', { name: 'Link user ID' }).click();
   await expect(wiz2.getByLabel('Device user ID 207')).toBeVisible();
@@ -180,14 +180,17 @@ test('other payments carry a category; revenue keeps membership, PT and other ap
   await expect(row).toContainText('₹6,500');                                                          // total
 });
 
-test('member photo: private upload, shown as the avatar', async ({ page, isMobile }) => {
+test('member photo: private upload, stored small, shown as the avatar', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop');
   await login(page);
   await page.goto('/admin/members/ac1/edit');
   await page.getByLabel('Member photo').setInputFiles({ name: 'riya.png', mimeType: 'image/png', buffer: PNG });
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForURL(/\/admin\/members\/ac1$/);
-  await expect(page.locator('img[src*="members%2Fac1%2Fphoto"]').first()).toBeVisible();
+  await expect(page.locator('img[src^="data:image/jpeg;base64,"]').first()).toBeVisible();
+  const stored = await (await fetch(`${FS_DOCS}/memberPhotos/ac1`, { headers: { Authorization: 'Bearer owner' } })).json();
+  expect(stored.fields.contentType.stringValue).toBe('image/jpeg');
+  expect(Number(stored.fields.size.integerValue)).toBeLessThan(150_000);
 });
 
 test('dashboard: access widget, attention and quick actions from real records', async ({ page, isMobile }) => {

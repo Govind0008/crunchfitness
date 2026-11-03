@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { readPublic } from '@/lib/publicCache';
 
 export interface Plan {
   id: string;
@@ -56,25 +57,17 @@ export function usePlans() {
   useEffect(() => {
     // Firestore is loaded on demand so the SDK stays off the critical path of the pages
     // that show plans (the fallback list renders meanwhile).
-    let unsub = () => {};
+    // Read once per visitor per half hour (see publicCache), not on every page view
     let cancelled = false;
-    Promise.all([import('firebase/firestore'), import('@/lib/firebase')])
-      .then(([{ collection, query, orderBy, onSnapshot }, { db }]) => {
-        if (cancelled) return;
-        unsub = onSnapshot(
-          query(collection(db, 'plans'), orderBy('order', 'asc')),
-          (snap) => {
-            setPlans(snap.docs.map((d) => {
-              const data = d.data();
-              return { id: d.id, ...data, features: Array.isArray(data.features) ? data.features : [] } as Plan;
-            }));
-            setLoading(false);
-          },
-          () => setLoading(false),
-        );
-      })
-      .catch(() => setLoading(false));
-    return () => { cancelled = true; unsub(); };
+    readPublic('plans', () => Promise.all([import('firebase/firestore'), import('@/lib/firebase')])
+      .then(([{ collection, query, orderBy, getDocs }, { db }]) => getDocs(query(collection(db, 'plans'), orderBy('order', 'asc'))))
+      .then((snap) => snap.docs.map((d) => {
+        const data = d.data();
+        return { id: d.id, ...data, features: Array.isArray(data.features) ? data.features : [] } as Plan;
+      })))
+      .then((list) => { if (!cancelled) { setPlans(list); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   return { plans: !loading && plans.length > 0 ? plans : FALLBACK_PLANS, loading };

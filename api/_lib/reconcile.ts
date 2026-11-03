@@ -1,10 +1,10 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Scan } from './adms.js';
-import { memberAttendanceId, personOf, trainerAttendanceId } from './attendance.js';
+import { memberAttendanceId, personOf } from './attendance.js';
 import { ingestScans } from './ingest.js';
 
 // Attendance reconciliation: compares the raw layer (accessEvents) with the attendance layer
-// (checkins for members, trainerAttendance for trainers) over a bounded date range, and lists
+// (checkins, one visit per member per day) over a bounded date range, and lists
 // every gap instead of letting a member silently show 0. The backfill fixes only the gaps it
 // previewed, through the same idempotent ingestion as the live relay, never touching the events.
 
@@ -50,8 +50,10 @@ export async function reconcile(fs: Firestore, from: string, to: string) {
       unknown.set(k, u);
       continue;
     }
-    const col = p.type === 'member' ? 'checkins' : 'trainerAttendance';
-    const id = p.type === 'member' ? memberAttendanceId(day, p.id!) : trainerAttendanceId(day, p.id!);
+    // Staff scans are known people, but their attendance is kept in the gym's HR platform
+    if (p.type !== 'member') continue;
+    const col = 'checkins' as const;
+    const id = memberAttendanceId(day, p.id!);
     const x = expected.get(`${col}/${id}`) ?? { col, person: p.id!, events: [] };
     x.events.push(e);
     expected.set(`${col}/${id}`, x);

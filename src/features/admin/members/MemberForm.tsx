@@ -10,6 +10,8 @@ import { AdminShell, Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { useLookups } from './lookups';
 import Avatar from './Avatar';
+import CameraCapture, { photoButtonCls } from './CameraCapture';
+import { Camera, ImageUp } from 'lucide-react';
 import { uploadMemberPhoto, removeMemberPhoto, validatePhoto } from '@/lib/admin/photos';
 
 const blank: MemberInput = { name: '', phone: '', email: '', planId: null, membershipStart: todayIST(), membershipEnd: null, status: 'active', trainerId: null, notes: '', emergencyName: '', emergencyPhone: '' };
@@ -27,6 +29,7 @@ const MemberForm = () => {
   const [busy, setBusy] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
   const [dropPhoto, setDropPhoto] = useState(false);
+  const [camera, setCamera] = useState(false);
   const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
 
   useEffect(() => {
@@ -77,12 +80,16 @@ const MemberForm = () => {
         <div className="flex items-center gap-4">
           {preview ? <img src={preview} alt="" className="h-20 w-20 rounded-full object-cover" /> : <Avatar m={{ id: existing?.id ?? 'new', name: f.name || '?', photo: dropPhoto ? null : existing?.photo }} size={80} />}
           <div className="text-sm">
-            <label className="inline-flex cursor-pointer items-center rounded-full border border-white/20 px-4 py-2 font-semibold text-white hover:border-white/40 focus-within:border-brand-400">
-              {existing?.photo || photo ? 'Change photo' : 'Add photo'}
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo"
-                onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; const bad = validatePhoto(file); if (bad) { setErrors([bad]); return; } setPhoto(file); setDropPhoto(false); }} />
-            </label>
-            {(photo || (existing?.photo && !dropPhoto)) && <button type="button" className="ml-3 text-xs text-ink-400 hover:text-white" onClick={() => { setPhoto(null); setDropPhoto(true); }}>Remove</button>}
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={photoButtonCls} onClick={() => setCamera(true)}><Camera className="h-4 w-4" aria-hidden /> Take photo</button>
+              <label className={photoButtonCls}>
+                <ImageUp className="h-4 w-4" aria-hidden /> {existing?.photo || photo ? 'Change' : 'Upload'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo"
+                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; const bad = validatePhoto(file); if (bad) { setErrors([bad]); return; } setPhoto(file); setDropPhoto(false); }} />
+              </label>
+              {(photo || (existing?.photo && !dropPhoto)) && <button type="button" className="ml-1 text-xs text-ink-400 hover:text-white" onClick={() => { setPhoto(null); setDropPhoto(true); }}>Remove</button>}
+            </div>
+            <CameraCapture open={camera} onOpenChange={setCamera} onCapture={(file) => { setPhoto(file); setDropPhoto(false); }} />
             <p className="mt-2 text-xs text-ink-500">Private — only admins can see it. Optional.</p>
           </div>
         </div>

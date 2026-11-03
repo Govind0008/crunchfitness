@@ -8,15 +8,15 @@ import { parseCsv } from '@/lib/admin/csv';
 import { membersByNames, membersByPhoneKeys, type Member } from '@/lib/admin/members';
 import { formatPhone } from '@/lib/admin/phone';
 import {
-  FIELDS, analyse, detectMapping, importHistory, importedPayments, pickSheet, planImport, runImport,
-  type Analysis, type Decision, type ImportResult, type ImportedRef, type Mapping,
+  FIELDS, NO_SIDE_SHEETS, analyse, detectMapping, importHistory, importedPayments, pickSheet, planImport, readSideSheets, runImport,
+  type Analysis, type Decision, type ImportResult, type ImportedRef, type Mapping, type SideSheets,
 } from '@/lib/admin/legacyImport';
 import { useActor } from '@/features/events/admin/actor';
 import { inputCls } from '@/features/events/admin/shared';
 import { useLookups } from './lookups';
 import { Count, ImportReport, PeoplePreview, ReviewQueue } from './LegacyPreview';
 
-interface Loaded { file: string; sheet: string; grid: XlsxCell[][]; otherSheets: string[] }
+interface Loaded { file: string; sheet: string; grid: XlsxCell[][]; otherSheets: string[]; side: SideSheets }
 interface Lookup { existing: Map<string, Member>; byName: Map<string, Member[]>; imported: Map<string, ImportedRef> }
 
 const csvGrid = (text: string): XlsxCell[][] => parseCsv(text).map((r) => r.map((v) => ({ value: v, date: false, fill: null })));
@@ -40,6 +40,8 @@ const LegacyImport = () => {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [mapping, setMapping] = useState<Mapping | null>(null);
   const [decisions, setDecisions] = useState<Map<number, Decision>>(new Map());
+  // PT part (paise) staff entered for combined gym + PT rows they chose to split (“Both”)
+  const [splits, setSplits] = useState<Map<number, number>>(new Map());
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,26 +52,29 @@ const LegacyImport = () => {
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
-    setError(null); setResult(null); setLoaded(null); setLookup(null); setDecisions(new Map());
+    setError(null); setResult(null); setLoaded(null); setLookup(null); setDecisions(new Map()); setSplits(new Map());
     try {
       if (/\.csv$/i.test(file.name)) {
         const grid = csvGrid(await file.text());
-        setLoaded({ file: file.name, sheet: 'CSV', grid, otherSheets: [] }); setMapping(detectMapping(grid[0] ?? []));
+        setLoaded({ file: file.name, sheet: 'CSV', grid, otherSheets: [], side: NO_SIDE_SHEETS }); setMapping(detectMapping(grid[0] ?? []));
       } else {
         const sheets = await readXlsx(await file.arrayBuffer());
         const sheet = pickSheet(sheets);
         if (!sheet) throw new Error('The file has no sheets.');
-        const otherSheets = sheets.filter((s) => s !== sheet && hasData(s.rows)).map((s) => s.name);
-        setLoaded({ file: file.name, sheet: sheet.name, grid: sheet.rows, otherSheets }); setMapping(detectMapping(sheet.rows[0] ?? []));
+        // The PT sheet (trainers, the PT part of "gym + PT" rows) and the Freelancer sheet (who a
+        // freelance trainer paid for) are read alongside; they're never imported on their own
+        const side = readSideSheets(sheets, sheet.name);
+        const otherSheets = sheets.filter((s) => s !== sheet && s.name !== side.ptSheet && s.name !== side.freelanceSheet && hasData(s.rows)).map((s) => s.name);
+        setLoaded({ file: file.name, sheet: sheet.name, grid: sheet.rows, otherSheets, side }); setMapping(detectMapping(sheet.rows[0] ?? []));
       }
     } catch (e) { setError((e as Error).message || 'The file couldn’t be read.'); }
   };
 
   // Only a type decision changes how a row is read; the others only change the plan
-  const typeDecisions = useMemo(() => new Map([...decisions].filter(([, d]) => d === 'membership' || d === 'pt')), [decisions]);
-  const typeKey = [...typeDecisions].join();
+  const typeDecisions = useMemo(() => new Map([...decisions].filter(([, d]) => d === 'membership' || d === 'pt' || d === 'both')), [decisions]);
+  const typeKey = [...typeDecisions].join() + '|' + [...splits].join();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const analysis: Analysis | null = useMemo(() => (loaded && mapping ? analyse(loaded.file, loaded.sheet, loaded.grid, mapping, typeDecisions) : null), [loaded, mapping, typeKey]);
+  const analysis: Analysis | null = useMemo(() => (loaded && mapping ? analyse(loaded.file, loaded.sheet, loaded.grid, mapping, typeDecisions, loaded.side, splits) : null), [loaded, mapping, typeKey]);
 
   // Who's already a member (by phone; by exact name only for rows with no phone), and which
   // payments were imported before (by fingerprint — from this file or any other)
@@ -102,6 +107,7 @@ const LegacyImport = () => {
   };
 
   const decide = (row: number, d: Decision | null) => setDecisions((m) => { const n = new Map(m); if (d) n.set(row, d); else n.delete(row); return n; });
+  const setSplit = (row: number, paise: number | null) => setSplits((m) => { const n = new Map(m); if (paise != null && paise > 0) n.set(row, paise); else n.delete(row); return n; });
   const ready = analysis && !analysis.missingColumns.length;
   const s = plan?.summary;
 
@@ -124,7 +130,7 @@ const LegacyImport = () => {
           <input type="file" accept=".xlsx,.csv" className="sr-only" aria-label="Old member sheet" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
         {loaded && loaded.otherSheets.length > 0 && (
-          <p className="mt-3 text-xs text-ink-400">Only “{loaded.sheet}” is imported. Not read: {loaded.otherSheets.map((n) => `“${n}”`).join(', ')}.</p>
+          <p className="mt-3 text-xs text-ink-400">“{loaded.sheet}” is imported.{(loaded.side.ptSheet || loaded.side.freelanceSheet) && <> Also read (never imported on their own): {[loaded.side.ptSheet && `“${loaded.side.ptSheet}” — trainers and the PT part of gym + PT payments`, loaded.side.freelanceSheet && `“${loaded.side.freelanceSheet}” — who freelance trainers paid for`].filter(Boolean).join('; ')}.</>} Not read: {loaded.otherSheets.map((n) => `“${n}”`).join(', ')}.</p>
         )}
       </Step>
 
@@ -155,10 +161,13 @@ const LegacyImport = () => {
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-5" role="region" aria-label="What was found">
               <Count n={s.rows} label="rows found" /><Count n={s.uniqueMembers} label="unique members detected" />
               <Count n={s.rowsWithPhone} label="rows with phone" /><Count n={s.rowsWithoutPhone} label="rows without phone" />
-              <Count n={s.gymRows} label="gym membership rows" /><Count n={s.ptRows} label="PT rows" />
+              <Count n={s.gymRows} label="gym membership rows" /><Count n={s.ptRows} label="PT rows" /><Count n={s.dayPassRows} label="single-day passes (payment only)" />
               <Count n={s.possibleExisting} label="potential existing-member matches" /><Count n={s.conflicts} label="potential conflicts" tone={s.conflicts ? 'warn' : undefined} />
               <Count n={s.needsReview} label="rows requiring review" tone={s.needsReview ? 'warn' : undefined} /><Count n={s.blocked} label="rows that can’t be imported" tone={s.blocked ? 'bad' : undefined} />
               {s.unclearRows > 0 && <Count n={s.unclearRows} label="unclear packages" tone="warn" />}
+              {analysis && analysis.rows.some((r) => r.combo) && <Count n={analysis.rows.filter((r) => r.split).length} label={`of ${analysis.rows.filter((r) => r.combo).length} gym + PT rows split`} />}
+              {analysis && analysis.rows.some((r) => r.freelance) && <Count n={analysis.rows.filter((r) => r.freelance).length} label="freelancer payments recorded for their clients" />}
+              {analysis && loaded?.side.ptSheet && <Count n={analysis.rows.filter((r) => r.trainer && !r.freelance).length} label="PT rows with a trainer from the PT sheet" />}
               {s.alreadyImported > 0 && <Count n={s.alreadyImported} label="already imported" />}
             </div>
           )}
@@ -167,7 +176,7 @@ const LegacyImport = () => {
 
       {ready && plan && (
         <Step n={4} title={`Review${plan.needsReview.length ? ` · ${plan.needsReview.length} waiting` : ''}`}>
-          <ReviewQueue plan={plan} decisions={decisions} onDecide={decide} />
+          <ReviewQueue plan={plan} decisions={decisions} onDecide={decide} splits={splits} onSplit={setSplit} />
         </Step>
       )}
 
@@ -182,7 +191,7 @@ const LegacyImport = () => {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="region" aria-label="Import preview">
             <Count n={plan.membersToCreate} label="new members" /><Count n={plan.membersMatched} label="existing members" />
             <Count n={plan.memberships} label="membership records" /><Count n={plan.ptPackages} label="PT records" />
-            <Count n={plan.payments} label="payments" /><Count n={plan.alreadyImported.length} label="already imported" />
+            <Count n={plan.payments} label="payments" /><Count n={plan.dayPasses.length} label="day passes (payment only, no member)" /><Count n={plan.alreadyImported.length} label="already imported" />
             <Count n={plan.needsReview.length} label="waiting for review" tone={plan.needsReview.length ? 'warn' : undefined} /><Count n={plan.skipped.length} label="can’t be imported" tone={plan.skipped.length ? 'bad' : undefined} />
           </div>
           {plan.people.some((m) => m.conflicts.length) && (

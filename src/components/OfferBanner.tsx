@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { readPublic } from '@/lib/publicCache';
 import { X } from 'lucide-react';
 
 interface Offer {
@@ -38,15 +39,18 @@ const OfferBanner = ({ onVisibilityChange }: Props) => {
   }, [visible, onVisibilityChange]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'offers'), (snap) => {
-      const today = new Date().toISOString().split('T')[0];
-      const dismissedId = sessionStorage.getItem('dismissedOffer');
-      const active = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Offer))
-        .find((o) => o.active && o.startDate <= today && o.endDate >= today && o.id !== dismissedId);
-      setOffer(active ?? null);
-    }, () => setOffer(null)); // no banner if offers can't be read
-    return unsub;
+    // On every page of the site: read once per visitor per half hour (see publicCache)
+    let cancelled = false;
+    readPublic('offers', () => getDocs(collection(db, 'offers')).then((s) => s.docs.map((d) => ({ id: d.id, ...d.data() } as Offer))))
+      .then((offers) => {
+        if (cancelled) return;
+        const today = new Date().toISOString().split('T')[0];
+        let dismissedId: string | null = null;
+        try { dismissedId = sessionStorage.getItem('dismissedOffer'); } catch { /* storage blocked */ }
+        setOffer(offers.find((o) => o.active && o.startDate <= today && o.endDate >= today && o.id !== dismissedId) ?? null);
+      })
+      .catch(() => setOffer(null)); // no banner if offers can't be read
+    return () => { cancelled = true; };
   }, []);
 
   const handleDismiss = useCallback(() => {

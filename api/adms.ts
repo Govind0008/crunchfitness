@@ -56,6 +56,12 @@ async function status() {
   const devices = devSnap.docs.map((d) => ({ id: d.id, name: d.get('name') ?? '', serialNumber: d.get('serialNumber') ?? '', lastSeenAt: iso(d.get('lastSeenAt')), connection: d.get('connection') ?? null }));
   const serials = new Map(devices.map((d) => [String(d.serialNumber).toUpperCase(), d.id]));
   const now = Date.now();
+  // A registered device's own feature list ("{SN}_options", written when the device sends it)
+  const options = new Map<string, { text: string; at: string | null }>();
+  await Promise.all(devices.filter((d) => d.serialNumber).map(async (d) => {
+    const o = await fs.collection('admsDiagnostics').doc(`${String(d.serialNumber).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 50)}_options`).get();
+    if (o.exists) options.set(String(d.serialNumber).toUpperCase(), { text: String(o.get('deviceOptions') ?? ''), at: iso(o.get('at')) });
+  }));
   const contacts = diagSnap.docs.map((d) => {
     const lastSeenAt = iso(d.get('lastSeenAt'));
     const sn = String(d.get('sn') ?? '');
@@ -65,6 +71,7 @@ async function status() {
     return {
       sn, probe, crmDeviceId, lastSeenAt, firstSeenAt: iso(d.get('firstSeenAt')), last: d.get('last') ?? null, counts: d.get('counts') ?? {},
       userAgent: d.get('lastUserAgent') ?? '', remoteIp: d.get('lastRemoteIp') ?? '', pushVersion: d.get('pushVersion') ?? '', recent: (d.get('recent') as unknown[] ?? []).slice(0, 10),
+      deviceOptions: options.get(sn.toUpperCase()) ?? null,
       // The latest record of commands the OLD server sent this device (verbs and counts only)
       oldServerCommands: ((d.get('recent') as { upstreamCommands?: string[]; at?: string }[] ?? []).find((r) => r.upstreamCommands?.length) ?? null),
       // Only a real device request, from a serial registered in the CRM, recently, counts as connected

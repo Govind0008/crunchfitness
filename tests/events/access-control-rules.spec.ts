@@ -80,11 +80,10 @@ test('PT-only member managed by the CRM: recorded as not allowed (PT_ONLY); a pa
   expect((await get('biometricIdentities/dev1_31'))!).toMatchObject({ enrollment: 'confirmed', enrollmentEvidence: 'fingerprint_scan' });
 });
 
-test('a trainer whose CRM access is off: recorded as not allowed, still trainer attendance, never a member visit', async () => {
+test('a trainer whose CRM access is off: recorded as not allowed, never a member visit', async () => {
   await ingest(fs, 'dev1', [scan('41', '2026-10-01 06:00:00')]);
   const ev = (await fs.collection('accessEvents').where('deviceUserId', '==', '41').get()).docs[0].data();
   expect(ev).toMatchObject({ personType: 'trainer', decision: 'ACCESS_DENIED', decisionReason: 'ACCESS_DISABLED' });
-  expect(await get('trainerAttendance/2026-10-01_T1')).toMatchObject({ status: 'MISSING_CHECKOUT', punchCount: 1 });
   expect((await fs.collection('checkins').where('deviceUserId', '==', '41').get()).size).toBe(0);
 });
 
@@ -128,6 +127,17 @@ test('rules: the CRM can only claim users it creates; an old-system user stays t
   await denied(setDoc(doc(db, 'biometricIdentities', 'dev1_902'), identity('902', { managedBy: 'crm', accessEnabled: true, enrollment: 'confirmed' })));     // can't claim enrolled
 });
 
+test('rules: a removed link can be made again — checked like a new one; a link in use can’t be overwritten', async () => {
+  const db = await as(ADMIN.email);
+  // Linked 7 Oct, removed 12 Oct (device user 2514 on 3 Nov): linking it again must work
+  await seedDoc('biometricIdentities/dev1_77', { ...identity('77', { managedBy: 'crm', accessEnabled: true, enrollment: 'unverified', memberId: 'old-member' }), status: 'REMOVED', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  await denied(setDoc(doc(db, 'biometricIdentities', 'dev1_77'), identity('77', { managedBy: 'crm', accessEnabled: true, enrollment: 'not_enrolled' })));   // still on the device: the old system's
+  await denied(setDoc(doc(db, 'biometricIdentities', 'dev1_77'), identity('77', { managedBy: 'legacy', accessEnabled: true, enrollment: 'confirmed' })));    // can't claim enrolled
+  await setDoc(doc(db, 'biometricIdentities', 'dev1_77'), identity('77', { managedBy: 'legacy', accessEnabled: true, enrollment: 'unverified', memberId: 'pt1' }));
+  // Now in use: another person can't take it over by writing a new link on top
+  await denied(setDoc(doc(db, 'biometricIdentities', 'dev1_77'), identity('77', { managedBy: 'legacy', accessEnabled: true, enrollment: 'unverified', memberId: 'someone-else' })));
+});
+
 test('rules: device commands that change a user are only for CRM-managed users', async () => {
   const db = await as(ADMIN.email);
   const cmd = (id: string) => doc(db, 'gyms', 'crunch-wakad', 'devices', 'dev1', 'commands', id);
@@ -152,6 +162,12 @@ test('rules: enrolment is requested, never confirmed, from the browser; the acce
   // Explicit migration: staff hand the person to the new CRM — recorded, and only then controllable
   await updateDoc(doc(db, 'biometricIdentities', 'dev1_77'), { managedBy: 'crm', updatedAt: serverTimestamp() });
   await updateDoc(doc(db, 'biometricIdentities', 'dev1_77'), { accessEnabled: true, updatedAt: serverTimestamp() });
+  // An old-system user the relay already synced (status SYNCED, as most linked users are) can be
+  // handed over too — the relay's status stays; staff still can't set one themselves (28 Oct)
+  await seedDoc('biometricIdentities/dev1_78', { gymId: 'crunch-wakad', memberId: 'm78', personType: 'member', deviceId: 'dev1', deviceUserId: '78', method: 'fingerprint', status: 'SYNCED', managedBy: 'legacy', accessEnabled: true, enrollment: 'confirmed' });
+  await updateDoc(doc(db, 'biometricIdentities', 'dev1_78'), { managedBy: 'crm', updatedAt: serverTimestamp() });
+  await denied(updateDoc(doc(db, 'biometricIdentities', 'dev1_78'), { status: 'SYNC_FAILED', updatedAt: serverTimestamp() }));
+  await updateDoc(doc(db, 'biometricIdentities', 'dev1_78'), { status: 'DISABLED', updatedAt: serverTimestamp() });
 });
 
 test('rules: "Open door" is one fixed request for the device — no user, no name, no text; admins only', async () => {

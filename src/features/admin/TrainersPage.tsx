@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { useCached } from './useCached';
 import { Link, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import TrainerAttendanceBoard from './trainers/TrainerAttendanceBoard';
 import { KeyRound, Pencil } from 'lucide-react';
 import { collection, getCountFromServer, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -38,7 +37,8 @@ async function loadTrainers(): Promise<TrainerRow[]> {
 const TrainersPage = () => {
   const actor = useActor();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'attendance' ? 'attendance' : 'team';
+  // Trainer attendance lives in the gym's separate HR platform: this page is the team only
+  const tab = 'team' as const;
   const [loginFor, setLoginFor] = useState<TrainerRow | null>(null);
   const [form, setForm] = useState({ email: '', password: '' });
   const [formErr, setFormErr] = useState<string | null>(null);
@@ -60,15 +60,14 @@ const TrainersPage = () => {
   const withLogin = (rows ?? []).filter((r) => r.login).length;
 
   return (
-    <AdminShell title="Trainers" nav="trainers" area="People" fill={tab === 'attendance'} subtitle={rows ? `${rows.length} on the team · ${withLogin} with a portal login` : '…'}
+    <AdminShell title="Trainers" nav="trainers" area="People" subtitle={rows ? `${rows.length} on the team · ${withLogin} with a portal login` : '…'}
       actions={<Button asChild variant="outline"><Link to="/admin/team"><Pencil /> Edit profiles</Link></Button>}>
       <div role="tablist" aria-label="Trainers" className="-mt-1 mb-4 flex flex-shrink-0 gap-1 overflow-x-auto border-b border-white/[0.08]">
-        {([['team', 'Team'], ['attendance', 'Attendance']] as const).map(([t, label]) => (
+        {([['team', 'Team']] as const).map(([t, label]) => (
           <button key={t} role="tab" type="button" aria-selected={tab === t} onClick={() => setParams(t === 'team' ? {} : { tab: t }, { replace: true })}
             className={cn('whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors', tab === t ? 'border-brand-400 text-white' : 'border-transparent text-ink-400 hover:text-white')}>{label}</button>
         ))}
       </div>
-      {tab === 'attendance' && <TrainerAttendanceBoard />}
       {tab === 'team' && error && <div className="mb-5"><ErrorNote what="Couldn’t load trainers." error={error} onRetry={load} /></div>}
       {tab !== 'team' ? null : !rows ? <SkeletonRows rows={3} /> : rows.length === 0 ? (
         <EmptyNote title="No trainers yet" body="Add coaches in Team — they appear on the website and can be given a trainer-portal login."><Button asChild><Link to="/admin/team">Open Team</Link></Button></EmptyNote>

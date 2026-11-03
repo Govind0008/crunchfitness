@@ -31,7 +31,7 @@ const PAGES: { path: string; name: string; data?: boolean }[] = [
   { path: '/admin/payments', name: 'payments', data: true },
   { path: '/admin/attendance', name: 'attendance', data: true },
   { path: '/admin/access?tab=activity', name: 'access-activity', data: true },
-  { path: '/admin/trainers?tab=attendance', name: 'trainer-attendance', data: true },
+  { path: '/admin/trainers', name: 'trainers', data: true },
   { path: '/admin/activity', name: 'activity-log', data: true },
   { path: '/admin/payments/dues', name: 'dues' },
   { path: '/admin/enquiries', name: 'enquiries' },

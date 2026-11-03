@@ -15,6 +15,8 @@ let upstream: http.Server;
 let relay: http.Server;
 let relayUrl = '';
 let upstreamDown = false;
+let upstreamMaxBody = Infinity;
+let upstreamPoll: string | null = null;   // what the old server answers a command poll (default C:77:INFO)   // like the real old server on 27 Oct 2026: drops an upload bigger than this
 const received: { method: string; url: string; body: string }[] = [];
 
 const docUrl = (path: string) => `${FS}/v1/projects/${PROJECT}/databases/(default)/documents/${path}`;
@@ -35,14 +37,14 @@ test.beforeAll(async () => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      if (upstreamDown) { req.socket.destroy(); return; }
+      if (upstreamDown || body.length > upstreamMaxBody) { req.socket.destroy(); return; }
       received.push({ method: req.method!, url: req.url!, body });
       const u = new URL(req.url!, 'http://x');
       u.pathname = u.pathname.replace(/\.aspx$/, '');   // real ADMS servers answer both forms
       res.setHeader('Content-Type', 'text/plain');
       if (u.pathname === '/iclock/cdata' && req.method === 'GET') res.end(`GET OPTION FROM: ${u.searchParams.get('SN')}\nATTLOGStamp=12345\nDelay=10`);
       else if (u.pathname === '/iclock/cdata') res.end(`OK: ${body.split('\n').filter(Boolean).length}`);
-      else if (u.pathname === '/iclock/getrequest') res.end('C:77:INFO');
+      else if (u.pathname === '/iclock/getrequest') res.end(upstreamPoll ?? 'C:77:INFO');
       else res.end('OK');
     });
   }).listen(0);
@@ -54,6 +56,7 @@ test.beforeAll(async () => {
   process.env.ADMS_COMMAND_CHECK_MS = '0';      // look for queued commands on every poll
   process.env.ADMS_ROUTINE_RECORD_MS = '0';     // record every poll's contact
   process.env.ADMS_HEARTBEAT_MS = '0';          // write the device's last contact every time
+  process.env.ADMS_UPSTREAM_RETRY_MS = '0';      // a down old server is tried again on the very next request
   const { default: handler } = await import('../../api/iclock');
   const { default: diagnostics } = await import('../../api/adms');
 
@@ -224,13 +227,46 @@ test('what the OLD server sends the device is recorded as command verbs only —
   expect(recent).toContain('INFO ×');                                               // the fake old server answers "C:77:INFO"
 });
 
-test('if the old server is down, nothing is acknowledged — the device keeps the scans and retries', async () => {
+test('ADMS_OUTAGE_MODE=retry (the old behaviour): if the old server is down, nothing is acknowledged — the device keeps the scans and retries', async () => {
+  process.env.ADMS_OUTAGE_MODE = 'retry';
   upstreamDown = true;
-  const r = await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=12347`, 'POST', '501\t2026-09-29 19:00:00\t0\t1\t0\t0\n');
-  expect(r.status).toBe(503);
-  const events = await list('accessEvents');
-  expect(events.some((e) => e.fields.at.stringValue === '2026-09-29T13:30:00.000Z')).toBe(false);   // not recorded twice later
-  upstreamDown = false;
+  try {
+    const r = await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=12347`, 'POST', '501\t2026-09-29 19:00:00\t0\t1\t0\t0\n');
+    expect(r.status).toBe(503);
+    const events = await list('accessEvents');
+    expect(events.some((e) => e.fields.at.stringValue === '2026-09-29T13:30:00.000Z')).toBe(false);   // not recorded twice later
+  } finally { upstreamDown = false; delete process.env.ADMS_OUTAGE_MODE; }
+});
+
+// The default: the CRM keeps working while the old server is down, and the old server gets
+// everything it missed — once, in order, with the scans' own times — when it's back.
+test('old server down: the CRM answers the device itself and records scans at once; the old server gets them when it’s back', async () => {
+  await seedDoc('gyms/crunch-wakad/devices/dev1/commands/o1', { type: 'query_users', status: 'queued', createdBy: 'x' });
+  upstreamDown = true;
+  const before = received.length;
+  try {
+    expect(await (await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`)).text()).toContain('PushProtVer=2.4.1');   // the CRM's own handshake
+    const poll = await (await send(`getrequest?SN=${SN}`)).text();
+    expect(poll).toMatch(/^C:9\d{8}:DATA QUERY USERINFO$/m);                       // CRM commands still go out
+    const scan = '501\t2026-10-27 07:15:00\t0\t1\t0\t0\n';
+    const up = await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=13000`, 'POST', scan);
+    expect(up.status).toBe(200);
+    expect(await up.text()).toBe('OK');
+    await expect.poll(async () => (await list('accessEvents')).some((e) => e.fields.at.stringValue === '2026-10-27T01:45:00.000Z')).toBe(true);   // recorded now
+    expect((await list('admsReplay/JJA1254700696/uploads')).length).toBe(1);        // a copy kept for the old server
+    expect(received.length).toBe(before);
+    // An unregistered serial isn't answered on the old server's behalf
+    expect((await send('getrequest?SN=NOTREGISTERED1')).status).toBe(503);
+
+    // Back: the next request goes to the old server, then it gets the scan it missed — once
+    upstreamDown = false;
+    expect(await (await send(`getrequest?SN=${SN}`)).text()).toContain('C:77:INFO');
+    await expect.poll(() => received.filter((r) => r.url === `/iclock/cdata?SN=${SN}&table=ATTLOG&Stamp=13000`).length).toBe(1);
+    expect(received.find((r) => r.url.includes('Stamp=13000'))!.body).toBe(scan);
+    await expect.poll(async () => (await list('admsReplay/JJA1254700696/uploads')).length).toBe(0);
+    await send(`getrequest?SN=${SN}`);
+    expect(received.filter((r) => r.url.includes('Stamp=13000')).length).toBe(1);
+  } finally { upstreamDown = false; }
 });
 
 // ── Diagnostics ──────────────────────────────────────────────────────────────
@@ -347,10 +383,10 @@ test('routine polls: all forwarded and answered as before, but the contact recor
 test('an error is recorded at once, and the next good request clears it at once — even at production timing', async () => {
   production();
   upstreamDown = true;
-  expect((await send(`getrequest?SN=${SN}`)).status).toBe(503);
+  expect((await send(`getrequest?SN=${SN}`)).status).toBe(200);                    // the CRM answers on its own…
   upstreamDown = false;
-  expect(((await getDoc(`admsDiagnostics/${SN}`))!.last as { mapValue: { fields: { status: { integerValue: string } } } }).mapValue.fields.status.integerValue).toBe('503');
-  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('didn’t answer');
+  expect(((await getDoc(`admsDiagnostics/${SN}`))!.last as { mapValue: { fields: { note: { stringValue: string } } } }).mapValue.fields.note.stringValue).toContain('answered by the CRM');
+  expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError.stringValue).toContain('isn’t answering');   // …and says so
   await send(`getrequest?SN=${SN}`);
   expect((await getDoc('gyms/crunch-wakad/devices/dev1'))!.lastError).toEqual({ nullValue: null });   // cleared at once, not in 10 minutes
   immediate();
@@ -455,4 +491,199 @@ test('open door at production timing: the queue listener delivers it on the next
   await expect.poll(async () => ours(await (await send(`getrequest?SN=${SN}`)).text(), 'AC_UNLOCK') ?? '', { timeout: 8000 }).toMatch(/AC_UNLOCK$/);
   expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/u4'))!.status.stringValue).toBe('sent');
   immediate();
+});
+
+// ── Shared write gate (Cloudflare runs several instances at once) ─────────────────────────────
+// Routine bookkeeping (the device's "last seen", the contact record) is written once per interval
+// in total: when the gate says another instance already wrote it, this one writes nothing — and
+// the device still gets the old server's answer. Errors are recorded whatever the gate says.
+test('write gate: routine heartbeat and contact record are skipped when another instance already wrote them; errors are always recorded', async () => {
+  const { registerWriteGate } = await import('../../api/iclock');
+  const asked: string[] = [];
+  let allow = false;
+  registerWriteGate({ async claim(key) { asked.push(key); return allow; } });
+  production();
+  const SN2 = 'GATE00000001', SN3 = 'GATE00000002';
+  await seedDoc('gyms/crunch-wakad/devices/devG1', { gymId: 'crunch-wakad', name: 'Gate test 1', model: 'eSSL X2008', serialNumber: SN2, protocol: 'adms', enabled: true, nextUserId: 1, lastSeenAt: null, lastSyncAt: null, firmware: null, lastError: null });
+  await seedDoc('gyms/crunch-wakad/devices/devG2', { gymId: 'crunch-wakad', name: 'Gate test 2', model: 'eSSL X2008', serialNumber: SN3, protocol: 'adms', enabled: true, nextUserId: 1, lastSeenAt: null, lastSyncAt: null, firmware: null, lastError: null });
+
+  // Another instance already wrote both within the interval: nothing is written, the device is answered as before
+  for (let i = 0; i < 3; i++) expect(await (await send(`getrequest?SN=${SN2}`)).text()).toBe('C:77:INFO');
+  expect(asked).toEqual(expect.arrayContaining(['heartbeat/devG1', `diagnostics/${SN2}`]));
+  expect((await getDoc('gyms/crunch-wakad/devices/devG1'))!.lastSeenAt).toEqual({ nullValue: null });
+  expect(await getDoc(`admsDiagnostics/${SN2}`)).toBeNull();
+
+  // This instance is the first in the interval: both are written
+  allow = true;
+  expect(await (await send(`getrequest?SN=${SN3}`)).text()).toBe('C:77:INFO');
+  expect((await getDoc('gyms/crunch-wakad/devices/devG2'))!.lastSeenAt).toHaveProperty('timestampValue');
+  expect(await getDoc(`admsDiagnostics/${SN3}`)).not.toBeNull();
+
+  // An error (old server down) is recorded at once, even when the gate would say "already written"
+  allow = false;
+  upstreamDown = true;
+  expect((await send(`getrequest?SN=${SN2}`)).status).toBe(200);                  // answered by the CRM (old server down)
+  upstreamDown = false;
+  const d = (await getDoc(`admsDiagnostics/${SN2}`))!;
+  expect(JSON.stringify(d)).toContain('old server unreachable');
+
+  registerWriteGate({ async claim() { return true; } });
+  immediate();
+});
+
+// The X2008 got stuck on 27 Oct 2026: the old server dropped a 65 KB upload of fingerprint
+// templates, the relay answered 503, and the device re-sent that one upload for hours — so no
+// scans and no commands got through behind it.
+const fpLine = (pin: number) => `FP PIN=${pin}\tFID=6\tSize=1500\tValid=1\tTMP=${'A'.repeat(1500)}`;
+const FP_UPLOAD = Array.from({ length: 42 }, (_, i) => fpLine(20001 + i)).join('\n') + '\n';
+
+test('a big upload without scans that the old server drops is sent again in pieces — every line reaches it', async () => {
+  upstreamMaxBody = 20_000;
+  const before = received.length;
+  const r = await send(`cdata?SN=${SN}&table=OPERLOG&Stamp=9999`, 'POST', FP_UPLOAD);
+  expect(r.status).toBe(200);
+  const pieces = received.slice(before).filter((x) => x.url.includes('table=OPERLOG'));
+  expect(pieces.length).toBeGreaterThan(2);
+  expect(pieces.every((x) => x.body.length <= 20_000 && x.url === `/iclock/cdata?SN=${SN}&table=OPERLOG&Stamp=9999`)).toBe(true);
+  expect(pieces.map((x) => x.body).join('')).toBe(FP_UPLOAD);
+  expect(JSON.stringify(await getDoc(`admsDiagnostics/${SN}`))).toContain('it took it in');
+  upstreamMaxBody = Infinity;
+});
+
+test('ADMS_OUTAGE_MODE=retry: an upload without scans the old server keeps refusing is acknowledged after 3 tries; scans never are', async () => {
+  process.env.ADMS_OUTAGE_MODE = 'retry';
+  upstreamDown = true;
+  const statuses: number[] = [];
+  for (let i = 0; i < 3; i++) statuses.push((await send(`cdata?SN=${SN}&table=OPERLOG&Stamp=9999`, 'POST', FP_UPLOAD)).status);
+  expect(statuses).toEqual([503, 503, 200]);
+  const last = ((await getDoc(`admsDiagnostics/${SN}`)) as unknown as { last: { mapValue: { fields: Record<string, { stringValue?: string; booleanValue?: boolean; nullValue?: null }> } } }).last.mapValue.fields;
+  expect(last.note.stringValue).toContain('acknowledged so the device moves on');
+  expect(last).toMatchObject({ status: { integerValue: '200' }, upstreamStatus: { nullValue: null } });   // the old server never took it
+  // Scans: refused every time, however often the device tries
+  const scans: number[] = [];
+  for (let i = 0; i < 5; i++) scans.push((await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=1`, 'POST', '10061\t2026-10-27 09:00:00\t0\t1\t0\t0\n')).status);
+  expect(scans).toEqual([503, 503, 503, 503, 503]);
+  // A user record mixed with a scan counts as scans: never acknowledged without the old server
+  const mixed: number[] = [];
+  for (let i = 0; i < 4; i++) mixed.push((await send(`cdata?SN=${SN}&table=OPERLOG&Stamp=2`, 'POST', `USER PIN=10061\tName=X\n10061\t2026-10-27 09:00:00\t0\t1\t0\t0\n`)).status);
+  upstreamDown = false;
+  delete process.env.ADMS_OUTAGE_MODE;
+  expect(mixed).toEqual([503, 503, 503, 503]);
+});
+
+// Production since 27 Oct 2026 (ADMS_UPSTREAM="none"): the CRM answers the X2008 itself. The device
+// gets the old server's own settings, every scan is recorded and acknowledged, CRM commands still
+// go out — and nothing at all is sent to the old server.
+test('without the old server: the CRM answers the device itself and records everything', async () => {
+  const saved = process.env.ADMS_UPSTREAM;
+  process.env.ADMS_UPSTREAM = 'none';
+  const before = received.length;
+  try {
+    const hs = await (await send(`cdata?SN=${SN}&options=all&pushver=2.4.1`)).text();
+    expect(hs).toContain(`GET OPTION FROM: ${SN}`);
+    for (const o of ['ATTLOGStamp=None', 'OPERLOGStamp=None', 'Delay=3', 'TransFlag=1111000000', 'PushProtVer=2.4.1', 'Realtime=1']) expect(hs).toContain(o);
+
+    const up = await send(`cdata?SN=${SN}&table=ATTLOG&Stamp=20000`, 'POST', '501\t2026-10-27 18:05:10\t0\t1\t0\t0\n');
+    expect(up.status).toBe(200);
+    expect(await up.text()).toBe('OK');
+    await expect.poll(async () => (await list('accessEvents')).some((e) => JSON.stringify(e.fields).includes('2026-10-27T12:35:10'))).toBe(true);
+
+    // The upload that stuck the device on 27 Oct: taken at once
+    expect((await send(`cdata?SN=${SN}&table=OPERLOG&Stamp=9999`, 'POST', FP_UPLOAD)).status).toBe(200);
+
+    await seedDoc('gyms/crunch-wakad/devices/dev1/commands/n1', { type: 'add_user', deviceUserId: '20001', name: 'Neha New', status: 'queued', createdBy: 'x' });
+    const poll = await (await send(`getrequest?SN=${SN}`)).text();
+    expect(poll).toMatch(/^C:9\d{8}:DATA UPDATE USERINFO PIN=20001\tName=Neha New\t/m);
+    expect(poll).not.toContain('C:77:INFO');                                       // no old-server commands any more
+    const id = poll.split('\n').find((l) => l.includes('PIN=20001'))!.split(':')[1];
+    expect(await (await send(`devicecmd?SN=${SN}`, 'POST', `ID=${id}&Return=0&CMD=DATA\n`)).text()).toBe('OK');
+    expect((await getDoc('gyms/crunch-wakad/devices/dev1/commands/n1'))!.status.stringValue).toBe('done');
+
+    expect(received.length).toBe(before);                                          // the old server got nothing
+  } finally {
+    process.env.ADMS_UPSTREAM = saved;
+  }
+});
+
+test('the device’s own options upload is kept (what its firmware supports) — and still passed on', async () => {
+  const opts = '~DeviceName=X2008,FWVersion=Ver 6.60,UserCount=537,FPCount=1100,~MaxUserCount=30,IPAddress=192.168.1.201';
+  const before = received.length;
+  expect((await send(`cdata?SN=${SN}&table=options`, 'POST', opts)).status).toBe(200);
+  expect(received.length).toBe(before + 1);
+  await expect.poll(async () => (await getDoc(`admsDiagnostics/${SN}_options`))?.deviceOptions?.stringValue).toBe(opts);
+});
+
+test('the options record is not listed as another device; it comes with its device', async () => {
+  const r = await fetch(`${relayUrl}/api/adms?check=status`, { headers: { Authorization: `Bearer ${await idToken()}` } });
+  const j = await r.json() as { contacts: { sn: string; deviceOptions: { text: string } | null }[] };
+  expect(j.contacts.filter((c) => c.sn === SN)).toHaveLength(1);
+  expect(j.contacts.find((c) => c.sn === SN)!.deviceOptions!.text).toContain('FWVersion');
+  expect(j.contacts.some((c) => c.sn.endsWith('_options'))).toBe(false);
+});
+
+// The old server deletes every user it doesn't know from the device — including the CRM's own.
+test('the old server can’t delete CRM users from the device; its own users it still can — and it hears “done”', async () => {
+  await seedDoc('biometricIdentities/dev1_20005', { gymId: 'crunch-wakad', personType: 'member', memberId: 'm1', trainerId: null, deviceId: 'dev1', deviceUserId: '20005', method: 'fingerprint', status: 'SYNCED', managedBy: 'crm', accessEnabled: true, enrollment: 'confirmed' });
+  await seedDoc('biometricIdentities/dev1_20006', { gymId: 'crunch-wakad', personType: 'member', memberId: 'm1', trainerId: null, deviceId: 'dev1', deviceUserId: '20006', method: 'fingerprint', status: 'REMOVED', managedBy: 'crm', accessEnabled: true, enrollment: 'confirmed' });
+  upstreamPoll = 'C:501:DATA DELETE USERINFO PIN=20005\nC:502:DATA DELETE USERINFO PIN=502\nC:503:DATA DELETE FINGERTMP PIN=20005\tFID=6\nC:504:DATA DELETE USERINFO PIN=20006\nC:505:DATA UPDATE USERINFO PIN=20005\tName=X\tTZ=0000000100000000\n';
+  try {
+    const poll = await (await send(`getrequest?SN=${SN}`)).text();
+    expect(poll).toContain('C:502:DATA DELETE USERINFO PIN=502');                  // an old-system user: passed on
+    expect(poll).toContain('C:504:DATA DELETE USERINFO PIN=20006');                // a link the CRM removed: passed on
+    expect(poll).not.toContain('PIN=20005');                                         // a CRM user: kept from the device
+    const d = (await getDoc(`admsDiagnostics/${SN}`)) as unknown as { last: { mapValue: { fields: { note: { stringValue: string } } } } };
+    expect(d.last.mapValue.fields.note.stringValue).toContain('kept the old server from deleting or changing CRM users 20005');
+
+    // The device reports what it did; the old server also hears its two deletes of 20005 as done
+    const before = received.length;
+    await send(`devicecmd?SN=${SN}`, 'POST', 'ID=502&Return=0&CMD=DATA\nID=504&Return=0&CMD=DATA\n');
+    expect(received.length).toBe(before + 1);
+    expect(received.at(-1)!.body).toBe('ID=502&Return=0&CMD=DATA\nID=504&Return=0&CMD=DATA\nID=501&Return=0&CMD=DATA\nID=503&Return=0&CMD=DATA\nID=505&Return=0&CMD=DATA\n');
+    // …once only
+    await send(`devicecmd?SN=${SN}`, 'POST', 'ID=77&Return=0&CMD=INFO\n');
+    expect(received.at(-1)!.body).toBe('ID=77&Return=0&CMD=INFO\n');
+  } finally { upstreamPoll = null; }
+});
+
+// Blocking CRM-managed users ON the device (ADMS_ENFORCE_ACCESS). Old-system users never touched.
+test('access control on the device: dry run records only; "on" blocks an expired CRM user, a renewal unblocks', async () => {
+  await seedDoc('members/mx', { name: 'Exp Ired', phone: '9000000777', phoneKey: '9000000777', status: 'active', membershipEnd: '2026-01-01', activeUntil: '2026-01-01' });
+  await seedDoc('biometricIdentities/dev1_20010', { gymId: 'crunch-wakad', personType: 'member', memberId: 'mx', trainerId: null, deviceId: 'dev1', deviceUserId: '20010', method: 'fingerprint', status: 'SYNCED', managedBy: 'crm', accessEnabled: true, enrollment: 'confirmed' });
+  await seedDoc('biometricIdentities/dev1_10070', { gymId: 'crunch-wakad', personType: 'member', memberId: 'mx', trainerId: null, deviceId: 'dev1', deviceUserId: '10070', method: 'fingerprint', status: 'SYNCED' });   // old system
+  const cmds = async () => (await list('gyms/crunch-wakad/devices/dev1/commands')).map((d) => d.fields).filter((f) => /block_user/.test(f.type.stringValue ?? ''));
+  process.env.ADMS_ENFORCE_FULL_MS = '0';
+  try {
+    process.env.ADMS_ENFORCE_ACCESS = 'dry';
+    await send(`getrequest?SN=${SN}`);
+    await expect.poll(async () => JSON.stringify(await getDoc(`admsDiagnostics/${SN}_enforce`))).toContain('20010');
+    const dry = JSON.stringify(await getDoc(`admsDiagnostics/${SN}_enforce`));
+    expect(dry).toContain('MEMBERSHIP_EXPIRED');
+    expect(dry).not.toContain('10070');
+    expect(await cmds()).toEqual([]);                                               // dry: nothing for the device
+
+    process.env.ADMS_ENFORCE_ACCESS = 'on';
+    await send(`getrequest?SN=${SN}`);                                               // works out the change (after answering)
+    await expect.poll(async () => (await cmds()).map((f) => `${f.type.stringValue}:${f.deviceUserId.stringValue}`).sort().join()).toBe('block_user:20010,block_user:503');   // 503: the CRM member whose membership lapsed (earlier test)
+    let poll = '';
+    await expect.poll(async () => { poll = await (await send(`getrequest?SN=${SN}`)).text(); return poll; }).toMatch(/DATA UPDATE USERINFO PIN=20010\t.*TZ=0001000000000000/);
+    expect(poll).not.toContain('PIN=10070');
+    const cid = poll.split('\n').find((l) => l.includes('PIN=20010'))!.split(':')[1];
+    await send(`devicecmd?SN=${SN}`, 'POST', `ID=${cid}&Return=0&CMD=DATA\n`);
+    await expect.poll(async () => (await getDoc('biometricIdentities/dev1_20010'))!.deviceAccess?.stringValue).toBe('blocked');
+    // Polls go on; nothing is sent twice
+    await send(`getrequest?SN=${SN}`); await send(`getrequest?SN=${SN}`);
+    expect((await cmds()).length).toBe(2);
+
+    // Renewal (the member record changes) → picked up by the quick check → unblocked
+    process.env.ADMS_ENFORCE_FULL_MS = '3600000'; process.env.ADMS_ENFORCE_QUICK_MS = '0';
+    await seedDoc('members/mx', { name: 'Exp Ired', phone: '9000000777', phoneKey: '9000000777', status: 'active', membershipEnd: '2099-01-01', activeUntil: '2099-01-01', updatedAt: ts(new Date().toISOString()) });
+    await send(`getrequest?SN=${SN}`);
+    await expect.poll(async () => (await cmds()).some((f) => f.type.stringValue === 'unblock_user')).toBe(true);
+    await expect.poll(async () => { poll = await (await send(`getrequest?SN=${SN}`)).text(); return poll; }).toMatch(/DATA UPDATE USERINFO PIN=20010\t.*TZ=0000000100000000/);
+    const uid = poll.split('\n').find((l) => l.includes('PIN=20010'))!.split(':')[1];
+    await send(`devicecmd?SN=${SN}`, 'POST', `ID=${uid}&Return=0&CMD=DATA\n`);
+    await expect.poll(async () => (await getDoc('biometricIdentities/dev1_20010'))!.deviceAccess?.stringValue).toBe('open');
+  } finally {
+    delete process.env.ADMS_ENFORCE_ACCESS; delete process.env.ADMS_ENFORCE_FULL_MS; delete process.env.ADMS_ENFORCE_QUICK_MS;
+  }
 });

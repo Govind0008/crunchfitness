@@ -4,7 +4,8 @@ import { localDay, onLeave, personOf, trainerDay } from '../../api/_lib/attendan
 
 // Attendance derived from device punches (api/_lib/ingest.ts, reconcile.ts) against the emulator:
 //   member punch  → accessEvents + one checkins visit per member per local day
-//   trainer punch → accessEvents + trainerAttendance (first punch = in, last = out)
+//   trainer punch → accessEvents only (staff attendance is kept in the gym's HR platform)
+//   every punch    → expires 90 days after it happened (expireAt; Firestore TTL deletes it)
 //   unknown user  → accessEvents only, unresolved
 // Named *-rules so it runs once (desktop project only).
 test.describe.configure({ mode: 'serial' });
@@ -86,6 +87,9 @@ test('a member punch becomes their visit for that local day, linked both ways', 
   expect(visit!.createdAt).toBeTruthy();
   expect((await get('members/m1'))!.lastVisitAt.toDate().toISOString()).toBe('2026-09-20T00:40:00.000Z');
   expect(await get(`biometricIdentities/${DEV}_1`)).toMatchObject({ status: 'SYNCED' });
+  // The raw punch expires 90 days after it happened; the visit has no expiry and stays
+  expect((ev.expireAt as { toDate: () => Date }).toDate().toISOString()).toBe('2026-12-19T00:40:00.000Z');
+  expect(visit!.expireAt).toBeUndefined();
 });
 
 test('more punches the same day stay one visit; re-delivery changes nothing', async () => {
@@ -124,39 +128,20 @@ test('a punch on a day checked in at the desk joins that visit, keeping both sou
 });
 
 // ── Trainers ──────────────────────────────────────────────────────────────────
-test('trainer: one punch is a check-in with no check-out, never a member visit', async () => {
-  await ingest(fs, DEV, [scan('7', '2026-09-20 06:00:00')]);
-  const day = await get('trainerAttendance/2026-09-20_T1');
-  expect(day).toMatchObject({ trainerId: 'T1', trainerName: 'Coach One', date: '2026-09-20', status: 'MISSING_CHECKOUT', checkoutAt: null, durationMs: null, punchCount: 1 });
-  const [ev] = await eventsOf('7');
-  expect(ev).toMatchObject({ personType: 'trainer', trainerId: 'T1', memberId: null, attendanceRef: 'trainerAttendance/2026-09-20_T1' });
+test('trainer: a scan is recorded as a staff punch (and expires); no trainer attendance, never a member visit', async () => {
+  const r = await ingest(fs, DEV, [scan('7', '2026-09-20 06:00:00'), scan('7', '2026-09-20 21:00:00')]);
+  expect(r).toMatchObject({ events: 2, trainers: 2, attendanceCreated: 0 });
+  const evs = await eventsOf('7');
+  expect(evs).toHaveLength(2);
+  for (const ev of evs) {
+    expect(ev).toMatchObject({ personType: 'trainer', trainerId: 'T1', memberId: null, attendanceRef: null });
+    expect((ev.expireAt as { toMillis: () => number }).toMillis() - Date.parse(ev.at as string)).toBe(90 * 86_400_000);
+  }
+  expect(await get('trainerAttendance/2026-09-20_T1')).toBeUndefined();
+  expect((await fs.collection('trainerAttendance').get()).size).toBe(0);
   expect((await fs.collection('checkins').where('deviceUserId', '==', '7').get()).size).toBe(0);
 });
 
-test('trainer: later punches — the last is the check-out; middle punches stay events; out of order is fine', async () => {
-  await ingest(fs, DEV, [scan('7', '2026-09-20 21:00:00'), scan('7', '2026-09-20 13:00:00')]);
-  const day = await get('trainerAttendance/2026-09-20_T1');
-  expect(day).toMatchObject({ status: 'COMPLETED', punchCount: 3, durationMs: 15 * H, exceptions: [] });
-  expect(day!.firstAt.toDate().toISOString()).toBe('2026-09-20T00:30:00.000Z');
-  expect(day!.checkoutAt.toDate().toISOString()).toBe('2026-09-20T15:30:00.000Z');
-  expect(await eventsOf('7')).toHaveLength(3);
-  // Re-delivered: nothing changes
-  await ingest(fs, DEV, [scan('7', '2026-09-20 13:00:00')]);
-  expect((await get('trainerAttendance/2026-09-20_T1'))!.punchCount).toBe(3);
-});
-
-test('trainer: 23:59 and 00:05 are two different days', async () => {
-  await ingest(fs, DEV, [scan('7', '2026-09-26 23:59:00'), scan('7', '2026-09-27 00:05:00')]);
-  expect(await get('trainerAttendance/2026-09-26_T1')).toMatchObject({ status: 'MISSING_CHECKOUT', punchCount: 1 });
-  expect(await get('trainerAttendance/2026-09-27_T1')).toMatchObject({ status: 'MISSING_CHECKOUT', punchCount: 1 });   // a Sunday: no weekday rules
-});
-
-test('trainer: a punch during approved leave is flagged; pending or cancelled leave isn’t', async () => {
-  await ingest(fs, DEV, [scan('8', '2026-09-21 10:00:00'), scan('8', '2026-09-23 10:00:00'), scan('8', '2026-09-24 10:00:00')]);
-  expect((await get('trainerAttendance/2026-09-21_T2'))!.exceptions).toEqual(['PUNCH_DURING_APPROVED_LEAVE']);
-  expect((await get('trainerAttendance/2026-09-23_T2'))!.exceptions).toEqual([]);
-  expect((await get('trainerAttendance/2026-09-24_T2'))!.exceptions).toEqual([]);
-});
 
 test('unknown and unlinked device users are kept as unresolved — no attendance, no guessing by name', async () => {
   await ingest(fs, DEV, [scan('44', '2026-09-20 08:00:00'), scan('9', '2026-09-20 08:05:00')]);   // 9 = a removed trainer link

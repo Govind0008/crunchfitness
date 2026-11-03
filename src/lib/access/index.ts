@@ -124,6 +124,13 @@ export interface AccessDevice {
   /** Next device user ID to hand out (keeps IDs unique per device) */
   nextUserId: number;
 }
+/**
+ * New device user IDs from the CRM start here. The old attendance system numbers its people in its
+ * own series (on the X2008 in Oct 2026: 105–3xxx, then 10001–10060, still growing), and the device
+ * keeps one user per ID — so the CRM must never take a number the old system has used or will hand
+ * out next. Its own block, far above, keeps the two apart; IDs already on the device are skipped.
+ */
+export const CRM_USER_ID_START = 20001;
 /** Online = the integration service heard from it recently. Never assumed. */
 export const ONLINE_WINDOW_MS = 10 * 60 * 1000;
 export type DeviceHealth = 'online' | 'offline' | 'never_connected' | 'disabled';

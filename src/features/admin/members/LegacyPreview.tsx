@@ -45,6 +45,10 @@ const SheetWords = ({ o }: { o: RowOutcome }) => {
 // ── Review queue ──────────────────────────────────────────────────────────────
 function decisionOptions(o: RowOutcome, d: Decision | ''): { value: Decision; label: string }[] {
   const r = o.row;
+  // Gym + PT in one payment, not split automatically: both (with the PT part), or all gym / all PT
+  if (r.combo || ((d === 'membership' || d === 'pt' || d === 'both') && /\+/.test(r.pkg.raw) && /pt/i.test(r.pkg.raw))) {
+    return [{ value: 'both', label: 'Both — gym membership + PT (enter the PT part)' }, { value: 'membership', label: 'All as a gym membership' }, { value: 'pt', label: 'All as personal training' }];
+  }
   // Unclear package: staff choose the type (once chosen the row is re-read as that type)
   if (r.pkg.kind === 'unknown' || d === 'membership' || d === 'pt') {
     return r.pkg.months ? [{ value: 'membership', label: `Import as a gym membership (${r.pkg.months} months)` }, { value: 'pt', label: `Import as personal training (${r.pkg.months} months)` }] : [];
@@ -59,7 +63,7 @@ function decisionOptions(o: RowOutcome, d: Decision | ''): { value: Decision; la
   return opts;
 }
 
-export function ReviewQueue({ plan, decisions, onDecide }: { plan: ImportPlan; decisions: Map<number, Decision>; onDecide: (row: number, d: Decision | null) => void }) {
+export function ReviewQueue({ plan, decisions, onDecide, splits = new Map(), onSplit }: { plan: ImportPlan; decisions: Map<number, Decision>; onDecide: (row: number, d: Decision | null) => void; splits?: Map<number, number>; onSplit?: (row: number, paise: number | null) => void }) {
   const items = plan.outcomes.filter((o) => o.status === 'review' || (o.status === 'ready' && decisions.has(o.row.row)));
   const blocked = plan.skipped;
   if (!items.length && !blocked.length) return <p className="text-sm text-ink-300">Nothing needs a decision — every row was understood.</p>;
@@ -89,6 +93,15 @@ export function ReviewQueue({ plan, decisions, onDecide }: { plan: ImportPlan; d
                       <option value="">Leave out for now</option>
                       {opts.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
                     </select>
+                    {d === 'both' && onSplit && (
+                      <span className="mt-2 block">PT part of this payment (₹)
+                        <input type="number" inputMode="numeric" min={1} max={r.amountPaise ? r.amountPaise / 100 - 1 : undefined} aria-label={`PT part for row ${r.row}`}
+                          defaultValue={splits.get(r.row) != null ? splits.get(r.row)! / 100 : r.suggestedPtPaise != null ? r.suggestedPtPaise / 100 : ''}
+                          onBlur={(e) => onSplit(r.row, e.target.value ? Math.round(Number(e.target.value) * 100) : null)}
+                          className="mt-1 h-11 w-full rounded-xl border border-white/15 bg-ink-950 px-3 text-sm text-white focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/30" />
+                        <span className="mt-1 block text-[11px] text-ink-500">{r.suggestedPtPaise != null ? `PT sheet says ₹${(r.suggestedPtPaise / 100).toLocaleString('en-IN')}. ` : ''}The rest goes to the gym membership.</span>
+                      </span>
+                    )}
                   </label>
                 </li>
               );
@@ -242,7 +255,7 @@ export function ImportReport({ result, children }: { result: ImportResult; child
       <p className="mt-1 text-sm text-ink-300">{result.file} · sheet “{result.sheet}” · {result.rows} rows</p>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Count n={result.membersCreated} label="members created" /><Count n={result.membersMatched} label="existing members matched" />
-        <Count n={result.memberships} label="membership records created" /><Count n={result.ptPackages} label="PT records created" />
+        <Count n={result.memberships} label="membership records created" /><Count n={result.ptPackages} label="PT records created" /><Count n={result.dayPasses ?? 0} label="day passes recorded (payment only)" />
         <Count n={result.payments} label="payments created" /><Count n={result.duplicatesPrevented} label="skipped as exact duplicate" />
         <Count n={result.needsReview} label="left for review" tone={result.needsReview ? 'warn' : undefined} /><Count n={result.conflicts} label="conflicts" tone={result.conflicts ? 'warn' : undefined} />
       </div>

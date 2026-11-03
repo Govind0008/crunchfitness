@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, ChevronDown, Dumbbell, Fingerprint, IndianRupee, UserPlus } from 'lucide-react';
+import { Camera, CheckCircle2, ChevronDown, Dumbbell, Fingerprint, ImageUp, IndianRupee, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DuplicateMemberError, createMember, getMember, periodEnd, todayIST, validateMember, type Member, type MemberInput } from '@/lib/admin/members';
+import { DuplicateMemberError, createMember, getMember, parseFreeMonths, periodEndWithFree, todayIST, validateMember, withFreeLabel, type Member, type MemberInput } from '@/lib/admin/members';
 import { uploadMemberPhoto, validatePhoto } from '@/lib/admin/photos';
 import { Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
@@ -11,6 +11,7 @@ import PaymentForm from '@/features/admin/payments/PaymentForm';
 import { SideDrawer } from '../kit';
 import { useLookups } from './lookups';
 import Avatar from './Avatar';
+import CameraCapture, { photoButtonCls } from './CameraCapture';
 import PtPackageForm from './PtPackageForm';
 import EnrollWizard, { memberPerson } from '@/features/admin/access/EnrollWizard';
 
@@ -46,7 +47,10 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
   const navigate = useNavigate();
   const { plans, trainers } = useLookups();
   const [f, setF] = useState<MemberInput>(blank);
+  // Free months on top of the plan ("12 + 2"): only moves the expiry date, which stays editable
+  const [freeMonths, setFreeMonths] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [camera, setCamera] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [dup, setDup] = useState<Member | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,14 +66,19 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
   // A fresh form each time the drawer opens
   useEffect(() => {
     if (!open) return;
-    setF(blank()); setPhoto(null); setErrors([]); setDup(null); setStep('form'); setSaved(null); setNote(null);
+    setF(blank()); setFreeMonths(''); setPhoto(null); setErrors([]); setDup(null); setStep('form'); setSaved(null); setNote(null);
     setMore({ pt: false, contact: false, access: false }); setWantPt(false); setWantAccess(false);
   }, [open]);
 
   const set = <K extends keyof MemberInput>(k: K, v: MemberInput[K]) => setF((x) => ({ ...x, [k]: v }));
-  const choosePlan = (planId: string) => {
-    const end = periodEnd(f.membershipStart ?? '', plans.get(planId)?.duration);
-    setF((x) => ({ ...x, planId: planId || null, membershipEnd: end ?? x.membershipEnd }));
+  /** The expiry follows the plan, the start date and any free months; staff can still type their own */
+  const plan = (patch: { planId?: string | null; start?: string | null; free?: string }) => {
+    const planId = patch.planId !== undefined ? patch.planId : f.planId;
+    const start = patch.start !== undefined ? patch.start : f.membershipStart;
+    const free = patch.free !== undefined ? patch.free : freeMonths;
+    if (patch.free !== undefined) setFreeMonths(free);
+    const end = planId ? periodEndWithFree(start ?? '', plans.get(planId)?.duration, parseFreeMonths(free)) : null;
+    setF((x) => ({ ...x, planId: planId || null, membershipStart: start, membershipEnd: end ?? x.membershipEnd }));
   };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -91,6 +100,7 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
 
   const title = step === 'form' ? 'Add member' : step === 'pay' ? 'Collect payment' : step === 'pt' ? 'Add PT package' : step === 'access' ? 'Enroll access' : 'Member added';
   const planPrice = f.planId ? plans.get(f.planId)?.price : undefined;
+  const free = parseFreeMonths(freeMonths);
 
   return (
     <SideDrawer open={open} onOpenChange={onOpenChange} title={title} description={saved ? saved.name : 'Name and number are all you need — everything else can wait'}>
@@ -106,26 +116,37 @@ const AddMemberDrawer = ({ open, onOpenChange, onAdded }: { open: boolean; onOpe
           <Section n={1} title="Basic details">
             <div className="flex items-center gap-4">
               {preview ? <img src={preview} alt="" className="h-16 w-16 rounded-full object-cover" /> : <Avatar m={{ id: 'new', name: f.name || '?', photo: null }} size={64} />}
-              <label className="inline-flex cursor-pointer items-center rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 focus-within:border-brand-400">
-                {photo ? 'Change photo' : 'Add photo'}
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo"
-                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; const bad = validatePhoto(file); if (bad) { setErrors([bad]); return; } setPhoto(file); }} />
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={photoButtonCls} onClick={() => setCamera(true)}><Camera className="h-4 w-4" aria-hidden /> Take photo</button>
+                <label className={photoButtonCls}>
+                  <ImageUp className="h-4 w-4" aria-hidden /> {photo ? 'Change' : 'Upload'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Member photo"
+                    onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; const bad = validatePhoto(file); if (bad) { setErrors([bad]); return; } setPhoto(file); }} />
+                </label>
+              </div>
               <span className="text-xs text-ink-500">Optional · admins only</span>
             </div>
+            <CameraCapture open={camera} onOpenChange={setCamera} onCapture={setPhoto} />
             <Field label="Full name" htmlFor="am-name"><input id="am-name" className={inputCls} value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="off" /></Field>
             <Field label="Mobile number" htmlFor="am-phone"><input id="am-phone" className={inputCls} type="tel" inputMode="tel" value={f.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
           </Section>
 
           <Section n={2} title="Membership">
-            <Field label="Plan" hint={planPrice ? `Current price ${planPrice}` : 'Pick one to fill in the expiry date'} htmlFor="am-plan">
-              <select id="am-plan" className={inputCls} value={f.planId ?? ''} onChange={(e) => choosePlan(e.target.value)}>
-                <option value="">No plan yet</option>
-                {[...plans.values()].map((p) => <option key={p.id} value={p.id}>{p.duration}</option>)}
-              </select>
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+              <Field label="Plan" hint={planPrice ? `Current price ${planPrice}` : 'Pick one to fill in the expiry date'} htmlFor="am-plan">
+                <select id="am-plan" className={inputCls} value={f.planId ?? ''} onChange={(e) => plan({ planId: e.target.value || null })}>
+                  <option value="">No plan yet</option>
+                  {[...plans.values()].map((p) => <option key={p.id} value={p.id}>{p.duration}</option>)}
+                </select>
+              </Field>
+              <Field label="Free months" hint="Optional" htmlFor="am-free">
+                <input id="am-free" className={inputCls} inputMode="numeric" placeholder="0" value={freeMonths} disabled={!f.planId}
+                  onChange={(e) => plan({ free: e.target.value.replace(/\D/g, '').slice(0, 2) })} />
+              </Field>
+            </div>
+            {f.planId && free > 0 && <p className="-mt-1 text-sm font-semibold text-brand-fg">{withFreeLabel(plans.get(f.planId)?.duration ?? '', free)}</p>}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Starts" htmlFor="am-start"><input id="am-start" type="date" className={inputCls} value={f.membershipStart ?? ''} onChange={(e) => set('membershipStart', e.target.value || null)} /></Field>
+              <Field label="Starts" htmlFor="am-start"><input id="am-start" type="date" className={inputCls} value={f.membershipStart ?? ''} onChange={(e) => plan({ start: e.target.value || null })} /></Field>
               <Field label="Expires" hint="Leave empty if none" htmlFor="am-end"><input id="am-end" type="date" className={inputCls} value={f.membershipEnd ?? ''} onChange={(e) => set('membershipEnd', e.target.value || null)} /></Field>
             </div>
           </Section>

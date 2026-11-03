@@ -39,7 +39,7 @@ const AccessActivity = () => {
   const person = (e: AccessEvent) => {
     const type = e.personType ?? (e.memberId ? 'member' : 'unknown');
     if (type === 'member' && e.memberId) return <Link to={`/admin/members/${e.memberId}?tab=attendance`} className="font-semibold text-white hover:underline">{names?.get(e.memberId) ?? 'Member'}</Link>;
-    if (type === 'trainer' && e.trainerId) return <Link to={`/admin/trainers/${e.trainerId}?tab=attendance`} className="font-semibold text-white hover:underline">{team?.get(e.trainerId) ?? 'Trainer'}</Link>;
+    if (type === 'trainer' && e.trainerId) return <Link to={`/admin/trainers/${e.trainerId}`} className="font-semibold text-white hover:underline">{team?.get(e.trainerId) ?? 'Trainer'}</Link>;
     return <span className="font-semibold text-amber-100">{e.deviceUserName ? `“${e.deviceUserName}” on the device` : 'Not linked'}</span>;
   };
 

@@ -12,7 +12,7 @@
 //   /poc/old-server-probe → can the Worker reach the old server? (front page only; 404 unless the
 //                      POC_PROBE_KEY secret is set and given as ?key=; used by the cut-over pre-flight)
 // Requests to bare IP addresses (the old server) go over TCP sockets: see tcp-fetch.ts.
-import iclock, { registerCommandSignal } from '../../api/iclock';
+import iclock, { registerCommandSignal, registerWriteGate } from '../../api/iclock';
 import adms from '../../api/adms';
 import instagram from '../../api/instagram';
 import sitemap from '../../api/sitemap';
@@ -28,31 +28,73 @@ installTcpFetch(() => {
   try { return env.ADMS_UPSTREAM_TCP === '1' && env.ADMS_UPSTREAM ? new URL(env.ADMS_UPSTREAM).origin : null; } catch { return null; }
 }, () => typeof process !== 'undefined' && process.env.ADMS_UPSTREAM_TCP === '0');
 
+export { CommandSignalObject } from './command-signal';
+
 /**
- * Open-door fast lane (see registerCommandSignal in api/iclock.ts). A raised signal lives in this
- * server instance's memory and in the edge cache of this Cloudflare location (the device and the
- * gym's staff are served from the same nearby location), for 60 s. Taking it clears both.
- * Only a hint: the periodic Firestore check still delivers every command within its expiry.
+ * Open-door fast lane (see registerCommandSignal in api/iclock.ts). A raised signal is kept in
+ * three places, for 60 s: this server instance's memory and this Cloudflare location's edge cache
+ * (instant, but only seen when staff and the device reach the same location), and the device's
+ * Durable Object (command-signal.ts), seen from every location. Taking it clears all three.
+ * Only a hint: the periodic Firestore check still delivers every command within its expiry, also
+ * when the Durable Object is unreachable or over its free daily limit.
  */
 const raised = new Map<string, number>();
 const signalKey = (deviceId: string) => `https://signal.crunch.internal/command-queued/${encodeURIComponent(deviceId)}`;
 const edgeCache = () => (typeof caches !== 'undefined' ? (caches as unknown as { default: Cache }).default : null);
+interface SignalStub { raise(): Promise<void>; take(): Promise<boolean> }
+interface SignalNamespace { idFromName(name: string): unknown; get(id: unknown): SignalStub }
+let signalObjects: SignalNamespace | null = null;   // set from env on each request
+/** The device's Durable Object, bounded so a slow one never holds up the device's poll. */
+async function shared<T>(deviceId: string, call: (s: SignalStub) => Promise<T>, fallback: T): Promise<T> {
+  if (!signalObjects) return fallback;
+  const ns = signalObjects;
+  return Promise.race([
+    call(ns.get(ns.idFromName(deviceId))),
+    new Promise<T>((r) => setTimeout(() => r(fallback), 1500)),
+  ]).catch((e) => { console.error('[worker] command signal', (e as Error).message); return fallback; });
+}
+// Test only: ADMS_SIGNAL_LOCAL=0 ignores memory and the edge cache, as when staff and the device
+// reach different Cloudflare locations, so only the Durable Object can carry the signal.
+const localSignal = () => typeof process === 'undefined' || process.env.ADMS_SIGNAL_LOCAL !== '0';
 registerCommandSignal({
   async raise(deviceId) {
     raised.set(deviceId, Date.now());
-    await edgeCache()?.put(signalKey(deviceId), new Response('1', { headers: { 'Cache-Control': 'max-age=60' } }));
+    await Promise.all([
+      edgeCache()?.put(signalKey(deviceId), new Response('1', { headers: { 'Cache-Control': 'max-age=60' } })),
+      shared(deviceId, (s) => s.raise(), undefined),
+    ]);
   },
   async take(deviceId) {
-    const mem = Date.now() - (raised.get(deviceId) ?? 0) < 60_000;
+    const mem = localSignal() && Date.now() - (raised.get(deviceId) ?? 0) < 60_000;
     raised.delete(deviceId);
     const c = edgeCache();
-    const hit = c ? !!(await c.match(signalKey(deviceId))) : false;
+    const [hit, everywhere] = await Promise.all([
+      c && localSignal() ? c.match(signalKey(deviceId)).then((m) => !!m) : false,
+      shared(deviceId, (s) => s.take(), false),
+    ]);
     if (hit) await c!.delete(signalKey(deviceId));
-    return mem || hit;
+    return mem || hit || everywhere;
   },
 });
 
-interface Env { POC_PROBE_KEY?: string; PROBE_TARGET?: string }
+/**
+ * Shared write gate for the relay's routine writes (see registerWriteGate in api/iclock.ts). A
+ * marker in this location's edge cache — free, and shared by every instance serving the gym —
+ * says "written within the interval"; the first instance to find none writes and sets it.
+ * Instance memory is the fallback when the cache isn't reachable.
+ */
+const gateKey = (key: string) => `https://gate.crunch.internal/${key.split('/').map(encodeURIComponent).join('/')}`;
+registerWriteGate({
+  async claim(key, ms) {
+    const c = edgeCache();
+    if (!c) return true;
+    if (await c.match(gateKey(key))) return false;
+    await c.put(gateKey(key), new Response('1', { headers: { 'Cache-Control': `max-age=${Math.max(1, Math.floor(ms / 1000))}` } }));
+    return true;
+  },
+});
+
+interface Env { POC_PROBE_KEY?: string; PROBE_TARGET?: string; COMMAND_SIGNAL?: SignalNamespace }
 
 /**
  * Test settings must never be live next to production credentials: the emulator switches make
@@ -122,6 +164,7 @@ async function cachedPublic(request: Request, ctx: ExecutionContext, produce: ()
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    signalObjects = env.COMMAND_SIGNAL ?? null;
     const problem = misconfigured();
     if (problem) {
       console.error(`[worker] ${problem}`);

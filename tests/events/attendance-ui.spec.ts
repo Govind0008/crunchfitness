@@ -99,44 +99,16 @@ test('access activity: every punch with who it resolved to; unresolved ones filt
   await shot(page, 'access-activity-dark');
 });
 
-test('trainers → attendance: counts, statuses, manual check-out with a reason', async ({ page }) => {
+test('trainers: no attendance or leave here — the gym keeps staff attendance in its HR platform', async ({ page }) => {
   await login(page);
-  await page.goto('/admin/trainers?tab=attendance');
-  const summary = page.getByLabel('Attendance summary');
-  await expect(summary).toContainText('Present today2');
-  await expect(summary).toContainText('Completed1');
-  await expect(summary).toContainText('Missing check-out1');
-  await expect(summary).toContainText('No attendance recorded1');
-  const list = page.getByRole('list', { name: 'Trainer attendance' });
-  await expect(list.getByRole('listitem').filter({ hasText: 'Coach Three' })).toContainText('No attendance recorded');
-  await expect(list).not.toContainText(/absent/i);
-  await shot(page, 'trainer-attendance-dark');
-  await list.getByRole('listitem').filter({ hasText: 'Coach One' }).getByRole('button', { name: 'Add check-out' }).click();
-  const drawer = page.getByRole('dialog', { name: 'Add check-out' });
-  await drawer.getByLabel('Left at').fill('05:00');
-  await drawer.getByLabel('Reason').fill('Forgot to punch out');
-  await drawer.getByRole('button', { name: 'Add check-out' }).click();
-  await expect(drawer.getByRole('alert')).toContainText('after the check-in');           // 05:00 is before 06:00
-  await drawer.getByLabel('Left at').fill('14:00');
-  await drawer.getByRole('button', { name: 'Add check-out' }).click();
-  await expect(drawer).toBeHidden();
-  await expect(list.getByRole('listitem').filter({ hasText: 'Coach One' })).toContainText('Check-out added by staff');
-  await expect(summary).toContainText('Completed2');
-});
-
-test('trainer profile: attendance by day and leave', async ({ page }) => {
-  await login(page);
-  await page.goto('/admin/trainers/T1?tab=leave');
+  await page.goto('/admin/trainers?tab=attendance');                          // an old link lands on the team
+  await expect(page.getByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Attendance' })).toHaveCount(0);
+  await page.goto('/admin/trainers/T1?tab=attendance');                       // …and on the profile's overview
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Coach One');
-  await page.getByRole('button', { name: 'Record leave' }).click();
-  const drawer = page.getByRole('dialog', { name: 'Record leave' });
-  await drawer.getByLabel('First day').fill('2030-01-10');
-  await drawer.getByLabel('Last day').fill('2030-01-12');
-  await drawer.getByLabel('Type').selectOption('sick');
-  await drawer.getByRole('button', { name: 'Record leave' }).click();
-  await expect(page.getByRole('list', { name: 'Leave' })).toContainText('Sick');
-  await page.getByRole('tab', { name: 'Attendance' }).click();
-  await expect(page.getByRole('list', { name: 'Attendance by day' }).getByRole('listitem').first()).toContainText('Completed');
+  for (const t of ['Overview', 'Biometric', 'Assigned members', 'Activity']) await expect(page.getByRole('tab', { name: t })).toHaveCount(1);
+  for (const t of ['Attendance', 'Leave']) await expect(page.getByRole('tab', { name: t, exact: true })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   await shot(page, 'trainer-profile-dark');
 });
 
@@ -183,7 +155,7 @@ test('theme: light is chosen from the account menu, remembered, and never leaks 
   await expect.poll(theme).toBe('light');
   expect(await page.evaluate(() => localStorage.getItem('crunch.admin.theme'))).toBe('light');
   expect(bg).not.toBe('rgb(10, 10, 11)');
-  for (const [path, name] of [['/admin', 'dashboard'], ['/admin/members/am1?tab=attendance', 'member-attendance'], ['/admin/attendance', 'attendance'], ['/admin/access?tab=activity', 'access-activity'], ['/admin/trainers?tab=attendance', 'trainer-attendance'], ['/admin/members', 'members']] as const) {
+  for (const [path, name] of [['/admin', 'dashboard'], ['/admin/members/am1?tab=attendance', 'member-attendance'], ['/admin/attendance', 'attendance'], ['/admin/access?tab=activity', 'access-activity'], ['/admin/trainers', 'trainers'], ['/admin/members', 'members']] as const) {
     await page.goto(path);
     await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
     await page.waitForTimeout(800);                                                      // let the numbers settle for the screenshot

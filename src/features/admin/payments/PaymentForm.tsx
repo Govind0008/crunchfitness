@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { Dumbbell, IdCard, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { addDays, getMember, periodEnd, searchMembers, todayIST, type Member } from '@/lib/admin/members';
+import { addDays, getMember, parseFreeMonths, periodEnd, periodEndWithFree, searchMembers, todayIST, withFreeLabel, type Member } from '@/lib/admin/members';
 import { formatPhone } from '@/lib/admin/phone';
 import { METHOD_LABEL, OTHER_CATEGORIES, PAYMENT_LABEL, RECORDABLE_METHODS, type OtherCategory, parsePrice, recordPayment, rupees, toPaise, validatePayment, type PaymentMethod, type PaymentType } from '@/lib/admin/payments';
 import { Field, inputCls } from '@/features/events/admin/shared';
 import { useActor } from '@/features/events/admin/actor';
 import { fmtDate, useLookups } from '@/features/admin/members/lookups';
-import { ptPackagesOf, ptPaid, type PtPackage } from '@/lib/admin/packages';
+import { membershipsOf, neverPaid, ptPackagesOf, ptPaid, unpaidCurrentPeriod, type PtPackage } from '@/lib/admin/packages';
 
 /** "membership payment" / "PT payment" / "other payment" — for use mid-sentence. */
 const inSentence = (t: PaymentType) => (t === 'pt' ? PAYMENT_LABEL.pt : PAYMENT_LABEL[t].toLowerCase());
@@ -55,6 +55,8 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
   const [q, setQ] = useState('');
   const [matches, setMatches] = useState<Member[]>([]);
   const [planId, setPlanId] = useState<string>('');
+  // Free months on top of the plan ("12 months + 2 free"), decided per sale
+  const [freeMonths, setFreeMonths] = useState('');
   const [amount, setAmount] = useState('');
   const [discount, setDiscount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('upi');
@@ -65,11 +67,23 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
   const [coversTo, setCoversTo] = useState('');
   const [notes, setNotes] = useState('');
   const [extend, setExtend] = useState(true);
+  // The member's running period isn't paid yet (added with dates, money not collected): null until checked
+  const [unpaid, setUnpaid] = useState<{ current: boolean; first: boolean } | null>(null);
+  // Which period this payment is for, when the current one is unpaid: that one (default) or the next
+  const [forCurrent, setForCurrent] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // The member's PT packages, so a PT payment can go against one already set up
   useEffect(() => { if (member) ptPackagesOf(member.id).then(setMemberPt).catch(() => setMemberPt([])); else setMemberPt([]); }, [member]);
+  useEffect(() => {
+    setUnpaid(null); setForCurrent(true);
+    if (!member) return;
+    membershipsOf(member.id)
+      .then((r) => setUnpaid({ current: unpaidCurrentPeriod(member, r, todayIST()), first: neverPaid(r) }))
+      .catch(() => setUnpaid({ current: false, first: false }));
+  }, [member]);
+  const payingCurrent = paymentType === 'membership' && !!unpaid?.current && forCurrent;
   // Arriving from a member profile or the dues list: ?member=<id>
   useEffect(() => { if (initial.memberId) getMember(initial.memberId).then((m) => m && choose(m)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -78,34 +92,53 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
     return () => clearTimeout(t);
   }, [q, member]);
 
-  /** Period suggestion: from the day after their current expiry (or today), for the plan's length. */
-  const suggest = (m: Member | null, pid: string) => {
+  /**
+   * Period suggestion: the member's own unpaid period (current), or from the day after their
+   * current expiry (or today) for the plan's length.
+   */
+  const suggest = (m: Member | null, pid: string, free = parseFreeMonths(freeMonths), current = !!unpaid?.current && forCurrent) => {
     const plan = plans.get(pid);
     const today = todayIST();
-    const from = m?.membershipEnd && m.membershipEnd >= today ? addDays(m.membershipEnd, 1) : today;
-    setCoversFrom(from);
-    setCoversTo(periodEnd(from, plan?.duration) ?? '');
+    if (current && m?.membershipEnd) {
+      const from = m.membershipStart ?? today;
+      setCoversFrom(from);
+      // Their own dates, unless staff now pick another plan or add free months
+      setCoversTo(pid === (m.planId ?? '') && !free ? m.membershipEnd : periodEndWithFree(from, plan?.duration, free) ?? m.membershipEnd);
+    } else {
+      const from = m?.membershipEnd && m.membershipEnd >= today ? addDays(m.membershipEnd, 1) : today;
+      setCoversFrom(from);
+      setCoversTo(periodEndWithFree(from, plan?.duration, free) ?? '');
+    }
     const price = parsePrice(plan?.price);
     // Never overwrite what staff typed: a late-arriving suggestion must not change a real amount
     if (price != null && !amountTouched.current) setAmount(String(Math.max(0, price - (Number(discount) || 0))));
   };
   const choose = (m: Member) => { setMember(m); setQ(''); };
   const choosePlan = (pid: string) => { setPlanId(pid); suggest(member, pid); };
+  const choosePeriod = (current: boolean) => { setForCurrent(current); suggest(member, planId, parseFreeMonths(freeMonths), current && !!unpaid?.current); };
+  /** Free months move the end date on from the plan's own end (the start stays as it is) */
+  const changeFree = (v: string) => {
+    const clean = v.replace(/\D/g, '').slice(0, 2);
+    setFreeMonths(clean);
+    const end = periodEndWithFree(coversFrom || todayIST(), plans.get(planId)?.duration, parseFreeMonths(clean));
+    if (end) setCoversTo(end);
+  };
   // Suggest once per chosen member, when both the member and the plans have loaded (either can
   // arrive first) — and never again for that member, so typed amounts aren't overwritten.
   const suggestedFor = useRef<string | null>(null);
   const amountTouched = useRef(false);
   useEffect(() => {
-    if (paymentType !== 'membership' || !member || !plans.size || suggestedFor.current === member.id) return;
+    if (paymentType !== 'membership' || !member || !plans.size || !unpaid || suggestedFor.current === member.id) return;
     suggestedFor.current = member.id;
     const pid = member.planId ?? '';
     setPlanId(pid);
     suggest(member, pid);
-  }, [member, plans, paymentType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [member, plans, paymentType, unpaid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amountRupees = Number(amount);
   const discountRupees = Number(discount) || 0;
-  const planName = plans.get(planId)?.duration ?? '';
+  const free = parseFreeMonths(freeMonths);
+  const planName = withFreeLabel(plans.get(planId)?.duration ?? '', planId ? free : 0);
   const listPrice = paymentType === 'membership' && planId ? parsePrice(plans.get(planId)?.price) : null;
   const changeType = (t: PaymentType) => {
     setPaymentType(t);
@@ -127,11 +160,13 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
     e.preventDefault();
     const input = {
       member, paymentType, planId: paymentType === 'membership' ? planId || null : null, planName: paymentType === 'membership' ? planName : '',
+      freeMonths: paymentType === 'membership' && planId ? free : 0,
       pt: paymentType === 'pt' ? { packageId: ptPackageId || null, packageName: ptName, trainerId: ptTrainer || null, sessionsIncluded: ptSessions ? Number(ptSessions) : null } : undefined,
       other: paymentType === 'other' && otherCategory ? { category: otherCategory, description: otherDesc } : undefined,
       amountRupees, listPriceRupees: listPrice, discountRupees: paymentType === 'membership' ? discountRupees : 0, method, reference, paidOn,
       coversFrom: paymentType === 'other' ? null : coversFrom || null, coversTo: paymentType === 'other' ? null : coversTo || null, notes,
       extendMembership: paymentType === 'membership' && extend,
+      firstPayment: payingCurrent && !!unpaid?.first,
     };
     const errs = validatePayment(input);
     setErrors(errs);
@@ -225,12 +260,29 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
           </div>
         )}
 
-        {paymentType === 'membership' && <div className={`grid gap-6 ${grid2}`}>
+        {paymentType === 'membership' && member?.membershipEnd && unpaid?.current && (
+          <fieldset>
+            <legend className="text-sm font-semibold text-white">Which period is this payment for?</legend>
+            <div className={`mt-2 grid gap-2 ${grid2}`} role="radiogroup" aria-label="Period paid for">
+              {([[true, 'This period — not paid yet', `${fmtDate(member.membershipStart) || 'Start not set'} → ${fmtDate(member.membershipEnd)}`],
+                [false, 'The next period — renewal', `From ${fmtDate(addDays(member.membershipEnd, 1))}`]] as const).map(([cur, title, sub]) => (
+                <button key={title} type="button" role="radio" aria-checked={forCurrent === cur} onClick={() => choosePeriod(cur)}
+                  className={cn('rounded-xl border p-3 text-left transition-colors motion-reduce:transition-none', forCurrent === cur ? 'border-brand-400 bg-brand-400/[0.08]' : 'border-white/[0.1] hover:border-white/25')}>
+                  <span className="block text-sm font-semibold text-white">{title}</span><span className="text-xs text-ink-400">{sub}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        {paymentType === 'membership' && <div className={`grid items-end gap-6 ${grid3}`}>
           <Field label="Plan" htmlFor="pay-plan">
             <select id="pay-plan" className={inputCls} value={planId} onChange={(e) => choosePlan(e.target.value)}>
               <option value="">No plan</option>
               {[...plans.values()].map((p) => <option key={p.id} value={p.id}>{p.duration}{p.price ? ` · ${p.price}` : ''}</option>)}
             </select>
+          </Field>
+          <Field label="Free months" hint="Optional — e.g. 2 for “12 + 2”" htmlFor="pay-free">
+            <input id="pay-free" className={inputCls} inputMode="numeric" value={freeMonths} disabled={!planId} onChange={(e) => changeFree(e.target.value)} placeholder="0" />
           </Field>
           <Field label="Discount (₹)" hint={listPrice != null ? `Plan price ${rupees(toPaise(listPrice))} — the plan’s price itself isn’t changed` : 'Optional'} htmlFor="pay-discount">
             <input id="pay-discount" className={inputCls} inputMode="decimal" value={discount} onChange={(e) => changeDiscount(e.target.value)} placeholder="0" />
@@ -258,14 +310,14 @@ const PaymentForm = ({ initial, compact, onSaved, onCancel }: PaymentFormProps) 
         {paymentType === 'pt' && <p className="-mt-3 text-xs text-ink-500">Personal training doesn’t change the gym membership or door access.</p>}
         {paymentType === 'membership' && <label className={cn('flex items-start gap-3 rounded-xl border p-4', extend && coversTo ? 'border-brand-400/40 bg-brand-400/[0.05]' : 'border-white/15')}>
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#b0d43f]" checked={extend} onChange={(e) => setExtend(e.target.checked)} />
-          <span><span className="block font-semibold text-white">Extend membership{coversTo ? ` to ${fmtDate(coversTo)}` : ''}</span>
+          <span><span className="block font-semibold text-white">{payingCurrent ? 'Membership' : 'Extend membership'}{coversTo ? ` ${payingCurrent ? 'until' : 'to'} ${fmtDate(coversTo)}` : ''}{planId && free ? ` · ${planName}` : ''}</span>
             <span className="text-sm text-ink-400">Updates the member’s plan and expiry date in the same save.</span></span>
         </label>}
         <Field label="Notes" hint="Optional" htmlFor="pay-notes"><input id="pay-notes" className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
 
         {member && (
           <p className={cn('rounded-xl border px-4 py-3 text-sm', TYPE_TONE[paymentType])} aria-live="polite">
-            This is a <strong>{inSentence(paymentType)}</strong> from {member.name}{paymentType === 'membership' && extend && coversTo ? `, extending the membership to ${fmtDate(coversTo)}` : paymentType === 'pt' ? ' — it doesn’t change the gym membership' : ''}.
+            This is a <strong>{inSentence(paymentType)}</strong> from {member.name}{payingCurrent && coversTo ? `, for the period until ${fmtDate(coversTo)} (not paid yet)` : paymentType === 'membership' && extend && coversTo ? `, extending the membership to ${fmtDate(coversTo)}` : paymentType === 'pt' ? ' — it doesn’t change the gym membership' : ''}.
           </p>
         )}
         <div className="flex flex-wrap items-center gap-4 border-t border-white/[0.08] pt-6">
